@@ -1,0 +1,132 @@
+# Full reference https://github.com/foundry-rs/foundry/tree/master/crates/config
+
+[profile.default]
+  auto_detect_solc = false
+  bytecode_hash = "ipfs"
+  evm_version = "shanghai" # For broad EVM chain compatibility
+  fs_permissions = [
+    { access = "read", path = "./out-optimized" },
+    { access = "read", path = "package.json" },
+  ]
+  gas_limit = 9223372036854775807
+  gas_reports = ["*"]
+  optimizer = true
+  optimizer_runs = 1_000
+  out = "out"
+  script = "scripts"
+  sender = "0x1804c8AB1F12E6bbf3894d4083f33e07309d1f38"
+  solc = "0.8.29"
+  src = "src"
+  test = "tests"
+
+[profile.default.fuzz]
+  max_test_rejects = 1_000_000 # Number of times `vm.assume` can fail
+  runs = 10_000
+
+[profile.default.invariant]
+  call_override = false  # Override unsafe external calls to perform reentrancy checks
+  depth = 100            # Number of calls executed in one run
+  dictionary_weight = 50
+  fail_on_revert = true
+  runs = 1_000
+  show_metrics = false
+  shrink_run_limit = 0   # Disable shrinking of a failed sequence
+
+# Speed up compilation and tests during development
+[profile.lite]
+  optimizer = false
+
+[profile.lite.invariant]
+  depth = 50
+  runs = 50
+
+[profile.lite.fuzz]
+  runs = 20
+
+# Compile only the production code with maximum optimization
+[profile.optimized]
+  optimizer_runs = 1_000_000
+  out = "out-optimized"
+  test = "src"
+  via_ir = true
+
+# Test the optimized contracts without re-compiling them
+[profile.test-optimized]
+  src = "tests"
+
+# CI profile with more aggressive testing
+[profile.ci]
+  fuzz = { runs = 10_000 }
+  invariant = { runs = 1_000 }
+  verbosity = 4
+
+[doc]
+  ignore = ["**/*.t.sol"]
+  out = "docs"
+  repository = "https://github.com/yourorg/foundry-template"
+
+[etherscan]
+  etherscan = { key = "${ETHERSCAN_API_KEY}" }
+  arbitrum = { key = "${ARBISCAN_API_KEY}" }
+  avalanche = { key = "${SNOWTRACE_API_KEY}" }
+  base = { key = "${BASESCAN_API_KEY}" }
+  bsc = { key = "${BSCSCAN_API_KEY}" }
+  gnosis = { key = "${GNOSISSCAN_API_KEY}" }
+  optimism = { key = "${OPTIMISTIC_ETHERSCAN_API_KEY}" }
+  polygon = { key = "${POLYGONSCAN_API_KEY}" }
+
+[fmt]
+  bracket_spacing = true
+  int_types = "long"
+  line_length = 120
+  multiline_func_header = "all"
+  number_underscore = "thousands"
+  quote_style = "double"
+  tab_width = 4
+  wrap_comments = true
+
+[lint]
+  lint_on_build = false
+
+[rpc_endpoints]
+  # === MAINNETS ===
+  ethereum = "https://eth.llamarpc.com"
+  arbitrum = "https://arbitrum.llamarpc.com"
+  avalanche = "https://avalanche.public-rpc.com"
+  base = "https://mainnet.base.org"
+  bsc = "https://bsc-dataseed.binance.org"
+  gnosis = "https://rpc.gnosischain.com"
+  optimism = "https://optimism.llamarpc.com"
+  polygon = "https://polygon.llamarpc.com"
+  blast = "https://rpc.blast.io"
+  linea = "https://rpc.linea.build"
+  scroll = "https://rpc.scroll.io"
+  zksync = "https://mainnet.era.zksync.io"
+  mode = "https://mainnet.mode.network"
+
+  # Additional mainnets - use your preferred RPC provider
+  # Replace ${YOUR_RPC_KEY} with your API key variable
+  # abstract = "https://api.abstract.xyz/rpc/${YOUR_RPC_KEY}"
+  # berachain = "https://rpc.berachain.com/${YOUR_RPC_KEY}"
+  # chiliz = "https://rpc.chiliz.com/${YOUR_RPC_KEY}"
+  # core_dao = "https://rpc.coredao.org/${YOUR_RPC_KEY}"
+  # hyperevm = "https://rpc.hyperevm.com/${YOUR_RPC_KEY}"
+  # lightlink = "https://rpc.lightlink.io/${YOUR_RPC_KEY}"
+  # morph = "https://rpc.morphl2.io/${YOUR_RPC_KEY}"
+  # sei = "https://rpc.sei.io/${YOUR_RPC_KEY}"
+  # sonic = "https://rpc.sonic.network/${YOUR_RPC_KEY}"
+  # sophon = "https://rpc.sophon.xyz/${YOUR_RPC_KEY}"
+  # superseed = "https://rpc.superseed.xyz/${YOUR_RPC_KEY}"
+  # tangle = "https://rpc.tangle.tools/${YOUR_RPC_KEY}"
+  # unichain = "https://rpc.unichain.org/${YOUR_RPC_KEY}"
+  # xdc = "https://rpc.xdc.org/${YOUR_RPC_KEY}"
+
+  # === TESTNETS ===
+  sepolia = "https://ethereum-sepolia-rpc.publicnode.com"
+  arbitrum_sepolia = "https://sepolia-rollup.arbitrum.io/rpc"
+  base_sepolia = "https://sepolia.base.org"
+  optimism_sepolia = "https://sepolia.optimism.io"
+  mode_sepolia = "https://sepolia.mode.network"
+
+  # === LOCAL ===
+  localhost = "http://localhost:8545"

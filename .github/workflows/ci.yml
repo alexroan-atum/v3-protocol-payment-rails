@@ -1,0 +1,168 @@
+name: "CI"
+
+concurrency:
+  cancel-in-progress: true
+  group: ${{github.workflow}}-${{github.ref}}
+
+env:
+  FOUNDRY_PROFILE: "ci"
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - "main"
+
+jobs:
+  lint:
+    name: "Lint & Format Check"
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: "Check out the repo"
+        uses: "actions/checkout@v4"
+
+      - name: "Install Foundry"
+        uses: "foundry-rs/foundry-toolchain@v1"
+
+      - name: "Install Bun"
+        uses: "oven-sh/setup-bun@v1"
+
+      - name: "Install the Node.js dependencies"
+        run: "bun install --frozen-lockfile"
+
+      - name: "Lint Solidity contracts"
+        run: 'bun solhint "{script,src,tests}/**/*.sol"'
+
+      - name: "Check Forge formatting"
+        run: "forge fmt --check"
+
+      - name: "Check Prettier formatting"
+        run: 'bun prettier --check "**/*.{json,md,yml}"'
+
+      - name: "Add lint summary"
+        run: |
+          echo "## 🔍 Lint Results" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All checks passed" >> $GITHUB_STEP_SUMMARY
+
+  build:
+    name: "Build Contracts"
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: "Check out the repo"
+        uses: "actions/checkout@v4"
+        with:
+          submodules: "recursive"
+
+      - name: "Install Foundry"
+        uses: "foundry-rs/foundry-toolchain@v1"
+
+      - name: "Install Bun"
+        uses: "oven-sh/setup-bun@v1"
+
+      - name: "Install the Node.js dependencies"
+        run: "bun install --frozen-lockfile"
+
+      - name: "Show the Foundry config"
+        run: "forge config"
+
+      - name: "Build contracts and print sizes"
+        run: "forge build --sizes"
+
+      - name: "Cache build artifacts"
+        uses: "actions/cache/save@v4"
+        with:
+          key: "forge-artifacts-${{ github.sha }}"
+          path: |
+            out/
+            cache/
+
+      - name: "Add build summary"
+        run: |
+          echo "## 🔨 Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Contracts compiled successfully" >> $GITHUB_STEP_SUMMARY
+
+  test:
+    name: "Test Contracts"
+    needs: ["lint", "build"]
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: "Check out the repo"
+        uses: "actions/checkout@v4"
+        with:
+          submodules: "recursive"
+
+      - name: "Install Foundry"
+        uses: "foundry-rs/foundry-toolchain@v1"
+
+      - name: "Install Bun"
+        uses: "oven-sh/setup-bun@v1"
+
+      - name: "Install the Node.js dependencies"
+        run: "bun install --frozen-lockfile"
+
+      - name: "Restore cached build artifacts"
+        uses: "actions/cache/restore@v4"
+        with:
+          fail-on-cache-miss: true
+          key: "forge-artifacts-${{ github.sha }}"
+          path: |
+            out/
+            cache/
+
+      - name: "Generate fuzz seed that changes weekly"
+        run: >
+          echo "FOUNDRY_FUZZ_SEED=$(
+            echo $(($EPOCHSECONDS - $EPOCHSECONDS % 604800))
+          )" >> $GITHUB_ENV
+
+      - name: "Run tests"
+        run: "forge test --gas-report"
+
+      - name: "Add test summary"
+        run: |
+          echo "## 🧪 Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All tests passed" >> $GITHUB_STEP_SUMMARY
+
+  coverage:
+    name: "Test Coverage"
+    needs: ["lint", "build"]
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: "Check out the repo"
+        uses: "actions/checkout@v4"
+        with:
+          submodules: "recursive"
+
+      - name: "Install Foundry"
+        uses: "foundry-rs/foundry-toolchain@v1"
+
+      - name: "Install Bun"
+        uses: "oven-sh/setup-bun@v1"
+
+      - name: "Install the Node.js dependencies"
+        run: "bun install --frozen-lockfile"
+
+      - name: "Restore cached build artifacts"
+        uses: "actions/cache/restore@v4"
+        with:
+          fail-on-cache-miss: true
+          key: "forge-artifacts-${{ github.sha }}"
+          path: |
+            out/
+            cache/
+
+      - name: "Generate coverage report"
+        run: "forge coverage --report lcov"
+
+      - name: "Upload coverage to Codecov"
+        uses: "codecov/codecov-action@v4"
+        with:
+          files: "./lcov.info"
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
+      - name: "Add coverage summary"
+        run: |
+          echo "## 📊 Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "Coverage report uploaded to Codecov" >> $GITHUB_STEP_SUMMARY

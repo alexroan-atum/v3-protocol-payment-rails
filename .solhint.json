@@ -1,0 +1,17 @@
+{
+  "extends": "solhint:recommended",
+  "rules": {
+    "code-complexity": ["error", 8],
+    "compiler-version": ["error", ">=0.8.29"],
+    "const-name-snakecase": "off",
+    "constructor-syntax": "error",
+    "func-visibility": ["error", { "ignoreConstructors": true }],
+    "max-line-length": ["error", 120],
+    "named-parameters-mapping": "off",
+    "no-console": "off",
+    "no-empty-blocks": "off",
+    "no-global-import": "off",
+    "one-contract-per-file": "off",
+    "reason-string": ["warn", { "maxLength": 64 }]
+  }
+}
