@@ -76,12 +76,6 @@ contract Node is INode, Ownable, ReentrancyGuard {
     }
 
     /// @inheritdoc INode
-    function updateModuleParams(address token, bytes calldata newParams) external onlyOwner {
-        if (_tokenConfigs[token].actionType == ActionType.NONE) revert TokenNotConfigured();
-        _tokenConfigs[token].moduleParams = newParams;
-    }
-
-    /// @inheritdoc INode
     function setTokenEnabled(address token, bool enabled) external onlyOwner {
         if (_tokenConfigs[token].actionType == ActionType.NONE) revert TokenNotConfigured();
         _tokenConfigs[token].enabled = enabled;

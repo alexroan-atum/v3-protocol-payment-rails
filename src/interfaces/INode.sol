@@ -44,6 +44,7 @@ interface INode {
 
     /// @notice Configure a token's action module and parameters
     /// @dev Only callable by owner - execution is permissionless (public)
+    /// @dev Can be called multiple times to reconfigure a token
     /// @param token Token address to configure
     /// @param actionType Type of action (SWAP, BRIDGE, FORWARD)
     /// @param actionModule Address of the module contract
@@ -58,12 +59,6 @@ interface INode {
         uint256 cooldownSeconds,
         bytes calldata moduleParams
     ) external;
-
-    /// @notice Update module parameters for a configured token
-    /// @dev Only callable by owner
-    /// @param token Token address
-    /// @param newParams New module-specific parameters
-    function updateModuleParams(address token, bytes calldata newParams) external;
 
     /// @notice Enable or disable a token's action
     /// @dev Only callable by owner

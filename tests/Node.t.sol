@@ -315,7 +315,7 @@ contract NodeTest is Test {
         assertTrue(success);
     }
 
-    function test_UpdateModuleParams() public {
+    function test_ReconfigureToken() public {
         // Configure token
         IForwardModule.ForwardParams memory params = IForwardModule.ForwardParams({
             recipient: recipient,
@@ -332,7 +332,7 @@ contract NodeTest is Test {
             forwardModule.encodeParams(params)
         );
 
-        // Update params to new recipient
+        // Reconfigure with new recipient
         address newRecipient = makeAddr("newRecipient");
         IForwardModule.ForwardParams memory newParams = IForwardModule.ForwardParams({
             recipient: newRecipient,
@@ -340,7 +340,14 @@ contract NodeTest is Test {
             minAmount: 0
         });
 
-        node.updateModuleParams(address(token), forwardModule.encodeParams(newParams));
+        node.configureToken(
+            address(token),
+            INode.ActionType.FORWARD,
+            address(forwardModule),
+            100 * 10 ** 18,
+            0,
+            forwardModule.encodeParams(newParams)
+        );
 
         // Execute and verify new recipient gets tokens
         uint256 amount = token.balanceOf(address(node));
