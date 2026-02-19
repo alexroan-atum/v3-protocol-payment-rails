@@ -42,7 +42,8 @@ contract Node is INode, Ownable, ReentrancyGuard {
         address actionModule,
         uint256 minBalance,
         uint256 cooldownSeconds,
-        bytes calldata moduleParams
+        bytes calldata moduleParams,
+        bool enabled
     ) external onlyOwner {
         if (token == address(0)) revert ZeroTokenAddress();
 
@@ -65,7 +66,7 @@ contract Node is INode, Ownable, ReentrancyGuard {
         _tokenConfigs[token] = TokenConfig({
             actionType: actionType,
             actionModule: actionModule,
-            enabled: true,
+            enabled: enabled,
             minBalance: minBalance,
             cooldownSeconds: cooldownSeconds,
             lastExecuted: 0,
@@ -73,12 +74,6 @@ contract Node is INode, Ownable, ReentrancyGuard {
         });
 
         emit TokenConfigured(token, actionType, actionModule);
-    }
-
-    /// @inheritdoc INode
-    function setTokenEnabled(address token, bool enabled) external onlyOwner {
-        if (_tokenConfigs[token].actionType == ActionType.NONE) revert TokenNotConfigured();
-        _tokenConfigs[token].enabled = enabled;
     }
 
     /// @inheritdoc INode

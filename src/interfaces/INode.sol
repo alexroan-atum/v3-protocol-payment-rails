@@ -51,20 +51,16 @@ interface INode {
     /// @param minBalance Minimum balance threshold for execution
     /// @param cooldownSeconds Cooldown period between executions
     /// @param moduleParams Module-specific parameters (ABI encoded)
+    /// @param enabled Whether the token action should be enabled
     function configureToken(
         address token,
         ActionType actionType,
         address actionModule,
         uint256 minBalance,
         uint256 cooldownSeconds,
-        bytes calldata moduleParams
+        bytes calldata moduleParams,
+        bool enabled
     ) external;
-
-    /// @notice Enable or disable a token's action
-    /// @dev Only callable by owner
-    /// @param token Token address
-    /// @param enabled Whether the token action should be enabled
-    function setTokenEnabled(address token, bool enabled) external;
 
     /// @notice Execute the configured action for a token with a specific amount
     /// @dev Permissionless - anyone can trigger execution

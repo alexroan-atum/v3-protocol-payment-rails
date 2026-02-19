@@ -66,7 +66,8 @@ contract NodeTest is Test {
             address(forwardModule),
             100 * 10 ** 18, // minBalance
             0,              // cooldown
-            encodedParams
+            encodedParams,
+            true            // enabled
         );
 
         // Verify configuration
@@ -91,7 +92,8 @@ contract NodeTest is Test {
             address(forwardModule),
             100 * 10 ** 18,
             0,
-            encodedParams
+            encodedParams,
+            true
         );
 
         // Check initial balances
@@ -128,7 +130,8 @@ contract NodeTest is Test {
             address(forwardModule),
             100 * 10 ** 18,
             0,
-            forwardModule.encodeParams(params)
+            forwardModule.encodeParams(params),
+            true
         );
 
         // Execute from different address (simulating public execution)
@@ -155,7 +158,8 @@ contract NodeTest is Test {
             address(forwardModule),
             100 * 10 ** 18, // minBalance
             0,
-            forwardModule.encodeParams(params)
+            forwardModule.encodeParams(params),
+            true
         );
 
         // Try to execute with amount below minBalance
@@ -177,7 +181,8 @@ contract NodeTest is Test {
             address(forwardModule),
             100 * 10 ** 18, // minBalance
             0,
-            forwardModule.encodeParams(params)
+            forwardModule.encodeParams(params),
+            true
         );
 
         // Node has 1000 tokens, execute only 500
@@ -210,7 +215,8 @@ contract NodeTest is Test {
             address(forwardModule),
             100 * 10 ** 18,
             0,
-            forwardModule.encodeParams(params)
+            forwardModule.encodeParams(params),
+            true
         );
 
         // Try to execute more than balance
@@ -232,7 +238,8 @@ contract NodeTest is Test {
             address(forwardModule),
             100 * 10 ** 18,
             3600, // 1 hour cooldown
-            forwardModule.encodeParams(params)
+            forwardModule.encodeParams(params),
+            true
         );
 
         // First execution should succeed
@@ -273,7 +280,8 @@ contract NodeTest is Test {
             address(forwardModule),
             100 * 10 ** 18,
             0,
-            forwardModule.encodeParams(params)
+            forwardModule.encodeParams(params),
+            true
         );
 
         // Should be able to execute
@@ -282,8 +290,8 @@ contract NodeTest is Test {
         assertEq(reason, "");
     }
 
-    function test_SetTokenEnabled() public {
-        // Configure token
+    function test_DisableToken() public {
+        // Configure token as enabled
         IForwardModule.ForwardParams memory params = IForwardModule.ForwardParams({
             recipient: recipient,
             requireSuccessfulReceipt: false,
@@ -296,11 +304,20 @@ contract NodeTest is Test {
             address(forwardModule),
             100 * 10 ** 18,
             0,
-            forwardModule.encodeParams(params)
+            forwardModule.encodeParams(params),
+            true
         );
 
-        // Disable token
-        node.setTokenEnabled(address(token), false);
+        // Reconfigure token as disabled
+        node.configureToken(
+            address(token),
+            INode.ActionType.FORWARD,
+            address(forwardModule),
+            100 * 10 ** 18,
+            0,
+            forwardModule.encodeParams(params),
+            false
+        );
 
         // Should not be able to execute
         uint256 amount = token.balanceOf(address(node));
@@ -308,7 +325,15 @@ contract NodeTest is Test {
         node.executeAction(address(token), amount);
 
         // Re-enable
-        node.setTokenEnabled(address(token), true);
+        node.configureToken(
+            address(token),
+            INode.ActionType.FORWARD,
+            address(forwardModule),
+            100 * 10 ** 18,
+            0,
+            forwardModule.encodeParams(params),
+            true
+        );
 
         // Should work now
         bool success = node.executeAction(address(token), amount);
@@ -329,7 +354,8 @@ contract NodeTest is Test {
             address(forwardModule),
             100 * 10 ** 18,
             0,
-            forwardModule.encodeParams(params)
+            forwardModule.encodeParams(params),
+            true
         );
 
         // Reconfigure with new recipient
@@ -346,7 +372,8 @@ contract NodeTest is Test {
             address(forwardModule),
             100 * 10 ** 18,
             0,
-            forwardModule.encodeParams(newParams)
+            forwardModule.encodeParams(newParams),
+            true
         );
 
         // Execute and verify new recipient gets tokens
