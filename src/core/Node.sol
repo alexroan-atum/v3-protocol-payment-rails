@@ -38,7 +38,7 @@ contract Node is INode, Ownable, ReentrancyGuard {
     /// @inheritdoc INode
     function configureToken(
         address token,
-        ActionType actionType,
+        string calldata actionType,
         address actionModule,
         uint256 minBalance,
         uint256 cooldownSeconds,
@@ -47,7 +47,10 @@ contract Node is INode, Ownable, ReentrancyGuard {
     ) external onlyOwner {
         if (token == address(0)) revert ZeroTokenAddress();
 
-        if (actionType == ActionType.NONE) {
+        // Empty string means no action configured
+        bool isNoneAction = bytes(actionType).length == 0;
+
+        if (isNoneAction) {
             // When clearing config, module should be zero address
             if (actionModule != address(0)) revert NoneActionRequiresZeroModule();
         } else {
@@ -80,7 +83,7 @@ contract Node is INode, Ownable, ReentrancyGuard {
     function executeAction(address token, uint256 amount) external nonReentrant returns (bool success) {
         TokenConfig memory config = _tokenConfigs[token];
         if (!config.enabled) revert TokenNotEnabled();
-        if (config.actionType == ActionType.NONE) revert NoActionConfigured();
+        if (bytes(config.actionType).length == 0) revert NoActionConfigured();
         if (amount == 0) revert ZeroAmount();
 
         // Check amount meets minimum threshold (prevents inefficient small swaps)
@@ -118,7 +121,7 @@ contract Node is INode, Ownable, ReentrancyGuard {
     function canExecute(address token) external view returns (bool, string memory) {
         TokenConfig memory config = _tokenConfigs[token];
 
-        if (config.actionType == ActionType.NONE) {
+        if (bytes(config.actionType).length == 0) {
             return (false, "No action configured");
         }
 
@@ -152,7 +155,7 @@ contract Node is INode, Ownable, ReentrancyGuard {
     /// @inheritdoc INode
     function estimateActionOutput(address token) external view returns (uint256 estimatedOutput, address outputToken) {
         TokenConfig memory config = _tokenConfigs[token];
-        if (config.actionType == ActionType.NONE) revert NoActionConfigured();
+        if (bytes(config.actionType).length == 0) revert NoActionConfigured();
 
         uint256 balance = IERC20(token).balanceOf(address(this));
 

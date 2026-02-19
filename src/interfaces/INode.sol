@@ -5,18 +5,12 @@ pragma solidity ^0.8.29;
 /// @notice Interface for the core Node contract that routes tokens through action modules
 /// @dev Node maintains token configurations and delegates execution to modules
 interface INode {
-    /// @notice Action types supported by the node
-    enum ActionType {
-        NONE,       // No action configured (default state)
-        FORWARD,    // Send to address on same chain
-        SWAP,       // Swap to different token
-        BRIDGE      // Bridge to different chain
-    }
-
     /// @notice Configuration for a token's action
     /// @dev Stored per token address in the node
+    /// @dev actionType is a string to allow extensibility
+    /// @dev Common values: "FORWARD", "SWAP", "BRIDGE", or any custom module type
     struct TokenConfig {
-        ActionType actionType;        // Which action to perform
+        string actionType;            // Which action to perform (e.g., "FORWARD", "SWAP", "BRIDGE")
         address actionModule;         // Address of the action module contract
         bool enabled;                 // Master switch for this token
         uint256 minBalance;           // Minimum balance to trigger execution
@@ -28,14 +22,14 @@ interface INode {
     /// @notice Emitted when a token is configured or reconfigured
     event TokenConfigured(
         address indexed token,
-        ActionType actionType,
+        string actionType,
         address actionModule
     );
 
     /// @notice Emitted when an action is successfully executed
     event ActionExecuted(
         address indexed token,
-        ActionType actionType,
+        string actionType,
         uint256 amountIn,
         uint256 amountOut,
         address outputToken,
@@ -46,7 +40,7 @@ interface INode {
     /// @dev Only callable by owner - execution is permissionless (public)
     /// @dev Can be called multiple times to reconfigure a token
     /// @param token Token address to configure
-    /// @param actionType Type of action (SWAP, BRIDGE, FORWARD)
+    /// @param actionType Type of action (e.g., "FORWARD", "SWAP", "BRIDGE", "STAKE", etc.)
     /// @param actionModule Address of the module contract
     /// @param minBalance Minimum balance threshold for execution
     /// @param cooldownSeconds Cooldown period between executions
@@ -54,7 +48,7 @@ interface INode {
     /// @param enabled Whether the token action should be enabled
     function configureToken(
         address token,
-        ActionType actionType,
+        string calldata actionType,
         address actionModule,
         uint256 minBalance,
         uint256 cooldownSeconds,

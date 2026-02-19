@@ -62,7 +62,7 @@ contract NodeTest is Test {
         // Configure token
         node.configureToken(
             address(token),
-            INode.ActionType.FORWARD,
+            "FORWARD",
             address(forwardModule),
             100 * 10 ** 18, // minBalance
             0,              // cooldown
@@ -72,7 +72,7 @@ contract NodeTest is Test {
 
         // Verify configuration
         INode.TokenConfig memory config = node.getTokenConfig(address(token));
-        assertEq(uint256(config.actionType), uint256(INode.ActionType.FORWARD));
+        assertEq(config.actionType, "FORWARD");
         assertEq(config.actionModule, address(forwardModule));
         assertTrue(config.enabled);
     }
@@ -88,7 +88,7 @@ contract NodeTest is Test {
 
         node.configureToken(
             address(token),
-            INode.ActionType.FORWARD,
+            "FORWARD",
             address(forwardModule),
             100 * 10 ** 18,
             0,
@@ -126,7 +126,7 @@ contract NodeTest is Test {
 
         node.configureToken(
             address(token),
-            INode.ActionType.FORWARD,
+            "FORWARD",
             address(forwardModule),
             100 * 10 ** 18,
             0,
@@ -154,7 +154,7 @@ contract NodeTest is Test {
 
         node.configureToken(
             address(token),
-            INode.ActionType.FORWARD,
+            "FORWARD",
             address(forwardModule),
             100 * 10 ** 18, // minBalance
             0,
@@ -177,7 +177,7 @@ contract NodeTest is Test {
 
         node.configureToken(
             address(token),
-            INode.ActionType.FORWARD,
+            "FORWARD",
             address(forwardModule),
             100 * 10 ** 18, // minBalance
             0,
@@ -211,7 +211,7 @@ contract NodeTest is Test {
 
         node.configureToken(
             address(token),
-            INode.ActionType.FORWARD,
+            "FORWARD",
             address(forwardModule),
             100 * 10 ** 18,
             0,
@@ -234,7 +234,7 @@ contract NodeTest is Test {
 
         node.configureToken(
             address(token),
-            INode.ActionType.FORWARD,
+            "FORWARD",
             address(forwardModule),
             100 * 10 ** 18,
             3600, // 1 hour cooldown
@@ -276,7 +276,7 @@ contract NodeTest is Test {
 
         node.configureToken(
             address(token),
-            INode.ActionType.FORWARD,
+            "FORWARD",
             address(forwardModule),
             100 * 10 ** 18,
             0,
@@ -300,7 +300,7 @@ contract NodeTest is Test {
 
         node.configureToken(
             address(token),
-            INode.ActionType.FORWARD,
+            "FORWARD",
             address(forwardModule),
             100 * 10 ** 18,
             0,
@@ -311,7 +311,7 @@ contract NodeTest is Test {
         // Reconfigure token as disabled
         node.configureToken(
             address(token),
-            INode.ActionType.FORWARD,
+            "FORWARD",
             address(forwardModule),
             100 * 10 ** 18,
             0,
@@ -327,7 +327,7 @@ contract NodeTest is Test {
         // Re-enable
         node.configureToken(
             address(token),
-            INode.ActionType.FORWARD,
+            "FORWARD",
             address(forwardModule),
             100 * 10 ** 18,
             0,
@@ -350,7 +350,7 @@ contract NodeTest is Test {
 
         node.configureToken(
             address(token),
-            INode.ActionType.FORWARD,
+            "FORWARD",
             address(forwardModule),
             100 * 10 ** 18,
             0,
@@ -368,7 +368,7 @@ contract NodeTest is Test {
 
         node.configureToken(
             address(token),
-            INode.ActionType.FORWARD,
+            "FORWARD",
             address(forwardModule),
             100 * 10 ** 18,
             0,
