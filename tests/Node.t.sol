@@ -265,11 +265,10 @@ contract NodeTest is Test {
         assertTrue(success);
     }
 
-    function test_CanExecute() public {
-        // No configuration - should return false
-        (bool canExec, string memory reason) = node.canExecute(address(token));
-        assertFalse(canExec);
-        assertEq(reason, "No action configured");
+    function test_PreviewExecution() public {
+        // No configuration - should revert
+        vm.expectRevert(Errors.Node_NoActionConfigured.selector);
+        node.previewExecution(address(token));
 
         // Configure token
         DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
@@ -288,10 +287,37 @@ contract NodeTest is Test {
             true
         );
 
-        // Should be able to execute
-        (canExec, reason) = node.canExecute(address(token));
-        assertTrue(canExec);
-        assertEq(reason, "");
+        // Should be able to execute with estimated output
+        (uint256 estimatedOutput, address outputToken) = node.previewExecution(address(token));
+        assertEq(estimatedOutput, 1000 * 10 ** 18); // Should estimate full balance
+        assertEq(outputToken, address(token)); // Forward returns same token
+    }
+
+    function test_PreviewExecution_ZeroAddress() public {
+        vm.expectRevert(Errors.Node_ZeroTokenAddress.selector);
+        node.previewExecution(address(0));
+    }
+
+    function test_PreviewExecution_NotEnabled() public {
+        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
+            recipient: recipient,
+            requireSuccessfulReceipt: false,
+            minAmount: 0
+        });
+
+        // Configure but disabled
+        node.configureToken(
+            address(token),
+            "FORWARD",
+            address(forwardModule),
+            100 * 10 ** 18,
+            0,
+            forwardModule.encodeParams(params),
+            false // disabled
+        );
+
+        vm.expectRevert(Errors.Node_TokenNotEnabled.selector);
+        node.previewExecution(address(token));
     }
 
     function test_DisableToken() public {

@@ -63,56 +63,68 @@ contract Node is INode, NodeState, Ownable, ReentrancyGuard {
     }
 
     /// @inheritdoc INode
-    function canExecute(address token) external view returns (bool, string memory) {
-        DataTypes.TokenConfig memory config = _tokenConfigs[token];
-
-        // Check: Action configured
-        if (bytes(config.actionType).length == 0) {
-            return (false, "No action configured");
+    function previewExecution(address token) external view returns (uint256 estimatedOutput, address outputToken) {
+        // Check: Token address not zero
+        if (token == address(0)) {
+            revert Errors.Node_ZeroTokenAddress();
         }
 
-        // Check: Token enabled
-        if (!config.enabled) {
-            return (false, "Token not enabled");
-        }
-
-        // Check: Cooldown elapsed
-        if (config.lastExecuted != 0 && block.timestamp < config.lastExecuted + config.cooldownSeconds) {
-            return (false, "Cooldown not elapsed");
-        }
-
-        // Check: Minimum balance
-        uint256 balance = IERC20(token).balanceOf(address(this));
-        if (balance < config.minBalance) {
-            return (false, "Below minimum balance");
-        }
-
-        // Check: Module validation
-        try IActionModule(config.actionModule).validate(token, balance, config.moduleParams) returns (
-            bool isValid, string memory reason
-        ) {
-            if (!isValid) {
-                return (false, reason);
-            }
-        } catch {
-            return (false, "Module validation failed");
-        }
-
-        return (true, "");
-    }
-
-    /// @inheritdoc INode
-    function estimateActionOutput(address token) external view returns (uint256 estimatedOutput, address outputToken) {
-        DataTypes.TokenConfig memory config = _tokenConfigs[token];
+        // Use storage pointer for gas efficiency (no memory copy needed)
+        DataTypes.TokenConfig storage config = _tokenConfigs[token];
 
         // Check: Action configured
         if (bytes(config.actionType).length == 0) {
             revert Errors.Node_NoActionConfigured();
         }
 
+        // Check: Token enabled
+        if (!config.enabled) {
+            revert Errors.Node_TokenNotEnabled();
+        }
+
+        // Check: Module is a contract
+        if (config.actionModule.code.length == 0) {
+            revert Errors.Node_InvalidModule();
+        }
+
+        // Check: Cooldown elapsed (with overflow protection)
+        if (config.lastExecuted != 0) {
+            unchecked {
+                uint256 cooldownEnd = config.lastExecuted + config.cooldownSeconds;
+                // Overflow check (extremely unlikely but defensive)
+                if (cooldownEnd < config.lastExecuted) {
+                    revert Errors.Node_CooldownNotElapsed(config.lastExecuted, config.cooldownSeconds, block.timestamp);
+                }
+                if (block.timestamp < cooldownEnd) {
+                    revert Errors.Node_CooldownNotElapsed(config.lastExecuted, config.cooldownSeconds, block.timestamp);
+                }
+            }
+        }
+
+        // Check: Get token balance
+        // Note: Assumes token is trusted ERC20 implementation
+        // Malicious tokens could return fake balance or revert, but this is acceptable for preview
         uint256 balance = IERC20(token).balanceOf(address(this));
 
-        // Query module for output estimation
+        // Check: Non-zero balance (consistency with executeAction which checks amount != 0)
+        if (balance == 0) {
+            revert Errors.Node_ZeroAmount();
+        }
+
+        // Check: Balance meets minimum threshold
+        if (balance < config.minBalance) {
+            revert Errors.Node_BelowMinimumBalance(balance, config.minBalance);
+        }
+
+        // Check: Module validation
+        (bool isValid, string memory reason) = IActionModule(config.actionModule).validate(token, balance, config.moduleParams);
+        if (!isValid) {
+            // Module validation failed - revert with module's reason
+            // Note: Cannot revert with module's custom error, so we use a descriptive revert
+            revert(reason);
+        }
+
+        // All checks passed - get output estimation
         return IActionModule(config.actionModule).estimateOutput(token, balance, config.moduleParams);
     }
 
