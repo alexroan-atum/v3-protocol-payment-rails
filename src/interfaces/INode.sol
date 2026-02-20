@@ -1,23 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.29;
 
+import { DataTypes } from "../types/DataTypes.sol";
+
 /// @title INode
 /// @notice Interface for the core Node contract that routes tokens through action modules
 /// @dev Node maintains token configurations and delegates execution to modules
 interface INode {
-    /// @notice Configuration for a token's action
-    /// @dev Stored per token address in the node
-    /// @dev actionType is a string to allow extensibility
-    /// @dev Common values: "FORWARD", "SWAP", "BRIDGE", or any custom module type
-    struct TokenConfig {
-        string actionType;            // Which action to perform (e.g., "FORWARD", "SWAP", "BRIDGE")
-        address actionModule;         // Address of the action module contract
-        bool enabled;                 // Master switch for this token
-        uint256 minBalance;           // Minimum balance to trigger execution
-        uint256 cooldownSeconds;      // Minimum time between executions
-        uint256 lastExecuted;         // Timestamp of last execution
-        bytes moduleParams;           // Module-specific parameters (ABI encoded)
-    }
 
     /// @notice Emitted when a token is configured or reconfigured
     event TokenConfigured(
@@ -67,7 +56,7 @@ interface INode {
     /// @notice Get full configuration for a token
     /// @param token Token address
     /// @return config Token configuration struct
-    function getTokenConfig(address token) external view returns (TokenConfig memory config);
+    function getTokenConfig(address token) external view returns (DataTypes.TokenConfig memory config);
 
     /// @notice Get current token balance held by node
     /// @param token Token address

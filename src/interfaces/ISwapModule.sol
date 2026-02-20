@@ -2,34 +2,22 @@
 pragma solidity ^0.8.29;
 
 import { IActionModule } from "./IActionModule.sol";
+import { DataTypes } from "../types/DataTypes.sol";
 
 /// @title ISwapModule
 /// @notice Interface for modules that swap tokens via DEXs or other venues
 /// @dev Implements IActionModule with swap-specific functionality
 interface ISwapModule is IActionModule {
-    /// @notice Swap configuration parameters
-    /// @dev Encoded into bytes and passed to execute()
-    struct SwapParams {
-        address targetToken;            // Token to swap into
-        address dexRouter;              // DEX router address (Uniswap, Sushiswap, etc.)
-        bytes path;                     // Swap path (encoded for the specific DEX)
-        uint24 poolFee;                 // Pool fee tier (for Uniswap V3, in hundredths of bips)
-        uint256 slippageBps;            // Slippage tolerance in basis points (e.g., 50 = 0.5%)
-        address priceOracle;            // Price oracle for validation (e.g., Chainlink)
-        uint256 maxPriceDeviationBps;   // Max allowed deviation from oracle (e.g., 500 = 5%)
-        bool useTwap;                   // Whether to use TWAP for validation
-        uint32 twapPeriod;              // TWAP period in seconds (if useTwap = true)
-    }
 
     /// @notice Encode swap parameters into bytes
     /// @param params Swap parameters to encode
     /// @return Encoded parameters
-    function encodeParams(SwapParams calldata params) external pure returns (bytes memory);
+    function encodeParams(DataTypes.SwapParams calldata params) external pure returns (bytes memory);
 
     /// @notice Decode swap parameters from bytes
     /// @param encoded Encoded parameters
     /// @return params Decoded swap parameters
-    function decodeParams(bytes calldata encoded) external pure returns (SwapParams memory params);
+    function decodeParams(bytes calldata encoded) external pure returns (DataTypes.SwapParams memory params);
 
     /// @notice Get current price from oracle
     /// @dev Used for validating swap outputs
@@ -57,6 +45,6 @@ interface ISwapModule is IActionModule {
         address tokenOut,
         uint256 amountIn,
         uint256 expectedAmountOut,
-        SwapParams calldata params
+        DataTypes.SwapParams calldata params
     ) external view returns (bool isValid, string memory reason);
 }

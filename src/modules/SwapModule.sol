@@ -3,6 +3,8 @@ pragma solidity ^0.8.29;
 
 import { ISwapModule } from "../interfaces/ISwapModule.sol";
 import { IActionModule } from "../interfaces/IActionModule.sol";
+import { DataTypes } from "../types/DataTypes.sol";
+import { Errors } from "../libraries/Errors.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -18,12 +20,12 @@ contract SwapModule is ISwapModule {
         address token,
         uint256 amount,
         bytes calldata params
-    ) external returns (ExecutionResult memory result) {
-        SwapParams memory swapParams = decodeParams(params);
+    ) external returns (DataTypes.ExecutionResult memory result) {
+        DataTypes.SwapParams memory swapParams = decodeParams(params);
 
         // Validate parameters
         if (swapParams.targetToken == address(0)) {
-            return ExecutionResult({
+            return DataTypes.ExecutionResult({
                 success: false,
                 amountOut: 0,
                 outputToken: address(0),
@@ -33,7 +35,7 @@ contract SwapModule is ISwapModule {
         }
 
         if (swapParams.dexRouter == address(0)) {
-            return ExecutionResult({
+            return DataTypes.ExecutionResult({
                 success: false,
                 amountOut: 0,
                 outputToken: swapParams.targetToken,
@@ -45,7 +47,7 @@ contract SwapModule is ISwapModule {
         // Check balance
         uint256 balance = IERC20(token).balanceOf(msg.sender);
         if (balance < amount) {
-            return ExecutionResult({
+            return DataTypes.ExecutionResult({
                 success: false,
                 amountOut: 0,
                 outputToken: swapParams.targetToken,
@@ -62,7 +64,7 @@ contract SwapModule is ISwapModule {
         // - Other DEX aggregators
 
         // For now, return placeholder
-        return ExecutionResult({
+        return DataTypes.ExecutionResult({
             success: false,
             amountOut: 0,
             outputToken: swapParams.targetToken,
@@ -85,7 +87,7 @@ contract SwapModule is ISwapModule {
         uint256 amount,
         bytes calldata params
     ) external view returns (bool isValid, string memory reason) {
-        SwapParams memory swapParams = decodeParams(params);
+        DataTypes.SwapParams memory swapParams = decodeParams(params);
 
         if (swapParams.targetToken == address(0)) {
             return (false, "Zero target token");
@@ -116,7 +118,7 @@ contract SwapModule is ISwapModule {
         uint256 amount,
         bytes calldata params
     ) external view returns (uint256 estimatedOutput, address outputToken) {
-        SwapParams memory swapParams = decodeParams(params);
+        DataTypes.SwapParams memory swapParams = decodeParams(params);
 
         // TODO: Query DEX for quote
         // For now return placeholder
@@ -129,7 +131,7 @@ contract SwapModule is ISwapModule {
     }
 
     /// @inheritdoc ISwapModule
-    function encodeParams(SwapParams calldata params) external pure returns (bytes memory) {
+    function encodeParams(DataTypes.SwapParams calldata params) external pure returns (bytes memory) {
         return abi.encode(
             params.targetToken,
             params.dexRouter,
@@ -144,7 +146,7 @@ contract SwapModule is ISwapModule {
     }
 
     /// @inheritdoc ISwapModule
-    function decodeParams(bytes calldata encoded) public pure returns (SwapParams memory params) {
+    function decodeParams(bytes calldata encoded) public pure returns (DataTypes.SwapParams memory params) {
         // Decode in two steps to avoid stack too deep
         address targetToken;
         address dexRouter;
@@ -202,7 +204,7 @@ contract SwapModule is ISwapModule {
         address tokenOut,
         uint256 amountIn,
         uint256 expectedAmountOut,
-        SwapParams calldata params
+        DataTypes.SwapParams calldata params
     ) external view returns (bool isValid, string memory reason) {
         // TODO: Implement price validation logic
         // 1. Get oracle price

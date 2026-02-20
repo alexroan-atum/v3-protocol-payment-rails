@@ -6,6 +6,8 @@ import { Node } from "../src/core/Node.sol";
 import { ForwardModule } from "../src/modules/ForwardModule.sol";
 import { INode } from "../src/interfaces/INode.sol";
 import { IForwardModule } from "../src/interfaces/IForwardModule.sol";
+import { DataTypes } from "../src/types/DataTypes.sol";
+import { Errors } from "../src/libraries/Errors.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
@@ -52,7 +54,7 @@ contract NodeTest is Test {
 
     function test_ConfigureToken() public {
         // Encode forward params
-        IForwardModule.ForwardParams memory params = IForwardModule.ForwardParams({
+        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
             recipient: recipient,
             requireSuccessfulReceipt: false,
             minAmount: 0
@@ -71,7 +73,7 @@ contract NodeTest is Test {
         );
 
         // Verify configuration
-        INode.TokenConfig memory config = node.getTokenConfig(address(token));
+        DataTypes.TokenConfig memory config = node.getTokenConfig(address(token));
         assertEq(config.actionType, "FORWARD");
         assertEq(config.actionModule, address(forwardModule));
         assertTrue(config.enabled);
@@ -79,7 +81,7 @@ contract NodeTest is Test {
 
     function test_ExecuteForwardAction() public {
         // Setup: Configure token
-        IForwardModule.ForwardParams memory params = IForwardModule.ForwardParams({
+        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
             recipient: recipient,
             requireSuccessfulReceipt: false,
             minAmount: 0
@@ -118,7 +120,7 @@ contract NodeTest is Test {
 
     function test_ExecuteAction_PublicExecution() public {
         // Configure token
-        IForwardModule.ForwardParams memory params = IForwardModule.ForwardParams({
+        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
             recipient: recipient,
             requireSuccessfulReceipt: false,
             minAmount: 0
@@ -146,7 +148,7 @@ contract NodeTest is Test {
 
     function test_ExecuteAction_BelowMinimumBalance() public {
         // Configure with minimum balance of 100 tokens
-        IForwardModule.ForwardParams memory params = IForwardModule.ForwardParams({
+        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
             recipient: recipient,
             requireSuccessfulReceipt: false,
             minAmount: 0
@@ -163,13 +165,13 @@ contract NodeTest is Test {
         );
 
         // Try to execute with amount below minBalance
-        vm.expectRevert(Node.BelowMinimumBalance.selector);
+        vm.expectRevert(abi.encodeWithSelector(Errors.Node_BelowMinimumBalance.selector, 50 * 10 ** 18, 100 * 10 ** 18));
         node.executeAction(address(token), 50 * 10 ** 18); // Only 50 tokens
     }
 
     function test_ExecuteAction_PartialAmount() public {
         // Configure token
-        IForwardModule.ForwardParams memory params = IForwardModule.ForwardParams({
+        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
             recipient: recipient,
             requireSuccessfulReceipt: false,
             minAmount: 0
@@ -203,7 +205,7 @@ contract NodeTest is Test {
 
     function test_ExecuteAction_InsufficientBalance() public {
         // Configure token
-        IForwardModule.ForwardParams memory params = IForwardModule.ForwardParams({
+        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
             recipient: recipient,
             requireSuccessfulReceipt: false,
             minAmount: 0
@@ -220,13 +222,13 @@ contract NodeTest is Test {
         );
 
         // Try to execute more than balance
-        vm.expectRevert(Node.InsufficientBalance.selector);
+        vm.expectRevert(abi.encodeWithSelector(Errors.Node_InsufficientBalance.selector, 1000 * 10 ** 18, 10_000 * 10 ** 18));
         node.executeAction(address(token), 10_000 * 10 ** 18); // Node only has 1000
     }
 
     function test_ExecuteAction_Cooldown() public {
         // Configure with cooldown
-        IForwardModule.ForwardParams memory params = IForwardModule.ForwardParams({
+        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
             recipient: recipient,
             requireSuccessfulReceipt: false,
             minAmount: 0
@@ -246,11 +248,13 @@ contract NodeTest is Test {
         bool success = node.executeAction(address(token), 500 * 10 ** 18);
         assertTrue(success);
 
+        uint256 executionTime = block.timestamp;
+
         // Mint more tokens to node
         token.mint(address(node), 1000 * 10 ** 18);
 
         // Second execution should fail (cooldown)
-        vm.expectRevert(Node.CooldownNotElapsed.selector);
+        vm.expectRevert(abi.encodeWithSelector(Errors.Node_CooldownNotElapsed.selector, executionTime, 3600, block.timestamp));
         node.executeAction(address(token), 500 * 10 ** 18);
 
         // Fast forward time
@@ -268,7 +272,7 @@ contract NodeTest is Test {
         assertEq(reason, "No action configured");
 
         // Configure token
-        IForwardModule.ForwardParams memory params = IForwardModule.ForwardParams({
+        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
             recipient: recipient,
             requireSuccessfulReceipt: false,
             minAmount: 0
@@ -292,7 +296,7 @@ contract NodeTest is Test {
 
     function test_DisableToken() public {
         // Configure token as enabled
-        IForwardModule.ForwardParams memory params = IForwardModule.ForwardParams({
+        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
             recipient: recipient,
             requireSuccessfulReceipt: false,
             minAmount: 0
@@ -321,7 +325,7 @@ contract NodeTest is Test {
 
         // Should not be able to execute
         uint256 amount = token.balanceOf(address(node));
-        vm.expectRevert(Node.TokenNotEnabled.selector);
+        vm.expectRevert(Errors.Node_TokenNotEnabled.selector);
         node.executeAction(address(token), amount);
 
         // Re-enable
@@ -342,7 +346,7 @@ contract NodeTest is Test {
 
     function test_ReconfigureToken() public {
         // Configure token
-        IForwardModule.ForwardParams memory params = IForwardModule.ForwardParams({
+        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
             recipient: recipient,
             requireSuccessfulReceipt: false,
             minAmount: 0
@@ -360,7 +364,7 @@ contract NodeTest is Test {
 
         // Reconfigure with new recipient
         address newRecipient = makeAddr("newRecipient");
-        IForwardModule.ForwardParams memory newParams = IForwardModule.ForwardParams({
+        DataTypes.ForwardParams memory newParams = DataTypes.ForwardParams({
             recipient: newRecipient,
             requireSuccessfulReceipt: false,
             minAmount: 0

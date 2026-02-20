@@ -1,19 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.29;
 
+import { DataTypes } from "../types/DataTypes.sol";
+
 /// @title IActionModule
 /// @notice Base interface for all action modules (Swap, Bridge, Forward)
 /// @dev Modules are called by Node contracts to execute pre-configured actions on tokens
 interface IActionModule {
-    /// @notice Result of an action execution
-    /// @dev Returned by execute() to provide execution details
-    struct ExecutionResult {
-        bool success;           // Whether the action completed successfully
-        uint256 amountOut;      // Amount of output token produced
-        address outputToken;    // Address of the output token (may differ from input)
-        bytes data;             // Additional result data (module-specific)
-        string failureReason;   // Error message if execution failed
-    }
 
     /// @notice Execute the configured action for a token
     /// @dev Should revert on failure or return ExecutionResult with success=false
@@ -25,7 +18,7 @@ interface IActionModule {
         address token,
         uint256 amount,
         bytes calldata params
-    ) external returns (ExecutionResult memory result);
+    ) external returns (DataTypes.ExecutionResult memory result);
 
     /// @notice Validate if execution is safe/possible without executing
     /// @dev View function to check if execute() would succeed
