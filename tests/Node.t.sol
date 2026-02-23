@@ -67,7 +67,6 @@ contract NodeTest is Test {
             "FORWARD",
             address(forwardModule),
             100 * 10 ** 18, // minBalance
-            0,              // cooldown
             encodedParams,
             true            // enabled
         );
@@ -93,7 +92,6 @@ contract NodeTest is Test {
             "FORWARD",
             address(forwardModule),
             100 * 10 ** 18,
-            0,
             encodedParams,
             true
         );
@@ -131,7 +129,6 @@ contract NodeTest is Test {
             "FORWARD",
             address(forwardModule),
             100 * 10 ** 18,
-            0,
             forwardModule.encodeParams(params),
             true
         );
@@ -159,7 +156,6 @@ contract NodeTest is Test {
             "FORWARD",
             address(forwardModule),
             100 * 10 ** 18, // minBalance
-            0,
             forwardModule.encodeParams(params),
             true
         );
@@ -182,7 +178,6 @@ contract NodeTest is Test {
             "FORWARD",
             address(forwardModule),
             100 * 10 ** 18, // minBalance
-            0,
             forwardModule.encodeParams(params),
             true
         );
@@ -216,7 +211,6 @@ contract NodeTest is Test {
             "FORWARD",
             address(forwardModule),
             100 * 10 ** 18,
-            0,
             forwardModule.encodeParams(params),
             true
         );
@@ -224,45 +218,6 @@ contract NodeTest is Test {
         // Try to execute more than balance
         vm.expectRevert(abi.encodeWithSelector(Errors.Node_InsufficientBalance.selector, 1000 * 10 ** 18, 10_000 * 10 ** 18));
         node.executeAction(address(token), 10_000 * 10 ** 18); // Node only has 1000
-    }
-
-    function test_ExecuteAction_Cooldown() public {
-        // Configure with cooldown
-        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
-            recipient: recipient,
-            requireSuccessfulReceipt: false,
-            minAmount: 0
-        });
-
-        node.configureToken(
-            address(token),
-            "FORWARD",
-            address(forwardModule),
-            100 * 10 ** 18,
-            3600, // 1 hour cooldown
-            forwardModule.encodeParams(params),
-            true
-        );
-
-        // First execution should succeed
-        bool success = node.executeAction(address(token), 500 * 10 ** 18);
-        assertTrue(success);
-
-        uint256 executionTime = block.timestamp;
-
-        // Mint more tokens to node
-        token.mint(address(node), 1000 * 10 ** 18);
-
-        // Second execution should fail (cooldown)
-        vm.expectRevert(abi.encodeWithSelector(Errors.Node_CooldownNotElapsed.selector, executionTime, 3600, block.timestamp));
-        node.executeAction(address(token), 500 * 10 ** 18);
-
-        // Fast forward time
-        vm.warp(block.timestamp + 3601);
-
-        // Now should succeed
-        success = node.executeAction(address(token), 500 * 10 ** 18);
-        assertTrue(success);
     }
 
     function test_PreviewExecution() public {
@@ -282,7 +237,6 @@ contract NodeTest is Test {
             "FORWARD",
             address(forwardModule),
             100 * 10 ** 18,
-            0,
             forwardModule.encodeParams(params),
             true
         );
@@ -311,7 +265,6 @@ contract NodeTest is Test {
             "FORWARD",
             address(forwardModule),
             100 * 10 ** 18,
-            0,
             forwardModule.encodeParams(params),
             false // disabled
         );
@@ -333,7 +286,6 @@ contract NodeTest is Test {
             "FORWARD",
             address(forwardModule),
             100 * 10 ** 18,
-            0,
             forwardModule.encodeParams(params),
             true
         );
@@ -344,7 +296,6 @@ contract NodeTest is Test {
             "FORWARD",
             address(forwardModule),
             100 * 10 ** 18,
-            0,
             forwardModule.encodeParams(params),
             false
         );
@@ -360,7 +311,6 @@ contract NodeTest is Test {
             "FORWARD",
             address(forwardModule),
             100 * 10 ** 18,
-            0,
             forwardModule.encodeParams(params),
             true
         );
@@ -383,7 +333,6 @@ contract NodeTest is Test {
             "FORWARD",
             address(forwardModule),
             100 * 10 ** 18,
-            0,
             forwardModule.encodeParams(params),
             true
         );
@@ -401,7 +350,6 @@ contract NodeTest is Test {
             "FORWARD",
             address(forwardModule),
             100 * 10 ** 18,
-            0,
             forwardModule.encodeParams(newParams),
             true
         );

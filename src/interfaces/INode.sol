@@ -150,12 +150,6 @@ interface INode {
     /// - Checked against `amount` parameter in executeAction()
     /// - Set to 0 to disable this check
     ///
-    /// **cooldownSeconds** (uint256):
-    /// - Minimum time between consecutive executions
-    /// - Prevents spam and encourages batching
-    /// - Counted from lastExecuted timestamp
-    /// - Set to 0 to disable cooldown
-    ///
     /// **moduleParams** (bytes):
     /// - ABI-encoded module-specific configuration
     /// - For ForwardModule: encodeParams(ForwardParams)
@@ -181,7 +175,6 @@ interface INode {
     ///     "FORWARD",
     ///     address(forwardModule),
     ///     1000e6,  // Min 1000 USDC
-    ///     3600,    // 1 hour cooldown
     ///     forwardModule.encodeParams(params),
     ///     true
     /// );
@@ -194,14 +187,12 @@ interface INode {
     ///     "FORWARD",
     ///     address(forwardModule),
     ///     1000e6,
-    ///     3600,
     ///     existingParams,
     ///     false  // ← Disabled
     /// );
     /// ```
     ///
     /// # Reconfiguration
-    /// - Resets lastExecuted to 0 (cooldown resets)
     /// - Overwrites all previous configuration
     /// - Emits TokenConfigured event
     ///
@@ -219,7 +210,6 @@ interface INode {
     /// @param actionType Type of action (e.g., "FORWARD", "SWAP", "BRIDGE")
     /// @param actionModule Address of the module contract
     /// @param minBalance Minimum balance threshold for execution
-    /// @param cooldownSeconds Cooldown period between executions
     /// @param moduleParams Module-specific parameters (ABI encoded)
     /// @param enabled Whether the token action should be enabled
     function configureToken(
@@ -227,7 +217,6 @@ interface INode {
         string calldata actionType,
         address actionModule,
         uint256 minBalance,
-        uint256 cooldownSeconds,
         bytes calldata moduleParams,
         bool enabled
     ) external;
@@ -287,7 +276,6 @@ interface INode {
     /// - Node_NoActionConfigured: No configuration exists
     /// - Node_ZeroAmount: Amount is zero
     /// - Node_BelowMinimumBalance: Amount < minBalance
-    /// - Node_CooldownNotElapsed: Cooldown period not finished
     /// - Node_InsufficientBalance: Node balance < amount
     ///
     /// Module execution failures return false instead of reverting.
@@ -306,7 +294,6 @@ interface INode {
     /// Requirements:
     /// - Token must be configured and enabled
     /// - amount must be > 0 and >= minBalance
-    /// - Cooldown must have elapsed since lastExecuted
     /// - Node must have >= amount token balance
     ///
     /// Emits:
@@ -338,8 +325,6 @@ interface INode {
     /// - actionModule (address): The module contract address
     /// - enabled (bool): Whether execution is allowed
     /// - minBalance (uint256): Minimum balance threshold
-    /// - cooldownSeconds (uint256): Cooldown period
-    /// - lastExecuted (uint256): Timestamp of last execution
     /// - moduleParams (bytes): ABI-encoded module parameters
     ///
     /// # Unconfigured Tokens
@@ -389,8 +374,7 @@ interface INode {
     /// - {Node_NoActionConfigured} if no action configured for token
     /// - {Node_TokenNotEnabled} if token action is disabled
     /// - {Node_InvalidModule} if module is not a deployed contract
-    /// - {Node_CooldownNotElapsed} if cooldown period has not elapsed
-    /// - {Node_InsufficientBalance} if node balance is insufficient
+    /// - {Node_ZeroAmount} if balance is zero
     /// - {Node_BelowMinimumBalance} if balance is below minimum threshold
     ///
     /// @param token Token address to preview

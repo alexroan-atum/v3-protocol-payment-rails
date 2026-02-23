@@ -87,20 +87,6 @@ contract Node is INode, NodeState, Ownable, ReentrancyGuard {
             revert Errors.Node_InvalidModule();
         }
 
-        // Check: Cooldown elapsed (with overflow protection)
-        if (config.lastExecuted != 0) {
-            unchecked {
-                uint256 cooldownEnd = config.lastExecuted + config.cooldownSeconds;
-                // Overflow check (extremely unlikely but defensive)
-                if (cooldownEnd < config.lastExecuted) {
-                    revert Errors.Node_CooldownNotElapsed(config.lastExecuted, config.cooldownSeconds, block.timestamp);
-                }
-                if (block.timestamp < cooldownEnd) {
-                    revert Errors.Node_CooldownNotElapsed(config.lastExecuted, config.cooldownSeconds, block.timestamp);
-                }
-            }
-        }
-
         // Check: Get token balance
         // Note: Assumes token is trusted ERC20 implementation
         // Malicious tokens could return fake balance or revert, but this is acceptable for preview
@@ -151,7 +137,6 @@ contract Node is INode, NodeState, Ownable, ReentrancyGuard {
     /// @param actionType The action identifier string (e.g., "FORWARD", "SWAP", "BRIDGE")
     /// @param actionModule The address of the action module contract
     /// @param minBalance The minimum balance threshold required for execution
-    /// @param cooldownSeconds The cooldown period in seconds between consecutive executions
     /// @param moduleParams ABI-encoded parameters specific to the action module
     /// @param enabled Whether the token action should be immediately enabled
     function configureToken(
@@ -159,7 +144,6 @@ contract Node is INode, NodeState, Ownable, ReentrancyGuard {
         string calldata actionType,
         address actionModule,
         uint256 minBalance,
-        uint256 cooldownSeconds,
         bytes calldata moduleParams,
         bool enabled
     ) external onlyOwner {
@@ -199,8 +183,6 @@ contract Node is INode, NodeState, Ownable, ReentrancyGuard {
             actionModule: actionModule,
             enabled: enabled,
             minBalance: minBalance,
-            cooldownSeconds: cooldownSeconds,
-            lastExecuted: 0, // Reset execution timestamp on reconfiguration
             moduleParams: moduleParams
         });
 
@@ -252,21 +234,11 @@ contract Node is INode, NodeState, Ownable, ReentrancyGuard {
             revert Errors.Node_BelowMinimumBalance(amount, config.minBalance);
         }
 
-        // Check: Cooldown elapsed (skip if never executed before)
-        if (config.lastExecuted != 0) {
-            if (block.timestamp < config.lastExecuted + config.cooldownSeconds) {
-                revert Errors.Node_CooldownNotElapsed(config.lastExecuted, config.cooldownSeconds, block.timestamp);
-            }
-        }
-
         // Check: Sufficient balance
         uint256 balance = IERC20(token).balanceOf(address(this));
         if (balance < amount) {
             revert Errors.Node_InsufficientBalance(balance, amount);
         }
-
-        // Effect: Update last executed timestamp
-        _tokenConfigs[token].lastExecuted = block.timestamp;
 
         // Interaction: Execute action via module
         return _executeActionInternal(token, amount, config);

@@ -38,12 +38,6 @@ library Errors {
     /// @dev This occurs when actionType is empty string
     error Node_NoActionConfigured();
 
-    /// @notice Thrown when attempting execution before cooldown period has elapsed
-    /// @param lastExecuted Timestamp of last execution
-    /// @param cooldownSeconds Required cooldown period
-    /// @param currentTime Current block timestamp
-    error Node_CooldownNotElapsed(uint256 lastExecuted, uint256 cooldownSeconds, uint256 currentTime);
-
     /// @notice Thrown when execution amount is below the configured minimum balance threshold
     /// @param amount Attempted execution amount
     /// @param minBalance Required minimum balance

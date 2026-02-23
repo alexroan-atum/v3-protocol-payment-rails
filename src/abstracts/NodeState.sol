@@ -44,25 +44,9 @@ abstract contract NodeState {
         return _isTokenConfigured(token) && _tokenConfigs[token].enabled;
     }
 
-    /// @notice Gets the timestamp of the last execution for a token
-    /// @dev Returns 0 if never executed
-    /// @param token The token address to query
-    /// @return Timestamp of last execution, or 0 if never executed
-    function _getLastExecuted(address token) internal view returns (uint256) {
-        return _tokenConfigs[token].lastExecuted;
-    }
-
     /*//////////////////////////////////////////////////////////////////////////
                             INTERNAL STATE MODIFIERS
     //////////////////////////////////////////////////////////////////////////*/
-
-    /// @notice Updates the last execution timestamp for a token
-    /// @dev Should be called after successful action execution
-    /// @param token The token address to update
-    /// @param timestamp The execution timestamp (typically block.timestamp)
-    function _setLastExecuted(address token, uint256 timestamp) internal {
-        _tokenConfigs[token].lastExecuted = timestamp;
-    }
 
     /// @notice Stores a complete token configuration
     /// @dev Overwrites any existing configuration for the token

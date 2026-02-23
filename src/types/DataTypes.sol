@@ -15,16 +15,12 @@ library DataTypes {
     /// @param actionModule Address of the action module contract that will handle execution
     /// @param enabled Master switch to enable/disable this token's action
     /// @param minBalance Minimum balance threshold required to trigger execution
-    /// @param cooldownSeconds Minimum time interval between consecutive executions
-    /// @param lastExecuted Timestamp of the most recent execution (0 if never executed)
     /// @param moduleParams ABI-encoded module-specific parameters
     struct TokenConfig {
         string actionType;
         address actionModule;
         bool enabled;
         uint256 minBalance;
-        uint256 cooldownSeconds;
-        uint256 lastExecuted;
         bytes moduleParams;
     }
 
