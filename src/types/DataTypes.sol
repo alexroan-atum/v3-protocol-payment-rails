@@ -86,6 +86,55 @@ library DataTypes {
     }
 
     /*//////////////////////////////////////////////////////////////////////////
+                        ORDER BOOK SWAP MODULE TYPES
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @notice Status of a CowSwap order
+    enum OrderStatus {
+        PENDING,    // Order submitted, waiting for solver settlement
+        SETTLED,    // Solver settled the order, output tokens claimed back to Node
+        CANCELLED,  // Order cancelled by Node owner before settlement
+        EXPIRED     // Order passed validTo without settlement
+    }
+
+    /// @notice Parameters for configuring a CowSwap order-book swap
+    /// @dev Stored in Node's moduleParams and decoded by OrderBookSwapModule
+    /// @param targetToken Token to receive (buy token)
+    /// @param minBuyAmount Absolute floor on output — order rejected if CowSwap cannot
+    ///        meet this. Not a per-execution slippage; set conservatively.
+    /// @param validityDuration Seconds from block.timestamp the order remains valid.
+    ///        CowSwap solvers will not settle an expired order. Typical: 1800–3600.
+    /// @param appData CowSwap app data hash. Use keccak256("receivables-node-v1")
+    ///        or a custom hash registered via the CowSwap AppData API.
+    struct OrderSwapParams {
+        address targetToken;
+        uint256 minBuyAmount;
+        uint32  validityDuration;
+        bytes32 appData;
+    }
+
+    /// @notice On-chain metadata stored per pending CowSwap order
+    /// @dev Keyed by orderId (= GPv2Order digest) in OrderBookSwapModule._pendingOrders
+    /// @param node Node contract that initiated the order via execute()
+    /// @param sellToken Token sold (input token)
+    /// @param buyToken Token bought (output token)
+    /// @param sellAmount Exact sell amount locked in the module
+    /// @param minBuyAmount Minimum acceptable buy amount
+    /// @param createdAt Block timestamp when execute() was called
+    /// @param validityDuration Order validity window in seconds
+    /// @param status Current lifecycle status
+    struct OrderMetadata {
+        address     node;
+        address     sellToken;
+        address     buyToken;
+        uint256     sellAmount;
+        uint256     minBuyAmount;
+        uint256     createdAt;
+        uint32      validityDuration;
+        OrderStatus status;
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
                             BRIDGE MODULE TYPES
     //////////////////////////////////////////////////////////////////////////*/
 

@@ -109,6 +109,46 @@ library Errors {
     error SwapModule_StalePriceData(uint256 lastUpdate, uint256 currentTime);
 
     /*//////////////////////////////////////////////////////////////////////////
+                        ORDER BOOK SWAP MODULE ERRORS
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @notice Thrown when order target (buy) token is zero address
+    error OrderBookSwapModule_ZeroTargetToken();
+
+    /// @notice Thrown when minBuyAmount is zero — would accept any output, including dust
+    error OrderBookSwapModule_ZeroMinBuyAmount();
+
+    /// @notice Thrown when validityDuration is zero — order would expire immediately
+    error OrderBookSwapModule_ZeroValidityDuration();
+
+    /// @notice Thrown when sell and buy token are identical
+    /// @param token The token address provided for both sides
+    error OrderBookSwapModule_SameToken(address token);
+
+    /// @notice Thrown when trying to claim an order that has not yet been settled by a solver
+    /// @param orderId The order digest
+    error OrderBookSwapModule_NotSettled(bytes32 orderId);
+
+    /// @notice Thrown when attempting to act on an orderId that was never created
+    /// @param orderId The unknown order digest
+    error OrderBookSwapModule_UnknownOrder(bytes32 orderId);
+
+    /// @notice Thrown when an operation requires PENDING status but order is in another state
+    /// @param orderId Current order id
+    /// @param status  Actual status of the order
+    error OrderBookSwapModule_OrderNotPending(bytes32 orderId, uint8 status);
+
+    /// @notice Thrown when cancelOrder is called by an address that is not the module owner
+    /// @param caller   Address that attempted cancellation
+    /// @param owner    Module owner address (set at construction)
+    error OrderBookSwapModule_NotOwner(address caller, address owner);
+
+    /// @notice Thrown when settled buy token balance is below the configured minBuyAmount
+    /// @param received  Balance of buyToken in module after settlement
+    /// @param minimum   Configured minBuyAmount for the order
+    error OrderBookSwapModule_InsufficientSettlement(uint256 received, uint256 minimum);
+
+    /*//////////////////////////////////////////////////////////////////////////
                             BRIDGE MODULE ERRORS
     //////////////////////////////////////////////////////////////////////////*/
 
