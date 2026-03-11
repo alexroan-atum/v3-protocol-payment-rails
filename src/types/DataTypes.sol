@@ -91,10 +91,9 @@ library DataTypes {
 
     /// @notice Status of a CowSwap order
     enum OrderStatus {
-        PENDING,    // Order submitted, waiting for solver settlement
-        SETTLED,    // Solver settled the order, output tokens claimed back to Node
-        CANCELLED,  // Order cancelled by Node owner before settlement
-        EXPIRED     // Order passed validTo without settlement
+        PENDING,    // Active — sellToken locked in module, waiting for CowSwap solver
+        SETTLED,    // CowSwap filled the order; confirmed on-chain via markFilled()
+        CANCELLED   // Owner cancelled before fill; sellToken returned to Node
     }
 
     /// @notice Parameters for configuring a CowSwap order-book swap
@@ -113,24 +112,22 @@ library DataTypes {
         bytes32 appData;
     }
 
-    /// @notice On-chain metadata stored per pending CowSwap order
+    /// @notice On-chain metadata stored per CowSwap order
     /// @dev Keyed by orderId (= GPv2Order digest) in OrderBookSwapModule._pendingOrders
-    /// @param node Node contract that initiated the order via execute()
-    /// @param sellToken Token sold (input token)
-    /// @param buyToken Token bought (output token)
-    /// @param sellAmount Exact sell amount locked in the module
-    /// @param minBuyAmount Minimum acceptable buy amount
-    /// @param createdAt Block timestamp when execute() was called
-    /// @param validityDuration Order validity window in seconds
-    /// @param status Current lifecycle status
+    /// @param node         Node contract that initiated the order via execute()
+    /// @param sellToken    Token sold (input token); returned on cancel
+    /// @param buyToken     Token bought (output token); goes directly to Node via receiver=node
+    /// @param sellAmount   Exact sell amount locked in the module; used to cap cancelOrder return
+    ///                     and to verify filledAmounts in markFilled()
+    /// @param validTo      Unix timestamp after which the order has expired (stored directly to
+    ///                     avoid uint32 recomputation overflow)
+    /// @param status       Current lifecycle status
     struct OrderMetadata {
         address     node;
         address     sellToken;
         address     buyToken;
         uint256     sellAmount;
-        uint256     minBuyAmount;
-        uint256     createdAt;
-        uint32      validityDuration;
+        uint32      validTo;
         OrderStatus status;
     }
 
