@@ -109,35 +109,32 @@ library Errors {
     error SwapModule_StalePriceData(uint256 lastUpdate, uint256 currentTime);
 
     /*//////////////////////////////////////////////////////////////////////////
-                        ORDER BOOK SWAP MODULE ERRORS
+                            COWSWAP MODULE ERRORS
     //////////////////////////////////////////////////////////////////////////*/
 
+    /// @notice Thrown when the CowSwap GPv2Settlement address is the zero address
+    error CowSwapModule_ZeroCowSettlement();
+
     /// @notice Thrown when order target (buy) token is zero address
-    error OrderBookSwapModule_ZeroTargetToken();
+    error CowSwapModule_ZeroTargetToken();
 
     /// @notice Thrown when attempting to act on an orderId that was never created
     /// @param orderId The unknown order digest
-    error OrderBookSwapModule_UnknownOrder(bytes32 orderId);
+    error CowSwapModule_UnknownOrder(bytes32 orderId);
 
-    /// @notice Thrown when an operation requires PENDING status but order is in another state
-    /// @param orderId Current order id
-    /// @param status  Actual status of the order (1=SETTLED, 2=CANCELLED)
-    error OrderBookSwapModule_OrderNotPending(bytes32 orderId, uint8 status);
+    /// @notice Thrown when cancelOrder is called on an order that is already cancelled
+    /// @param orderId The order digest
+    error CowSwapModule_OrderAlreadyCancelled(bytes32 orderId);
 
     /// @notice Thrown when cancelOrder is called by an address that is not the module owner
     /// @param caller   Address that attempted cancellation
     /// @param owner    Module owner address (set at construction via Ownable2Step)
-    error OrderBookSwapModule_NotOwner(address caller, address owner);
+    error CowSwapModule_NotOwner(address caller, address owner);
 
     /// @notice Thrown when cancelOrder is called on an order already filled by a CowSwap solver
     /// @dev Verified via GPv2Settlement.filledAmounts(orderId) >= meta.sellAmount
     /// @param orderId The order digest
-    error OrderBookSwapModule_OrderAlreadyFilled(bytes32 orderId);
-
-    /// @notice Thrown when markFilled is called but GPv2Settlement has not filled the order yet
-    /// @dev filledAmounts(orderId) < meta.sellAmount at time of call
-    /// @param orderId The order digest
-    error OrderBookSwapModule_NotFilled(bytes32 orderId);
+    error CowSwapModule_OrderAlreadyFilled(bytes32 orderId);
 
     /*//////////////////////////////////////////////////////////////////////////
                             BRIDGE MODULE ERRORS

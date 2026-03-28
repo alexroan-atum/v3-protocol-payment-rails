@@ -86,18 +86,11 @@ library DataTypes {
     }
 
     /*//////////////////////////////////////////////////////////////////////////
-                        ORDER BOOK SWAP MODULE TYPES
+                            COWSWAP MODULE TYPES
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Status of a CowSwap order
-    enum OrderStatus {
-        PENDING,    // Active — sellToken locked in module, waiting for CowSwap solver
-        SETTLED,    // CowSwap filled the order; confirmed on-chain via markFilled()
-        CANCELLED   // Owner cancelled before fill; sellToken returned to Node
-    }
-
     /// @notice Parameters for configuring a CowSwap order-book swap
-    /// @dev Stored in Node's moduleParams and decoded by OrderBookSwapModule
+    /// @dev Stored in Node's moduleParams and decoded by CowSwapModule
     /// @param targetToken Token to receive (buy token)
     /// @param minBuyAmount Absolute floor on output — order rejected if CowSwap cannot
     ///        meet this. Not a per-execution slippage; set conservatively.
@@ -105,7 +98,7 @@ library DataTypes {
     ///        CowSwap solvers will not settle an expired order. Typical: 1800–3600.
     /// @param appData CowSwap app data hash. Use keccak256("receivables-node-v1")
     ///        or a custom hash registered via the CowSwap AppData API.
-    struct OrderSwapParams {
+    struct CowSwapParams {
         address targetToken;
         uint256 minBuyAmount;
         uint32  validityDuration;
@@ -113,22 +106,22 @@ library DataTypes {
     }
 
     /// @notice On-chain metadata stored per CowSwap order
-    /// @dev Keyed by orderId (= GPv2Order digest) in OrderBookSwapModule._pendingOrders
+    /// @dev Keyed by orderId (= GPv2Order digest) in CowSwapModule._orders
     /// @param node         Node contract that initiated the order via execute()
     /// @param sellToken    Token sold (input token); returned on cancel
     /// @param buyToken     Token bought (output token); goes directly to Node via receiver=node
     /// @param sellAmount   Exact sell amount locked in the module; used to cap cancelOrder return
-    ///                     and to verify filledAmounts in markFilled()
     /// @param validTo      Unix timestamp after which the order has expired (stored directly to
     ///                     avoid uint32 recomputation overflow)
-    /// @param status       Current lifecycle status
-    struct OrderMetadata {
-        address     node;
-        address     sellToken;
-        address     buyToken;
-        uint256     sellAmount;
-        uint32      validTo;
-        OrderStatus status;
+    /// @param cancelled    True if the owner explicitly cancelled this order via cancelOrder().
+    ///                     SETTLED state is derived live from GPv2Settlement.filledAmounts().
+    struct CowOrderMetadata {
+        address node;
+        address sellToken;
+        address buyToken;
+        uint256 sellAmount;
+        uint32  validTo;
+        bool    cancelled;
     }
 
     /*//////////////////////////////////////////////////////////////////////////
