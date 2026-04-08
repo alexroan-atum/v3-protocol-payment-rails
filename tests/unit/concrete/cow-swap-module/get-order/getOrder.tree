@@ -1,0 +1,10 @@
+CowSwapModule_GetOrder
+├── when order id is unknown
+│   └── it should return empty metadata with zero node address
+└── given an existing order
+    ├── it should return correct node address
+    ├── it should return correct sell token
+    ├── it should return correct buy token
+    ├── it should return correct sell amount
+    ├── it should return correct min buy amount
+    └── it should return correct status

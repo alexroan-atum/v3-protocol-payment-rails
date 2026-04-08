@@ -1,0 +1,13 @@
+CowSwapModule_Validate
+├── when target token is zero address
+│   └── it should return false with zero target token reason
+├── when target token equals sell token
+│   └── it should return false with same sell and buy token reason
+├── when min buy amount is zero
+│   └── it should return false with zero minimum buy amount reason
+├── when validity duration is zero
+│   └── it should return false with zero validity duration reason
+├── when caller has insufficient balance
+│   └── it should return false with insufficient balance reason
+└── when all parameters are valid
+    └── it should return true with empty reason

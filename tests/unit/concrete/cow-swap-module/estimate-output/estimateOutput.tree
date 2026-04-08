@@ -1,0 +1,4 @@
+CowSwapModule_EstimateOutput
+├── it should return minBuyAmount as estimated output
+├── it should return targetToken as output token
+└── it should ignore the sell amount input

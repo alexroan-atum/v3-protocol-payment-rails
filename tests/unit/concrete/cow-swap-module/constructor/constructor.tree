@@ -1,0 +1,6 @@
+CowSwapModule_Constructor
+├── when cow settlement is zero address
+│   └── it should revert with ZeroTargetToken
+└── when cow settlement is valid
+    ├── it should store cow settlement as immutable
+    └── it should cache cow domain separator from settlement contract
