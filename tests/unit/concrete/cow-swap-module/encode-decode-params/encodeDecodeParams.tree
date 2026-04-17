@@ -1,0 +1,10 @@
+CowSwapModule_EncodeDecodeParams
+├── when encoding params
+│   └── it should produce non-empty bytes
+├── when decoding encoded params
+│   ├── it should decode targetToken correctly
+│   ├── it should decode minBuyAmount correctly
+│   ├── it should decode validityDuration correctly
+│   └── it should decode appData correctly
+└── given a round-trip encode-decode cycle
+    └── it should reconstruct identical params struct

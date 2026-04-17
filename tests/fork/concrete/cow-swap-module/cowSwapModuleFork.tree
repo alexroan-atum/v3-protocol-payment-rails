@@ -1,0 +1,133 @@
+CowSwapModule_Fork
+├── constructor
+│   ├── it should set cowSettlement to the real GPv2Settlement address
+│   ├── it should cache the real domain separator from GPv2Settlement
+│   └── it should set owner correctly
+├── execute
+│   ├── given a valid order with real USDC sell token and WETH buy token
+│   │   ├── it should transfer USDC from node to module
+│   │   ├── it should approve GPv2Settlement for max uint256
+│   │   ├── it should store correct order metadata
+│   │   ├── it should emit OrderCreated event
+│   │   ├── it should return success with amountOut zero
+│   │   └── it should return encoded orderId in data
+│   ├── given a valid order with real DAI sell token and USDC buy token
+│   │   ├── it should transfer DAI from node to module
+│   │   └── it should store correct order metadata
+│   └── given multiple concurrent orders with same sell token
+│       ├── it should create independent orders with different orderIds
+│       └── it should set max approval to GPv2Settlement only once
+├── validate
+│   ├── given valid parameters with real USDC and WETH
+│   │   └── it should return true
+│   ├── given zero sell amount
+│   │   └── it should return false with reason
+│   ├── given zero target token
+│   │   └── it should return false with reason
+│   ├── given same sell and buy token
+│   │   └── it should return false with reason
+│   └── given zero validity duration
+│       └── it should return false with reason
+├── isValidSignature
+│   ├── given a pending order on real settlement
+│   │   ├── it should return EIP1271 magic value for valid hash and signature
+│   │   └── it should return failure value for mismatched hash
+│   ├── given order has expired
+│   │   └── it should return failure value
+│   ├── given order is cancelled
+│   │   └── it should return failure value
+│   └── given unknown or malformed inputs
+│       ├── it should return failure for unknown orderId
+│       ├── it should return failure for wrong signature length
+│       └── it should never revert on any input
+├── cancelOrder
+│   ├── given a pending order with sell tokens in module
+│   │   ├── it should return sell tokens to the node
+│   │   ├── it should mark order as cancelled
+│   │   └── it should emit OrderCancelled event
+│   ├── given multiple concurrent orders and one is cancelled
+│   │   ├── it should only return the cancelled order sell amount
+│   │   └── it should not affect the other pending order
+│   ├── when caller is not owner
+│   │   └── it should revert with NotOwner
+│   ├── when orderId is unknown
+│   │   └── it should revert with UnknownOrder
+│   └── when order is already cancelled
+│       └── it should revert with OrderAlreadyCancelled
+├── estimateOutput
+│   └── given valid params with real token addresses
+│       ├── it should return minBuyAmount as estimatedOutput
+│       └── it should return targetToken as outputToken
+├── orderDigestCompatibility
+│   ├── it should compute orderId that matches GPv2 EIP-712 digest on real domain separator
+│   ├── it should produce different orderIds for different appData
+│   ├── it should have non-zero domain separator
+│   └── it should match settlement domain separator
+├── ownershipTransfer
+│   ├── given owner initiates transfer via transferOwnership
+│   │   ├── it should set pendingOwner
+│   │   ├── it should not change owner until accepted
+│   │   └── given new owner accepts via acceptOwnership
+│   │       ├── it should update owner to new address
+│   │       └── it should allow new owner to cancel orders
+│   └── given non-owner calls transferOwnership
+│       └── it should revert
+├── lifecycle_HappyPath
+│   ├── given Node configures USDC with CowSwapModule and executes
+│   │   ├── it should create order and module holds sell tokens
+│   │   ├── isValidSignature should return magic value
+│   │   ├── given solver pulls sell tokens via settlement approval
+│   │   │   ├── module should hold zero sell tokens
+│   │   │   └── given filledAmount reports full fill
+│   │   │       ├── isValidSignature should return failure
+│   │   │       └── cancel should revert with OrderAlreadyFilled
+│   │   └── given solver delivers buy tokens directly to node
+│   │       └── node should hold buy tokens and module should hold zero
+│   └── given DAI→USDC order through Node
+│       └── it should complete the same lifecycle correctly
+├── lifecycle_CancelPath
+│   ├── given order is created through Node then cancelled
+│   │   ├── it should return all sell tokens to Node
+│   │   ├── module should hold zero sell tokens
+│   │   └── isValidSignature should return failure
+│   └── given order is cancelled then re-executed with new appData
+│       ├── it should create a new order successfully
+│       ├── new order should have a different orderId
+│       └── module should hold exactly the new sell amount
+├── lifecycle_ExpiryPath
+│   ├── given order expires without being filled
+│   │   ├── isValidSignature should return failure after expiry
+│   │   └── owner should be able to cancel and recover sell tokens
+│   └── given order expires and owner does not cancel
+│       └── sell tokens should remain in module until cancel
+├── lifecycle_ConcurrentMultiToken
+│   ├── given USDC→WETH and DAI→USDC orders created concurrently through Node
+│   │   ├── both orders should be independently pending
+│   │   ├── cancelling one should not affect the other
+│   │   └── each token balance should be tracked independently
+│   └── given three concurrent USDC orders with different appData
+│       ├── all three should have unique orderIds
+│       └── cancelling middle order should leave others unaffected
+├── endToEnd_NodeIntegration
+│   ├── given Node configures USDC with CowSwapModule
+│   │   ├── it should accept CowSwapModule as a valid action module
+│   │   ├── it should execute action and create a CowSwap order
+│   │   ├── it should return true from executeAction
+│   │   └── it should leave module holding the sell tokens
+│   └── given order is cancelled after Node execution
+│       ├── it should return sell tokens to the Node
+│       └── it should leave module with zero sell token balance
+├── endToEnd_SimulatedSettlement
+│   ├── given a solver simulates pulling sell tokens and delivering buy tokens
+│   │   ├── it should leave module with zero sell token balance
+│   │   ├── it should deliver buy tokens directly to the node
+│   │   └── isValidSignature should return failure after fill is recorded
+│   └── given cancel is attempted on a simulated filled order
+│       └── it should revert with OrderAlreadyFilled
+└── security
+    ├── it should read filledAmount from real settlement without reverting
+    ├── isValidSignature should never revert on real settlement with any input
+    ├── GPv2Settlement should be able to pull tokens via max approval
+    ├── cancelOrder should cap return at sellAmount even if module holds more
+    ├── duplicate order in same block should return failed result
+    └── domain separator should be cached correctly and match settlement

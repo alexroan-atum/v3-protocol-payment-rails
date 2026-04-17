@@ -1,0 +1,15 @@
+CowSwapModule_IsValidSignature
+├── when signature length is not 32 bytes
+│   └── it should return EIP1271 failure value
+├── when decoded orderId does not match hash
+│   └── it should return EIP1271 failure value
+├── when order is unknown
+│   └── it should return EIP1271 failure value
+├── given order status is settled
+│   └── it should return EIP1271 failure value
+├── given order status is cancelled
+│   └── it should return EIP1271 failure value
+├── when order has expired
+│   └── it should return EIP1271 failure value
+└── given a valid pending non-expired order with matching hash
+    └── it should return EIP1271 magic value

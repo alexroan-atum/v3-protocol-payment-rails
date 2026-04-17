@@ -1,0 +1,44 @@
+CowSwapModule_Execute
+├── when amount is zero
+│   ├── it should return failed result with zero sell amount reason
+│   └── it should not create an order or lock tokens
+├── when target token is zero address
+│   └── it should return failed result with zero target token reason
+├── when target token equals sell token
+│   └── it should return failed result with same sell and buy token reason
+├── when min buy amount is zero
+│   └── it should return failed result with zero minimum buy amount reason
+├── when validity duration is zero
+│   └── it should return failed result with zero validity duration reason
+├── when validity duration overflows uint32
+│   ├── it should return failed result with validity duration overflow reason
+│   └── it should not lock any tokens
+├── when order id collides with existing order
+│   ├── it should return failed result with order id collision reason
+│   ├── it should not overwrite existing order metadata
+│   └── it should not lock a second set of tokens
+├── when a different app data produces a different order id
+│   ├── it should succeed
+│   └── it should create two independent orders with distinct order ids
+├── when node has insufficient sell token balance
+│   └── it should return failed result with insufficient balance reason
+├── when token transfer fails
+│   └── it should return failed result with token transfer failed reason
+├── when concurrent orders share the same sell token
+│   ├── it should use accumulated approval after second order
+│   ├── it should preserve second order approval after first order is mark filled
+│   └── it should preserve second order approval after first order is cancelled
+└── when all parameters are valid
+    ├── it should transfer sell token from node to module
+    ├── it should approve cow settlement for sell amount
+    ├── it should store order metadata with pending status
+    ├── it should store correct node address in metadata
+    ├── it should store correct sell token in metadata
+    ├── it should store correct buy token in metadata
+    ├── it should store correct sell amount in metadata
+    ├── it should store correct min buy amount in metadata
+    ├── it should emit OrderCreated event
+    ├── it should return success equals true
+    ├── it should return amountOut equals zero
+    ├── it should return outputToken equals buy token
+    └── it should return data as encoded order id
