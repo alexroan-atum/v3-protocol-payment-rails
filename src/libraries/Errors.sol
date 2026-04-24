@@ -137,31 +137,23 @@ library Errors {
     error CowSwapModule_OrderAlreadyFilled(bytes32 orderId);
 
     /*//////////////////////////////////////////////////////////////////////////
-                            BRIDGE MODULE ERRORS
+                        CCTP BRIDGE MODULE ERRORS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Thrown when destination address is zero
-    error BridgeModule_ZeroDestinationAddress();
+    /// @notice Thrown when the TokenMessengerV2 address is the zero address in the constructor.
+    error CCTPBridgeModule_ZeroTokenMessenger();
 
-    /// @notice Thrown when bridge adapter address is zero
-    error BridgeModule_ZeroAdapter();
+    /// @notice Thrown when the USDC address is the zero address in the constructor.
+    error CCTPBridgeModule_ZeroUSDC();
 
-    /// @notice Thrown when destination chain ID is invalid
-    /// @param chainId Invalid chain ID provided
-    error BridgeModule_InvalidChainId(uint256 chainId);
+    /// @notice Thrown when the mint recipient is `bytes32(0)` in `setDomainConfig()`.
+    error CCTPBridgeModule_ZeroMintRecipient();
 
-    /// @notice Thrown when bridge health score is below minimum threshold
-    /// @param healthScore Current bridge health score
-    /// @param minHealth Minimum required health score
-    error BridgeModule_UnhealthyBridge(uint8 healthScore, uint256 minHealth);
+    /// @notice Thrown when `minFinalityThreshold` is not 1000 or 2000.
+    /// @param threshold The invalid finality threshold value.
+    error CCTPBridgeModule_InvalidFinalityThreshold(uint32 threshold);
 
-    /// @notice Thrown when bridge has insufficient liquidity
-    /// @param available Available bridge liquidity
-    /// @param required Required liquidity for transfer
-    error BridgeModule_InsufficientLiquidity(uint256 available, uint256 required);
-
-    /// @notice Thrown when bridge execution fails
-    /// @param adapter Bridge adapter address
-    /// @param reason Failure reason
-    error BridgeModule_BridgeFailed(address adapter, string reason);
+    /// @notice Thrown when attempting to remove a domain config that does not exist.
+    /// @param destinationDomain The CCTP domain ID that is not configured.
+    error CCTPBridgeModule_DomainNotConfigured(uint32 destinationDomain);
 }
