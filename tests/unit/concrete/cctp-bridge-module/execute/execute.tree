@@ -1,0 +1,31 @@
+CCTPBridgeModule_Execute
+├── when params length is less than 32 bytes
+│   └── it should return failed result with "Invalid params encoding"
+├── when amount is zero
+│   └── it should return failed result with "Zero bridge amount"
+├── when token is not USDC
+│   └── it should return failed result with "Only USDC supported"
+├── when destination domain is not configured
+│   └── it should return failed result with "Domain not configured"
+├── when maxFee is greater than or equal to amount
+│   └── it should return failed result with "Max fee exceeds amount"
+├── when caller has insufficient balance
+│   └── it should return failed result with "Insufficient balance"
+├── when token transfer from caller fails
+│   └── it should return failed result with "Token transfer failed"
+├── given domain configured without hook data
+│   ├── when tokenMessenger reverts
+│   │   └── it should revert (propagate CCTP revert)
+│   └── when depositForBurn succeeds
+│       ├── it should call depositForBurn on tokenMessenger with correct arguments
+│       ├── it should revoke tokenMessenger approval after burn
+│       ├── it should emit BridgeInitiated
+│       └── it should return success result with (amount - maxFee) as amountOut
+├── given domain configured with hook data
+│   └── when depositForBurnWithHook succeeds
+│       ├── it should call depositForBurnWithHook on tokenMessenger
+│       ├── it should emit BridgeInitiated with hookData
+│       └── it should return success result
+└── given domain configured with standard finality
+    └── when bridge succeeds
+        └── it should pass minFinalityThreshold 2000 to tokenMessenger

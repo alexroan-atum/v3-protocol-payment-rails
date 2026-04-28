@@ -1,0 +1,9 @@
+CCTPBridgeModule_EstimateOutput
+├── when params length is less than 32 bytes
+│   └── it should return (0, token)
+├── when domain is not configured
+│   └── it should return (0, token)
+├── when maxFee is greater than or equal to amount
+│   └── it should return (0, token)
+└── when all checks pass
+    └── it should return (amount - maxFee, token)
