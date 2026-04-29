@@ -1,0 +1,15 @@
+CCTPBridgeModule_Validate
+├── when params length is less than 32 bytes
+│   └── it should return (false, "Invalid params encoding")
+├── when amount is zero
+│   └── it should return (false, "Zero bridge amount")
+├── when token is not USDC
+│   └── it should return (false, "Only USDC supported")
+├── when destination domain is not configured
+│   └── it should return (false, "Domain not configured")
+├── when maxFee is greater than or equal to amount
+│   └── it should return (false, "Max fee exceeds amount")
+├── when caller has insufficient balance
+│   └── it should return (false, "Insufficient balance")
+└── when all checks pass
+    └── it should return (true, "")

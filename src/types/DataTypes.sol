@@ -125,40 +125,39 @@ library DataTypes {
     }
 
     /*//////////////////////////////////////////////////////////////////////////
-                            BRIDGE MODULE TYPES
+                        CCTP BRIDGE MODULE TYPES
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Bridge configuration parameters
-    /// @dev Used by BridgeModule to configure cross-chain bridging
-    /// @param destinationChainId Target chain ID
-    /// @param destinationAddress Recipient on destination chain (often another Node)
-    /// @param bridgeAdapter Bridge protocol adapter address (CCTP, LayerZero, etc.)
-    /// @param bridgeData Bridge-specific data (varies by adapter)
-    /// @param healthOracle Oracle to check bridge health (address(0) to skip check)
-    /// @param minBridgeHealth Minimum health score required to execute (0-100)
-    /// @param requireDestinationConfirmation Whether to wait for cross-chain confirmation
-    struct BridgeParams {
-        uint256 destinationChainId;
-        address destinationAddress;
-        address bridgeAdapter;
-        bytes bridgeData;
-        address healthOracle;
-        uint256 minBridgeHealth;
-        bool requireDestinationConfirmation;
+    /// @notice Parameters stored in Node's moduleParams for a CCTP bridge action.
+    /// @dev Intentionally minimal — just a domain pointer. All routing details live in the
+    ///      module's per-domain config ({CCTPDomainConfig}).
+    /// @param destinationDomain CCTP domain ID of the destination chain (NOT an EVM chain ID).
+    ///        Ethereum = 0, Avalanche = 1, OP Mainnet = 2, Arbitrum = 3, Base = 6, Polygon = 7.
+    struct CCTPBridgeParams {
+        uint32 destinationDomain;
     }
 
-    /// @notice Bridge health status
-    /// @dev Returned by bridge health oracles to indicate operational status
-    /// @param isOperational Whether bridge is accepting transfers
-    /// @param liquidity Available liquidity in the bridge
-    /// @param avgFee Average bridge fee (for anomaly detection)
-    /// @param lastUpdate Timestamp of last oracle data update
-    /// @param healthScore Composite health score (0-100)
-    struct BridgeHealth {
-        bool isOperational;
-        uint256 liquidity;
-        uint256 avgFee;
-        uint256 lastUpdate;
-        uint8 healthScore;
+    /// @notice Per-domain routing configuration stored in the CCTPBridgeModule.
+    /// @dev Set by the module owner via `setDomainConfig()`. Looked up during `execute()` using the
+    ///      `destinationDomain` decoded from the Node's moduleParams.
+    /// @param isValid        Whether this domain config is active. Set to true by `setDomainConfig()`,
+    ///                       cleared by `removeDomainConfig()`.
+    /// @param mintRecipient  Recipient address on the destination chain, left-padded to bytes32.
+    ///                       For EVM chains: `bytes32(uint256(uint160(addr)))`. Typically another Node.
+    /// @param destinationCaller Who may call `receiveMessage` on the destination chain.
+    ///                          `bytes32(0)` = anyone can relay (recommended).
+    /// @param maxFee         Maximum USDC fee the module is willing to pay per transfer.
+    ///                       0 = standard transfer only (free, ~15-19 min).
+    ///                       > 0 = enables fast transfer (~8-20 s); fee is deducted on destination.
+    /// @param minFinalityThreshold 1000 = fast (confirmed), 2000 = standard (finalized).
+    /// @param hookData       Optional bytes for destination-chain post-mint automation (CCTP V2 hooks).
+    ///                       Empty = `depositForBurn()`. Non-empty = `depositForBurnWithHook()`.
+    struct CCTPDomainConfig {
+        bool isValid;
+        bytes32 mintRecipient;
+        bytes32 destinationCaller;
+        uint256 maxFee;
+        uint32 minFinalityThreshold;
+        bytes hookData;
     }
 }

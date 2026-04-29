@@ -1,0 +1,11 @@
+CCTPBridgeModule_Constructor
+├── when tokenMessenger is zero address
+│   └── it should revert with CCTPBridgeModule_ZeroTokenMessenger
+├── when usdc is zero address
+│   └── it should revert with CCTPBridgeModule_ZeroUSDC
+├── when owner is zero address
+│   └── it should revert with OwnableInvalidOwner
+└── when all parameters are valid
+    ├── it should store tokenMessenger as immutable
+    ├── it should store usdc as immutable
+    └── it should set the owner

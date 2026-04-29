@@ -1,0 +1,9 @@
+CCTPBridgeModule_RemoveDomainConfig
+├── when caller is not the owner
+│   └── it should revert with OwnableUnauthorizedAccount
+├── when domain is not configured
+│   └── it should revert with CCTPBridgeModule_DomainNotConfigured
+└── given domain is configured
+    ├── it should delete the domain config
+    ├── it should set isValid to false
+    └── it should emit DomainConfigRemoved

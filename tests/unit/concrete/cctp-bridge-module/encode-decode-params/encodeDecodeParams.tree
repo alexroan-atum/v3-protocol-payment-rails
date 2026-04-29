@@ -1,0 +1,7 @@
+CCTPBridgeModule_EncodeDecodeParams
+├── when encoding valid params
+│   └── it should produce abi-encoded destinationDomain
+├── when decoding valid encoded bytes
+│   └── it should return the original destinationDomain
+└── when round-tripping encode then decode
+    └── it should recover the original params
