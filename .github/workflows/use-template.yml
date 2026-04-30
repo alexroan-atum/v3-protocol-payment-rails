@@ -1,0 +1,45 @@
+name: "Create"
+
+# The workflow will run when the "Use this template" button is used
+on:
+  push:
+
+jobs:
+  create:
+    # We only run this action when the repository isn't the template repository. References:
+    # - https://docs.github.com/en/actions/learn-github-actions/contexts
+    # - https://docs.github.com/en/actions/learn-github-actions/expressions
+    if: ${{ !github.event.repository.is_template }}
+    permissions: "write-all"
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: "Check out the repo"
+        uses: "actions/checkout@v4"
+
+      - name: "Check if already initialized"
+        id: check
+        run: |
+          if ! grep -q '"@credit-cooperative/foundry-template"' package.json; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: "Update package.json"
+        if: steps.check.outputs.skip != 'true'
+        env:
+          GITHUB_REPOSITORY_DESCRIPTION: ${{ github.event.repository.description }}
+        run: ./.github/scripts/rename.sh "$GITHUB_REPOSITORY" "$GITHUB_REPOSITORY_OWNER" "$GITHUB_REPOSITORY_DESCRIPTION"
+
+      - name: "Remove files not needed in the user's copy of the template"
+        if: steps.check.outputs.skip != 'true'
+        run: |
+          rm -f "./.github/scripts/rename.sh"
+          rm -f "./.github/workflows/use-template.yml"
+
+      - name: "Update commit"
+        if: steps.check.outputs.skip != 'true'
+        uses: "stefanzweifel/git-auto-commit-action@v4"
+        with:
+          commit_message: "feat: initial commit"
+          commit_options: "--amend"
+          push_options: "--force"
+          skip_fetch: true
