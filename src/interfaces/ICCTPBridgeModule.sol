@@ -129,10 +129,7 @@ interface ICCTPBridgeModule is IActionModule {
     /// @notice Returns the current routing configuration for a destination domain.
     /// @param destinationDomain CCTP domain ID to query.
     /// @return config The domain config. `isValid == false` if not configured.
-    function getDomainConfig(uint32 destinationDomain)
-        external
-        view
-        returns (DataTypes.CCTPDomainConfig memory config);
+    function getDomainConfig(uint32 destinationDomain) external view returns (DataTypes.CCTPDomainConfig memory config);
 
     /// @notice Address of Circle's TokenMessengerV2 contract on this chain (immutable).
     function tokenMessenger() external view returns (address);

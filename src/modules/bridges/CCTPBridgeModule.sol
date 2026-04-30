@@ -90,26 +90,28 @@ contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase, Ownable2Step {
         // If the CCTP call reverts (paused, burn-limit exceeded, etc.) the entire execute() reverts
         // atomically — the Node's try/catch restores USDC to the Node.
         if (config.hookData.length > 0) {
-            ITokenMessengerV2(tokenMessenger).depositForBurnWithHook(
-                amount,
-                bridgeParams.destinationDomain,
-                config.mintRecipient,
-                usdc,
-                config.destinationCaller,
-                config.maxFee,
-                config.minFinalityThreshold,
-                config.hookData
-            );
+            ITokenMessengerV2(tokenMessenger)
+                .depositForBurnWithHook(
+                    amount,
+                    bridgeParams.destinationDomain,
+                    config.mintRecipient,
+                    usdc,
+                    config.destinationCaller,
+                    config.maxFee,
+                    config.minFinalityThreshold,
+                    config.hookData
+                );
         } else {
-            ITokenMessengerV2(tokenMessenger).depositForBurn(
-                amount,
-                bridgeParams.destinationDomain,
-                config.mintRecipient,
-                usdc,
-                config.destinationCaller,
-                config.maxFee,
-                config.minFinalityThreshold
-            );
+            ITokenMessengerV2(tokenMessenger)
+                .depositForBurn(
+                    amount,
+                    bridgeParams.destinationDomain,
+                    config.mintRecipient,
+                    usdc,
+                    config.destinationCaller,
+                    config.maxFee,
+                    config.minFinalityThreshold
+                );
         }
 
         // Revoke any leftover approval (defense-in-depth; depositForBurn should consume it all).

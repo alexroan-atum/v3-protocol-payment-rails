@@ -41,11 +41,7 @@ abstract contract ActionModuleBase is IActionModule {
         returns (DataTypes.ExecutionResult memory result)
     {
         return DataTypes.ExecutionResult({
-            success: false,
-            amountOut: 0,
-            outputToken: token,
-            data: "",
-            failureReason: reason
+            success: false, amountOut: 0, outputToken: token, data: "", failureReason: reason
         });
     }
 
@@ -65,11 +61,7 @@ abstract contract ActionModuleBase is IActionModule {
         returns (DataTypes.ExecutionResult memory result)
     {
         return DataTypes.ExecutionResult({
-            success: true,
-            amountOut: amountOut,
-            outputToken: outputToken,
-            data: data,
-            failureReason: ""
+            success: true, amountOut: amountOut, outputToken: outputToken, data: data, failureReason: ""
         });
     }
 
@@ -88,12 +80,7 @@ abstract contract ActionModuleBase is IActionModule {
     /// @param to The recipient address
     /// @param amount The amount to transfer
     /// @return success True if transfer succeeded, false otherwise
-    function _safeTransferFrom(
-        address token,
-        address from,
-        address to,
-        uint256 amount
-    )
+    function _safeTransferFrom(address token, address from, address to, uint256 amount)
         internal
         returns (bool success)
     {

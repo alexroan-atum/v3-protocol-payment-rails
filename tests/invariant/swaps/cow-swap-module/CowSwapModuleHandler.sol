@@ -216,9 +216,12 @@ contract CowSwapModuleHandler is Test {
         }
 
         // getOrder: must NEVER revert
-        try module.getOrder(hash) returns (DataTypes.CowOrderMetadata memory) {
-            // any return value is fine
-        } catch {
+        try module.getOrder(hash) returns (
+            DataTypes.CowOrderMetadata memory
+        ) {
+        // any return value is fine
+        }
+        catch {
             ghost_viewFunctionReverted = true;
         }
     }
