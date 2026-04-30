@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.29;
 
-import { Test, Vm } from "forge-std/src/Test.sol";
+import { Test } from "forge-std/src/Test.sol";
 import { CowSwapModule } from "../../../../../src/modules/swaps/CowSwapModule.sol";
 import { IGPv2Settlement } from "../../../../../src/interfaces/IGPv2Settlement.sol";
 import { Node } from "../../../../../src/core/Node.sol";
@@ -101,15 +101,11 @@ abstract contract CowSwapModuleForkBase is Test {
     //////////////////////////////////////////////////////////////////////////*/
 
     function setUp() public virtual {
-        // Fork Ethereum mainnet at a pinned block for deterministic, cache-friendly tests.
-        // Block 21_900_000 (Feb 2025) — well after GPv2Settlement deployment.
-        //
-        // WHY PINNED: Tests use deal() for balances and vm.mockCall() for filledAmount — no
-        // dependency on live chain state. The only real on-chain read is domainSeparator(), which
-        // is immutable unless GPv2Settlement undergoes a full contract upgrade.
-        //
-        // WHEN TO BUMP: After a GPv2Settlement upgrade, or quarterly during active development.
-        // Verify: cast call 0x9008D19f58AAbD9eD0D60971565AA8510560ab41 "domainSeparator()(bytes32)"
+        string memory rpcUrl = vm.envOr("ETHEREUM_RPC_URL", string(""));
+        if (bytes(rpcUrl).length == 0) {
+            vm.skip(true);
+        }
+
         vm.createSelectFork("ethereum", 21_900_000);
 
         owner = makeAddr("owner");
@@ -281,7 +277,7 @@ abstract contract CowSwapModuleForkBase is Test {
                             CONSTRUCTOR TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-contract CowSwapModuleFork_Constructor_Test is CowSwapModuleForkBase {
+contract CowSwapModuleForkConstructorTest is CowSwapModuleForkBase {
     function test_Constructor_SetsCowSettlement() external view {
         assertEq(module.cowSettlement(), GPV2_SETTLEMENT);
     }
@@ -301,7 +297,7 @@ contract CowSwapModuleFork_Constructor_Test is CowSwapModuleForkBase {
                             EXECUTE TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-contract CowSwapModuleFork_Execute_Test is CowSwapModuleForkBase {
+contract CowSwapModuleForkExecuteTest is CowSwapModuleForkBase {
     /// @dev USDC → WETH order: verifies token transfer, approval, metadata, event, and result.
     function test_Execute_UsdcToWeth_TransfersSellTokenFromNodeToModule() external {
         uint256 nodeBefore = IERC20(USDC).balanceOf(address(node));
@@ -436,7 +432,7 @@ contract CowSwapModuleFork_Execute_Test is CowSwapModuleForkBase {
                             VALIDATE TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-contract CowSwapModuleFork_Validate_Test is CowSwapModuleForkBase {
+contract CowSwapModuleForkValidateTest is CowSwapModuleForkBase {
     /// @dev validate() calls _hasSufficientBalance(token, amount) which checks
     ///      msg.sender's balance. We prank as the node (which holds USDC from setUp).
     function test_Validate_ValidParams_ReturnsTrue() external {
@@ -490,7 +486,7 @@ contract CowSwapModuleFork_Validate_Test is CowSwapModuleForkBase {
                         IS VALID SIGNATURE TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-contract CowSwapModuleFork_IsValidSignature_Test is CowSwapModuleForkBase {
+contract CowSwapModuleForkIsValidSignatureTest is CowSwapModuleForkBase {
     function test_IsValidSignature_PendingOrder_ReturnsMagicValue() external givenPendingUsdcOrder {
         bytes memory signature = abi.encode(_orderId);
         bytes4 result = module.isValidSignature(_orderId, signature);
@@ -554,7 +550,7 @@ contract CowSwapModuleFork_IsValidSignature_Test is CowSwapModuleForkBase {
                             CANCEL ORDER TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-contract CowSwapModuleFork_CancelOrder_Test is CowSwapModuleForkBase {
+contract CowSwapModuleForkCancelOrderTest is CowSwapModuleForkBase {
     function test_CancelOrder_PendingOrder_ReturnsSellTokensToNode() external givenPendingUsdcOrder {
         uint256 nodeBefore = IERC20(USDC).balanceOf(address(node));
         uint256 moduleBefore = IERC20(USDC).balanceOf(address(module));
@@ -643,7 +639,7 @@ contract CowSwapModuleFork_CancelOrder_Test is CowSwapModuleForkBase {
                         ESTIMATE OUTPUT TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-contract CowSwapModuleFork_EstimateOutput_Test is CowSwapModuleForkBase {
+contract CowSwapModuleForkEstimateOutputTest is CowSwapModuleForkBase {
     function test_EstimateOutput_ReturnsMinBuyAmountAndTargetToken() external view {
         bytes memory params = _buildParams(WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
@@ -667,7 +663,7 @@ contract CowSwapModuleFork_EstimateOutput_Test is CowSwapModuleForkBase {
                     ORDER DIGEST COMPATIBILITY TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-contract CowSwapModuleFork_OrderDigest_Test is CowSwapModuleForkBase {
+contract CowSwapModuleForkOrderDigestTest is CowSwapModuleForkBase {
     /// @dev Verifies the module's internal digest matches our independent EIP-712 computation
     ///      using the real GPv2Settlement domain separator.
     function test_OrderDigest_MatchesGPv2Eip712Digest() external {
@@ -708,7 +704,7 @@ contract CowSwapModuleFork_OrderDigest_Test is CowSwapModuleForkBase {
 ///      not just internally consistent. They would have caught both mainnet bugs:
 ///      1. ORDER_TYPE_HASH using bytes32 instead of string for kind/balance fields
 ///      2. Approving cowSettlement instead of vaultRelayer
-contract CowSwapModuleFork_CowSwapCompatibility_Test is CowSwapModuleForkBase {
+contract CowSwapModuleForkCowSwapCompatibilityTest is CowSwapModuleForkBase {
     /// @dev The canonical GPv2Order EIP-712 type hash from CowSwap's source.
     ///      See: https://github.com/cowprotocol/contracts/blob/main/src/contracts/libraries/GPv2Order.sol
     bytes32 internal constant COWSWAP_ORDER_TYPE_HASH = keccak256(
@@ -770,7 +766,7 @@ contract CowSwapModuleFork_CowSwapCompatibility_Test is CowSwapModuleForkBase {
                         OWNERSHIP TRANSFER TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-contract CowSwapModuleFork_OwnershipTransfer_Test is CowSwapModuleForkBase {
+contract CowSwapModuleForkOwnershipTransferTest is CowSwapModuleForkBase {
     /// @dev Verifies the full Ownable2Step flow: transferOwnership → acceptOwnership.
     ///      Critical for pre-deployment: ensures ownership handoff works on the real fork.
     function test_OwnershipTransfer_SetsPendingOwner() external {
@@ -859,7 +855,7 @@ contract CowSwapModuleFork_OwnershipTransfer_Test is CowSwapModuleForkBase {
                     LIFECYCLE: HAPPY PATH TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-contract CowSwapModuleFork_Lifecycle_HappyPath_Test is CowSwapModuleForkBase {
+contract CowSwapModuleForkLifecycleHappyPathTest is CowSwapModuleForkBase {
     /// @dev Full happy-path lifecycle through Node:
     ///      configure → executeAction → isValidSignature=MAGIC → solver fills → isValidSignature=FAILURE
     ///      This is the EXACT flow that happens in production.
@@ -953,7 +949,7 @@ contract CowSwapModuleFork_Lifecycle_HappyPath_Test is CowSwapModuleForkBase {
                     LIFECYCLE: CANCEL PATH TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-contract CowSwapModuleFork_Lifecycle_CancelPath_Test is CowSwapModuleForkBase {
+contract CowSwapModuleForkLifecycleCancelPathTest is CowSwapModuleForkBase {
     /// @dev Full cancel lifecycle: Node executes → owner cancels → tokens return to Node.
     function test_Lifecycle_CancelPath_ReturnsSellTokensToNode() external {
         bytes32 orderId =
@@ -1015,7 +1011,7 @@ contract CowSwapModuleFork_Lifecycle_CancelPath_Test is CowSwapModuleForkBase {
                     LIFECYCLE: EXPIRY PATH TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-contract CowSwapModuleFork_Lifecycle_ExpiryPath_Test is CowSwapModuleForkBase {
+contract CowSwapModuleForkLifecycleExpiryPathTest is CowSwapModuleForkBase {
     /// @dev Order expires without being filled: isValidSignature=FAILURE, owner can still cancel.
     function test_Lifecycle_ExpiryPath_ExpiredOrderCanBeCancelled() external givenPendingUsdcOrder {
         // Warp past expiry
@@ -1089,7 +1085,7 @@ contract CowSwapModuleFork_Lifecycle_ExpiryPath_Test is CowSwapModuleForkBase {
                 LIFECYCLE: CONCURRENT MULTI-TOKEN TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-contract CowSwapModuleFork_Lifecycle_ConcurrentMultiToken_Test is CowSwapModuleForkBase {
+contract CowSwapModuleForkLifecycleConcurrentMultiTokenTest is CowSwapModuleForkBase {
     /// @dev Two different token pairs (USDC→WETH and DAI→USDC) active simultaneously.
     function test_Lifecycle_Concurrent_TwoTokenPairs_IndependentlyPending() external {
         // Configure USDC→WETH
@@ -1188,7 +1184,7 @@ contract CowSwapModuleFork_Lifecycle_ConcurrentMultiToken_Test is CowSwapModuleF
                     END-TO-END NODE INTEGRATION TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-contract CowSwapModuleFork_NodeIntegration_Test is CowSwapModuleForkBase {
+contract CowSwapModuleForkNodeIntegrationTest is CowSwapModuleForkBase {
     function test_NodeIntegration_ConfiguresModuleSuccessfully() external {
         bytes memory params = _buildParams(WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
@@ -1270,7 +1266,7 @@ contract CowSwapModuleFork_NodeIntegration_Test is CowSwapModuleForkBase {
                     END-TO-END SIMULATED SETTLEMENT TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-contract CowSwapModuleFork_SimulatedSettlement_Test is CowSwapModuleForkBase {
+contract CowSwapModuleForkSimulatedSettlementTest is CowSwapModuleForkBase {
     /// @dev Simulates a CowSwap solver filling an order:
     ///      1. Solver (via GPv2Settlement) pulls sellToken from module
     ///      2. filledAmount is mocked to report the fill
@@ -1350,7 +1346,7 @@ contract CowSwapModuleFork_SimulatedSettlement_Test is CowSwapModuleForkBase {
                     EDGE CASE / SECURITY FORK TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-contract CowSwapModuleFork_Security_Test is CowSwapModuleForkBase {
+contract CowSwapModuleForkSecurityTest is CowSwapModuleForkBase {
     /// @dev Verifies that the module can interact with the real GPv2Settlement's filledAmount
     ///      without reverting — important because the real contract's ABI must match.
     function test_Security_FilledAmountCallDoesNotRevert() external givenPendingUsdcOrder {
