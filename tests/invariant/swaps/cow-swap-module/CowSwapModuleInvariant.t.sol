@@ -46,27 +46,21 @@ contract CowSwapModuleInvariant is Test {
 
     bytes32 internal constant DOMAIN_SEPARATOR = keccak256("cow.protocol.domain.separator.test");
 
-    CowSwapModule            internal module;
-    CowSwapModuleHandler     internal handler;
-    NodeProxy                      internal node;
-    MockERC20               internal sellToken;
-    MockERC20               internal buyToken;
-    MockCowSettlement       internal cowSettlement;
+    CowSwapModule internal module;
+    CowSwapModuleHandler internal handler;
+    NodeProxy internal node;
+    MockERC20 internal sellToken;
+    MockERC20 internal buyToken;
+    MockCowSettlement internal cowSettlement;
 
     function setUp() public {
         cowSettlement = new MockCowSettlement(DOMAIN_SEPARATOR, makeAddr("vaultRelayer"));
-        module        = new CowSwapModule(address(cowSettlement), address(this));
-        node          = new NodeProxy(address(module));
-        sellToken     = new MockERC20("USDC", "USDC");
-        buyToken      = new MockERC20("WETH", "WETH");
+        module = new CowSwapModule(address(cowSettlement), address(this));
+        node = new NodeProxy(address(module));
+        sellToken = new MockERC20("USDC", "USDC");
+        buyToken = new MockERC20("WETH", "WETH");
 
-        handler = new CowSwapModuleHandler(
-            module,
-            node,
-            sellToken,
-            buyToken,
-            cowSettlement
-        );
+        handler = new CowSwapModuleHandler(module, node, sellToken, buyToken, cowSettlement);
 
         // Target only the handler — Foundry calls random handler functions
         targetContract(address(handler));
@@ -94,13 +88,11 @@ contract CowSwapModuleInvariant is Test {
     /// handler_simulateSettlement is called. SETTLED orders' tokens remain in module.
     /// This means: module_balance = sum(PENDING) + sum(SETTLED) >= sum(PENDING) always.
     function invariant_SellTokenBalance_GteSum_AllPendingOrders() public view {
-        uint256 ghostSum    = handler.ghost_sumPendingSellAmountsFor(address(sellToken));
+        uint256 ghostSum = handler.ghost_sumPendingSellAmountsFor(address(sellToken));
         uint256 moduleBalance = sellToken.balanceOf(address(module));
 
         assertGe(
-            moduleBalance,
-            ghostSum,
-            "INV-1: module sell token balance must be >= sum of all pending order sell amounts"
+            moduleBalance, ghostSum, "INV-1: module sell token balance must be >= sum of all pending order sell amounts"
         );
     }
 
@@ -121,7 +113,7 @@ contract CowSwapModuleInvariant is Test {
 
         for (uint256 i = 0; i < len; i++) {
             bytes32 orderId = handler.ghost_allOrderIds(i);
-            uint8   ghostStatus  = handler.ghost_orderStatus(orderId);
+            uint8 ghostStatus = handler.ghost_orderStatus(orderId);
 
             DataTypes.CowOrderMetadata memory meta = module.getOrder(orderId);
 
@@ -137,11 +129,7 @@ contract CowSwapModuleInvariant is Test {
             }
 
             // Ghost and on-chain status must agree (no silent state transitions)
-            assertEq(
-                ghostStatus,
-                onChainStatus,
-                "INV-2: ghost order status disagrees with on-chain order status"
-            );
+            assertEq(ghostStatus, onChainStatus, "INV-2: ghost order status disagrees with on-chain order status");
 
             // For PENDING orders: verify the order is reachable (has a valid node)
             if (ghostStatus == 0) {
@@ -205,11 +193,7 @@ contract CowSwapModuleInvariant is Test {
 
             // Any token that has had an execute() call must have max approval
             uint256 approval = IERC20Interface(orderSellToken).allowance(address(module), module.vaultRelayer());
-            assertEq(
-                approval,
-                type(uint256).max,
-                "INV-4: token with order must have max approval to vaultRelayer"
-            );
+            assertEq(approval, type(uint256).max, "INV-4: token with order must have max approval to vaultRelayer");
         }
     }
 
@@ -232,7 +216,7 @@ contract CowSwapModuleInvariant is Test {
     /// module_balance = 1x (orphaned token is part of module_balance)
     function invariant_NoPhantomBalances_SellToken() public view {
         uint256 totalDeposited = handler.ghost_totalDeposited(address(sellToken));
-        uint256 moduleBalance  = sellToken.balanceOf(address(module));
+        uint256 moduleBalance = sellToken.balanceOf(address(module));
         uint256 totalWithdrawn = handler.ghost_totalWithdrawn(address(sellToken));
 
         assertEq(

@@ -33,11 +33,7 @@ contract SwapModule is ISwapModule {
 
         if (swapParams.targetToken == address(0)) {
             return DataTypes.ExecutionResult({
-                success: false,
-                amountOut: 0,
-                outputToken: address(0),
-                data: "",
-                failureReason: "Zero target token"
+                success: false, amountOut: 0, outputToken: address(0), data: "", failureReason: "Zero target token"
             });
         }
 
@@ -147,13 +143,19 @@ contract SwapModule is ISwapModule {
             abi.decode(encoded, (address, address, bytes, uint24, uint256));
 
         if (encoded.length > 160) {
-            (, , , , , params.priceOracle, params.maxPriceDeviationBps, params.useTwap, params.twapPeriod) =
+            (,,,,, params.priceOracle, params.maxPriceDeviationBps, params.useTwap, params.twapPeriod) =
                 abi.decode(encoded, (address, address, bytes, uint24, uint256, address, uint256, bool, uint32));
         }
     }
 
     /// @inheritdoc ISwapModule
-    function getOraclePrice(address, /* tokenIn */ address, /* tokenOut */ address /* oracle */ )
+    function getOraclePrice(
+        address,
+        /* tokenIn */
+        address,
+        /* tokenOut */
+        address /* oracle */
+    )
         external
         pure
         returns (uint256 price)

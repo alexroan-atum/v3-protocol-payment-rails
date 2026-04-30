@@ -32,17 +32,16 @@ abstract contract ActionModuleBase is IActionModule {
     /// @param token The token being processed (used as outputToken in failure)
     /// @param reason The failure reason message
     /// @return result ExecutionResult with success=false and the provided reason
-    function _failedResult(address token, string memory reason)
+    function _failedResult(
+        address token,
+        string memory reason
+    )
         internal
         pure
         returns (DataTypes.ExecutionResult memory result)
     {
         return DataTypes.ExecutionResult({
-            success: false,
-            amountOut: 0,
-            outputToken: token,
-            data: "",
-            failureReason: reason
+            success: false, amountOut: 0, outputToken: token, data: "", failureReason: reason
         });
     }
 
@@ -52,17 +51,17 @@ abstract contract ActionModuleBase is IActionModule {
     /// @param outputToken The address of the output token
     /// @param data Additional module-specific data (can be empty)
     /// @return result ExecutionResult with success=true
-    function _successResult(uint256 amountOut, address outputToken, bytes memory data)
+    function _successResult(
+        uint256 amountOut,
+        address outputToken,
+        bytes memory data
+    )
         internal
         pure
         returns (DataTypes.ExecutionResult memory result)
     {
         return DataTypes.ExecutionResult({
-            success: true,
-            amountOut: amountOut,
-            outputToken: outputToken,
-            data: data,
-            failureReason: ""
+            success: true, amountOut: amountOut, outputToken: outputToken, data: data, failureReason: ""
         });
     }
 
@@ -98,14 +97,22 @@ abstract contract ActionModuleBase is IActionModule {
 
     /// @inheritdoc IActionModule
     /// @dev Must be implemented by inheriting contracts
-    function execute(address token, uint256 amount, bytes calldata params)
+    function execute(
+        address token,
+        uint256 amount,
+        bytes calldata params
+    )
         external
         virtual
         returns (DataTypes.ExecutionResult memory result);
 
     /// @inheritdoc IActionModule
     /// @dev Must be implemented by inheriting contracts
-    function validate(address token, uint256 amount, bytes calldata params)
+    function validate(
+        address token,
+        uint256 amount,
+        bytes calldata params
+    )
         external
         view
         virtual
@@ -113,7 +120,11 @@ abstract contract ActionModuleBase is IActionModule {
 
     /// @inheritdoc IActionModule
     /// @dev Must be implemented by inheriting contracts
-    function estimateOutput(address token, uint256 amount, bytes calldata params)
+    function estimateOutput(
+        address token,
+        uint256 amount,
+        bytes calldata params
+    )
         external
         view
         virtual

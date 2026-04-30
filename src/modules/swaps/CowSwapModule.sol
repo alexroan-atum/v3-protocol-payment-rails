@@ -32,20 +32,9 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
     /// @dev EIP-712 type hash for GPv2Order.Data.
     /// See: https://github.com/cowprotocol/contracts/blob/main/src/contracts/libraries/GPv2Order.sol
     bytes32 internal constant ORDER_TYPE_HASH = keccak256(
-        "Order("
-        "address sellToken,"
-        "address buyToken,"
-        "address receiver,"
-        "uint256 sellAmount,"
-        "uint256 buyAmount,"
-        "uint32 validTo,"
-        "bytes32 appData,"
-        "uint256 feeAmount,"
-        "string kind,"
-        "bool partiallyFillable,"
-        "string sellTokenBalance,"
-        "string buyTokenBalance"
-        ")"
+        "Order(" "address sellToken," "address buyToken," "address receiver," "uint256 sellAmount," "uint256 buyAmount,"
+        "uint32 validTo," "bytes32 appData," "uint256 feeAmount," "string kind," "bool partiallyFillable,"
+        "string sellTokenBalance," "string buyTokenBalance" ")"
     );
 
     /// @dev CowSwap order kind: sell an exact amount of sellToken.
@@ -104,38 +93,11 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
         override(ActionModuleBase, IActionModule)
         returns (DataTypes.ExecutionResult memory result)
     {
-        // Reject malformed params early — must be at least 128 bytes (4 ABI words).
-        if (params.length < 128) {
-            return _failedResult(token, "Invalid params encoding");
+        (bool valid, string memory reason, DataTypes.CowSwapParams memory swapParams, uint32 validTo) =
+            _validateSwapParams(token, amount, params);
+        if (!valid) {
+            return _failedResult(token, reason);
         }
-
-        DataTypes.CowSwapParams memory swapParams = decodeParams(params);
-
-        // --- Validation (all checks before any state change) ---
-
-        if (amount == 0) {
-            return _failedResult(token, "Zero sell amount");
-        }
-        if (swapParams.targetToken == address(0)) {
-            return _failedResult(token, "Zero target token");
-        }
-        if (swapParams.targetToken == token) {
-            return _failedResult(token, "Same sell and buy token");
-        }
-        if (swapParams.minBuyAmount == 0) {
-            return _failedResult(token, "Zero minimum buy amount");
-        }
-        if (swapParams.validityDuration == 0) {
-            return _failedResult(token, "Zero validity duration");
-        }
-
-        // Guard against silent uint32 overflow — Solidity 0.8 protects arithmetic but NOT
-        // explicit downcasts, so a large validityDuration would silently wrap to a past timestamp.
-        uint256 rawValidTo = block.timestamp + uint256(swapParams.validityDuration);
-        if (rawValidTo > type(uint32).max) {
-            return _failedResult(token, "Validity duration overflow");
-        }
-        uint32 validTo = uint32(rawValidTo);
 
         bytes32 orderId = _computeOrderDigest(
             token, swapParams.targetToken, msg.sender, amount, swapParams.minBuyAmount, validTo, swapParams.appData
@@ -175,7 +137,14 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
         });
 
         emit OrderCreated(
-            orderId, msg.sender, token, swapParams.targetToken, amount, swapParams.minBuyAmount, validTo, swapParams.appData
+            orderId,
+            msg.sender,
+            token,
+            swapParams.targetToken,
+            amount,
+            swapParams.minBuyAmount,
+            validTo,
+            swapParams.appData
         );
 
         return _successResult(0, swapParams.targetToken, abi.encode(orderId));
@@ -194,9 +163,7 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
         if (meta.cancelled) {
             revert Errors.CowSwapModule_OrderAlreadyCancelled(orderId);
         }
-        if (
-            IGPv2Settlement(cowSettlement).filledAmount(_orderUid(orderId, meta.validTo)) >= meta.sellAmount
-        ) {
+        if (IGPv2Settlement(cowSettlement).filledAmount(_orderUid(orderId, meta.validTo)) >= meta.sellAmount) {
             revert Errors.CowSwapModule_OrderAlreadyFilled(orderId);
         }
 
@@ -231,36 +198,13 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
         override(ActionModuleBase, IActionModule)
         returns (bool isValid, string memory reason)
     {
-        if (params.length < 128) {
-            return (false, "Invalid params encoding");
-        }
-        if (amount == 0) {
-            return (false, "Zero sell amount");
-        }
-
-        DataTypes.CowSwapParams memory swapParams = decodeParams(params);
-
-        if (swapParams.targetToken == address(0)) {
-            return (false, "Zero target token");
-        }
-        if (swapParams.targetToken == token) {
-            return (false, "Same sell and buy token");
-        }
-        if (swapParams.minBuyAmount == 0) {
-            return (false, "Zero minimum buy amount");
-        }
-        if (swapParams.validityDuration == 0) {
-            return (false, "Zero validity duration");
-        }
-
-        uint256 rawValidTo = block.timestamp + uint256(swapParams.validityDuration);
-        if (rawValidTo > type(uint32).max) {
-            return (false, "Validity duration overflow");
+        (isValid, reason,,) = _validateSwapParams(token, amount, params);
+        if (!isValid) {
+            return (false, reason);
         }
         if (!_hasSufficientBalance(token, amount)) {
             return (false, "Insufficient balance");
         }
-
         return (true, "");
     }
 
@@ -294,9 +238,7 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
         if (block.timestamp > meta.validTo) {
             return EIP1271_FAILURE_VALUE;
         }
-        if (
-            IGPv2Settlement(cowSettlement).filledAmount(_orderUid(orderId, meta.validTo)) >= meta.sellAmount
-        ) {
+        if (IGPv2Settlement(cowSettlement).filledAmount(_orderUid(orderId, meta.validTo)) >= meta.sellAmount) {
             return EIP1271_FAILURE_VALUE;
         }
 
@@ -337,6 +279,47 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
     /*//////////////////////////////////////////////////////////////////////////
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
+
+    /// @dev Shared parameter validation for `execute` and `validate`. Decodes and checks all swap
+    ///      parameters without touching storage, so callers avoid duplicated logic.
+    function _validateSwapParams(
+        address token,
+        uint256 amount,
+        bytes calldata params
+    )
+        private
+        view
+        returns (bool valid, string memory reason, DataTypes.CowSwapParams memory swapParams, uint32 validTo)
+    {
+        if (params.length < 128) {
+            return (false, "Invalid params encoding", swapParams, 0);
+        }
+
+        swapParams = decodeParams(params);
+
+        if (amount == 0) {
+            return (false, "Zero sell amount", swapParams, 0);
+        }
+        if (swapParams.targetToken == address(0)) {
+            return (false, "Zero target token", swapParams, 0);
+        }
+        if (swapParams.targetToken == token) {
+            return (false, "Same sell and buy token", swapParams, 0);
+        }
+        if (swapParams.minBuyAmount == 0) {
+            return (false, "Zero minimum buy amount", swapParams, 0);
+        }
+        if (swapParams.validityDuration == 0) {
+            return (false, "Zero validity duration", swapParams, 0);
+        }
+
+        uint256 rawValidTo = block.timestamp + uint256(swapParams.validityDuration);
+        if (rawValidTo > type(uint32).max) {
+            return (false, "Validity duration overflow", swapParams, 0);
+        }
+
+        return (true, "", swapParams, uint32(rawValidTo));
+    }
 
     /// @dev Computes the EIP-712 GPv2Order digest used as orderId throughout this module.
     /// Fixed fields: receiver=node, feeAmount=0, kind=SELL, partiallyFillable=false,

@@ -153,7 +153,7 @@ jobs:
             cache/
 
       - name: "Generate coverage report"
-        run: "forge coverage --report lcov"
+        run: "forge coverage --report lcov --ir-minimum"
 
       - name: "Upload coverage to Codecov"
         uses: "codecov/codecov-action@v4"

@@ -41,24 +41,24 @@ abstract contract CowSwapModuleBase is Test {
     //////////////////////////////////////////////////////////////////////////*/
 
     bytes32 internal constant DOMAIN_SEPARATOR = keccak256("cow.protocol.domain.separator.v1");
-    bytes4  internal constant EIP1271_MAGIC    = 0x1626ba7e;
-    bytes4  internal constant EIP1271_FAILURE  = 0xffffffff;
+    bytes4 internal constant EIP1271_MAGIC = 0x1626ba7e;
+    bytes4 internal constant EIP1271_FAILURE = 0xffffffff;
 
-    uint256 internal constant DEFAULT_SELL_AMOUNT    = 1_000e18;
+    uint256 internal constant DEFAULT_SELL_AMOUNT = 1000e18;
     uint256 internal constant DEFAULT_MIN_BUY_AMOUNT = 950e18;
-    uint32  internal constant DEFAULT_VALIDITY       = 3_600; // 1 hour
-    bytes32 internal constant DEFAULT_APP_DATA       = keccak256("receivables-node-v1");
+    uint32 internal constant DEFAULT_VALIDITY = 3600; // 1 hour
+    bytes32 internal constant DEFAULT_APP_DATA = keccak256("receivables-node-v1");
 
     /*//////////////////////////////////////////////////////////////////////////
                                 TEST CONTRACTS
     //////////////////////////////////////////////////////////////////////////*/
 
-    CowSwapModule  internal module;
-    MockCowSettlement    internal cowSettlement;
-    MockNode             internal node;
-    MockERC20            internal sellToken;
-    MockERC20            internal buyToken;
-    FeeOnTransferERC20   internal fotSellToken;
+    CowSwapModule internal module;
+    MockCowSettlement internal cowSettlement;
+    MockNode internal node;
+    MockERC20 internal sellToken;
+    MockERC20 internal buyToken;
+    FeeOnTransferERC20 internal fotSellToken;
 
     address internal attacker = makeAddr("attacker");
 
@@ -75,11 +75,11 @@ abstract contract CowSwapModuleBase is Test {
     function setUp() public virtual {
         address vaultRelayerAddr = makeAddr("vaultRelayer");
         cowSettlement = new MockCowSettlement(DOMAIN_SEPARATOR, vaultRelayerAddr);
-        module        = new CowSwapModule(address(cowSettlement), address(this));
-        node          = new MockNode(address(module));
-        sellToken     = new MockERC20("USDC", "USDC");
-        buyToken      = new MockERC20("WETH", "WETH");
-        fotSellToken  = new FeeOnTransferERC20();
+        module = new CowSwapModule(address(cowSettlement), address(this));
+        node = new MockNode(address(module));
+        sellToken = new MockERC20("USDC", "USDC");
+        buyToken = new MockERC20("WETH", "WETH");
+        fotSellToken = new FeeOnTransferERC20();
 
         sellToken.mint(address(node), DEFAULT_SELL_AMOUNT * 10);
         fotSellToken.mint(address(node), DEFAULT_SELL_AMOUNT * 10);
@@ -126,15 +126,21 @@ abstract contract CowSwapModuleBase is Test {
     function _buildParams(
         address targetToken,
         uint256 minBuyAmount,
-        uint32  validityDuration,
+        uint32 validityDuration,
         bytes32 appData
-    ) internal view returns (bytes memory) {
-        return module.encodeParams(DataTypes.CowSwapParams({
-            targetToken:      targetToken,
-            minBuyAmount:     minBuyAmount,
-            validityDuration: validityDuration,
-            appData:          appData
-        }));
+    )
+        internal
+        view
+        returns (bytes memory)
+    {
+        return module.encodeParams(
+            DataTypes.CowSwapParams({
+                targetToken: targetToken,
+                minBuyAmount: minBuyAmount,
+                validityDuration: validityDuration,
+                appData: appData
+            })
+        );
     }
 
     function _buildDefaultParams() internal view returns (bytes memory) {
@@ -151,13 +157,14 @@ abstract contract CowSwapModuleBase is Test {
         address targetToken,
         uint256 sellAmount,
         uint256 minBuyAmount,
-        uint32  validityDuration,
+        uint32 validityDuration,
         bytes32 appData
-    ) internal returns (bytes32 orderId) {
+    )
+        internal
+        returns (bytes32 orderId)
+    {
         DataTypes.ExecutionResult memory result = node.initiateSwap(
-            address(sellToken),
-            sellAmount,
-            _buildParams(targetToken, minBuyAmount, validityDuration, appData)
+            address(sellToken), sellAmount, _buildParams(targetToken, minBuyAmount, validityDuration, appData)
         );
         return abi.decode(result.data, (bytes32));
     }

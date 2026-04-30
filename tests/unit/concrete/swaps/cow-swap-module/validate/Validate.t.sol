@@ -20,8 +20,7 @@ contract CowSwapModule_Validate_Test is CowSwapModuleBase {
 
     function test_WhenParamsAreMalformed_ReasonMatchesExecute() external {
         bytes memory malformedParams = abi.encode(address(buyToken));
-        (, string memory validateReason) =
-            module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, malformedParams);
+        (, string memory validateReason) = module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, malformedParams);
         DataTypes.ExecutionResult memory result =
             node.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, malformedParams);
         assertEq(validateReason, result.failureReason, "validate/execute reason must match for malformed params");
@@ -39,10 +38,8 @@ contract CowSwapModule_Validate_Test is CowSwapModuleBase {
 
     function test_WhenAmountIsZero_ReasonMatchesExecute() external {
         // validate() and execute() must agree: both reject zero amounts
-        (, string memory validateReason) =
-            module.validate(address(sellToken), 0, _buildDefaultParams());
-        DataTypes.ExecutionResult memory result =
-            node.initiateSwap(address(sellToken), 0, _buildDefaultParams());
+        (, string memory validateReason) = module.validate(address(sellToken), 0, _buildDefaultParams());
+        DataTypes.ExecutionResult memory result = node.initiateSwap(address(sellToken), 0, _buildDefaultParams());
         assertEq(validateReason, result.failureReason, "validate/execute reason must match");
     }
 
@@ -96,7 +93,8 @@ contract CowSwapModule_Validate_Test is CowSwapModuleBase {
     // -----------------------------------------------------------------------
 
     function test_WhenValidityDurationOverflows_ReturnsFalse() external {
-        bytes memory params = _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, type(uint32).max, DEFAULT_APP_DATA);
+        bytes memory params =
+            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, type(uint32).max, DEFAULT_APP_DATA);
         vm.prank(address(node));
         (bool isValid, string memory reason) = module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, params);
         assertFalse(isValid);
@@ -104,11 +102,11 @@ contract CowSwapModule_Validate_Test is CowSwapModuleBase {
     }
 
     function test_WhenValidityDurationOverflows_ReasonMatchesExecute() external {
-        bytes memory params = _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, type(uint32).max, DEFAULT_APP_DATA);
+        bytes memory params =
+            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, type(uint32).max, DEFAULT_APP_DATA);
         vm.prank(address(node));
         (, string memory validateReason) = module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, params);
-        DataTypes.ExecutionResult memory result =
-            node.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
+        DataTypes.ExecutionResult memory result = node.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
         assertEq(validateReason, result.failureReason, "validate/execute reason must match for overflow");
     }
 

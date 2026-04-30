@@ -53,7 +53,7 @@ abstract contract CCTPBridgeModuleBase is Test {
     uint32 internal constant FINALITY_STANDARD = 2000;
     bytes internal constant DEFAULT_HOOK_DATA = "";
 
-    uint256 internal constant DEFAULT_BRIDGE_AMOUNT = 1_000e6;
+    uint256 internal constant DEFAULT_BRIDGE_AMOUNT = 1000e6;
 
     /*//////////////////////////////////////////////////////////////////////////
                                 TEST CONTRACTS

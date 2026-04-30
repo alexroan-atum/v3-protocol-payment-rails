@@ -101,7 +101,7 @@ library DataTypes {
     struct CowSwapParams {
         address targetToken;
         uint256 minBuyAmount;
-        uint32  validityDuration;
+        uint32 validityDuration;
         bytes32 appData;
     }
 
@@ -120,8 +120,8 @@ library DataTypes {
         address sellToken;
         address buyToken;
         uint256 sellAmount;
-        uint32  validTo;
-        bool    cancelled;
+        uint32 validTo;
+        bool cancelled;
     }
 
     /*//////////////////////////////////////////////////////////////////////////

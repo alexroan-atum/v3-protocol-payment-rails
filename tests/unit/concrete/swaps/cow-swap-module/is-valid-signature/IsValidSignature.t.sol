@@ -142,7 +142,9 @@ contract CowSwapModule_IsValidSignature_Test is CowSwapModuleBase {
         bytes32 hash,
         bytes calldata sig,
         uint32 validity
-    ) external {
+    )
+        external
+    {
         // Bound validity: [1, type(uint32).max - block.timestamp].
         // execute() rejects block.timestamp + validity > type(uint32).max so orders
         // with overflow validity cannot be created. Bound here to stay in the valid range.

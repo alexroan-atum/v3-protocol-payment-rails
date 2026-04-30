@@ -44,7 +44,7 @@ contract CowSwapDryRun is Script, StdCheats {
     uint256 internal constant DEFAULT_SELL_AMOUNT = 1_000_000; // 1 USDC
     uint256 internal constant DEFAULT_MIN_BUY_AMOUNT = 200_000_000_000_000; // 0.0002 WETH (~$0.42 floor)
     uint256 internal constant DEFAULT_MIN_BALANCE = 1_000_000; // 1 USDC
-    uint32 internal constant DEFAULT_VALIDITY_DURATION = 1_800; // 30 min
+    uint32 internal constant DEFAULT_VALIDITY_DURATION = 1800; // 30 min
 
     struct Config {
         address sellToken;
@@ -229,24 +229,17 @@ contract CowSwapDryRun is Script, StdCheats {
         uint256 buyAmount,
         uint32 validTo,
         bytes32 appData
-    ) internal pure returns (bytes32) {
+    )
+        internal
+        pure
+        returns (bytes32)
+    {
         bytes32 structHash = keccak256(
             abi.encode(
                 keccak256(
-                    "Order("
-                    "address sellToken,"
-                    "address buyToken,"
-                    "address receiver,"
-                    "uint256 sellAmount,"
-                    "uint256 buyAmount,"
-                    "uint32 validTo,"
-                    "bytes32 appData,"
-                    "uint256 feeAmount,"
-                    "string kind,"
-                    "bool partiallyFillable,"
-                    "string sellTokenBalance,"
-                    "string buyTokenBalance"
-                    ")"
+                    "Order(" "address sellToken," "address buyToken," "address receiver," "uint256 sellAmount,"
+                    "uint256 buyAmount," "uint32 validTo," "bytes32 appData," "uint256 feeAmount," "string kind,"
+                    "bool partiallyFillable," "string sellTokenBalance," "string buyTokenBalance" ")"
                 ),
                 sellToken,
                 buyToken,

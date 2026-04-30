@@ -9,13 +9,18 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 contract MockNode {
     CowSwapModule public immutable module;
 
-    constructor(address _module) { module = CowSwapModule(_module); }
+    constructor(address _module) {
+        module = CowSwapModule(_module);
+    }
 
     function initiateSwap(
         address token,
         uint256 amount,
         bytes calldata params
-    ) external returns (DataTypes.ExecutionResult memory) {
+    )
+        external
+        returns (DataTypes.ExecutionResult memory)
+    {
         IERC20(token).approve(address(module), amount);
         return module.execute(token, amount, params);
     }

@@ -26,37 +26,26 @@ contract CCTPBridgeModule_SetDomainConfig_Test is CCTPBridgeModuleBase {
     function test_RevertWhen_MintRecipientIsZero() external {
         vm.expectRevert(Errors.CCTPBridgeModule_ZeroMintRecipient.selector);
         module.setDomainConfig(
-            DOMAIN_BASE,
-            bytes32(0),
-            DEFAULT_DESTINATION_CALLER,
-            DEFAULT_MAX_FEE,
-            FINALITY_FAST,
-            DEFAULT_HOOK_DATA
+            DOMAIN_BASE, bytes32(0), DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE, FINALITY_FAST, DEFAULT_HOOK_DATA
         );
     }
 
     function test_RevertWhen_FinalityThresholdIsInvalid_Zero() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(Errors.CCTPBridgeModule_InvalidFinalityThreshold.selector, uint32(0))
-        );
+        vm.expectRevert(abi.encodeWithSelector(Errors.CCTPBridgeModule_InvalidFinalityThreshold.selector, uint32(0)));
         module.setDomainConfig(
             DOMAIN_BASE, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE, 0, DEFAULT_HOOK_DATA
         );
     }
 
     function test_RevertWhen_FinalityThresholdIsInvalid_500() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(Errors.CCTPBridgeModule_InvalidFinalityThreshold.selector, uint32(500))
-        );
+        vm.expectRevert(abi.encodeWithSelector(Errors.CCTPBridgeModule_InvalidFinalityThreshold.selector, uint32(500)));
         module.setDomainConfig(
             DOMAIN_BASE, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE, 500, DEFAULT_HOOK_DATA
         );
     }
 
     function test_RevertWhen_FinalityThresholdIsInvalid_3000() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(Errors.CCTPBridgeModule_InvalidFinalityThreshold.selector, uint32(3000))
-        );
+        vm.expectRevert(abi.encodeWithSelector(Errors.CCTPBridgeModule_InvalidFinalityThreshold.selector, uint32(3000)));
         module.setDomainConfig(
             DOMAIN_BASE, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE, 3000, DEFAULT_HOOK_DATA
         );
@@ -88,11 +77,7 @@ contract CCTPBridgeModule_SetDomainConfig_Test is CCTPBridgeModuleBase {
     function test_WhenValidParams_EmitsDomainConfigSet() external {
         vm.expectEmit(true, false, false, true);
         emit DomainConfigSet(
-            DOMAIN_BASE,
-            DEFAULT_MINT_RECIPIENT,
-            DEFAULT_DESTINATION_CALLER,
-            DEFAULT_MAX_FEE,
-            FINALITY_FAST
+            DOMAIN_BASE, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE, FINALITY_FAST
         );
 
         module.setDomainConfig(
@@ -145,11 +130,7 @@ contract CCTPBridgeModule_SetDomainConfig_Test is CCTPBridgeModuleBase {
     function test_WhenValidParamsWithHookData_EmitsDomainConfigSet() external {
         vm.expectEmit(true, false, false, true);
         emit DomainConfigSet(
-            DOMAIN_BASE,
-            DEFAULT_MINT_RECIPIENT,
-            DEFAULT_DESTINATION_CALLER,
-            DEFAULT_MAX_FEE,
-            FINALITY_FAST
+            DOMAIN_BASE, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE, FINALITY_FAST
         );
 
         module.setDomainConfig(

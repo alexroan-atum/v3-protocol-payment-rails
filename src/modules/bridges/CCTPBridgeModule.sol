@@ -67,31 +67,14 @@ contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase, Ownable2Step {
         override(ActionModuleBase, IActionModule)
         returns (DataTypes.ExecutionResult memory result)
     {
-        // --- Validation (all checks before any state change) ---
-
-        if (params.length < 32) {
-            return _failedResult(token, "Invalid params encoding");
-        }
-
-        DataTypes.CCTPBridgeParams memory bridgeParams = decodeParams(params);
-
-        if (amount == 0) {
-            return _failedResult(token, "Zero bridge amount");
-        }
-        if (token != usdc) {
-            return _failedResult(token, "Only USDC supported");
-        }
-
-        DataTypes.CCTPDomainConfig memory config = _domainConfigs[bridgeParams.destinationDomain];
-
-        if (!config.isValid) {
-            return _failedResult(token, "Domain not configured");
-        }
-        if (config.maxFee >= amount) {
-            return _failedResult(token, "Max fee exceeds amount");
-        }
-        if (!_hasSufficientBalance(token, amount)) {
-            return _failedResult(token, "Insufficient balance");
+        (
+            bool valid,
+            string memory reason,
+            DataTypes.CCTPBridgeParams memory bridgeParams,
+            DataTypes.CCTPDomainConfig memory config
+        ) = _validateBridgeParams(token, amount, params);
+        if (!valid) {
+            return _failedResult(token, reason);
         }
 
         // --- Interactions ---
@@ -107,26 +90,28 @@ contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase, Ownable2Step {
         // If the CCTP call reverts (paused, burn-limit exceeded, etc.) the entire execute() reverts
         // atomically — the Node's try/catch restores USDC to the Node.
         if (config.hookData.length > 0) {
-            ITokenMessengerV2(tokenMessenger).depositForBurnWithHook(
-                amount,
-                bridgeParams.destinationDomain,
-                config.mintRecipient,
-                usdc,
-                config.destinationCaller,
-                config.maxFee,
-                config.minFinalityThreshold,
-                config.hookData
-            );
+            ITokenMessengerV2(tokenMessenger)
+                .depositForBurnWithHook(
+                    amount,
+                    bridgeParams.destinationDomain,
+                    config.mintRecipient,
+                    usdc,
+                    config.destinationCaller,
+                    config.maxFee,
+                    config.minFinalityThreshold,
+                    config.hookData
+                );
         } else {
-            ITokenMessengerV2(tokenMessenger).depositForBurn(
-                amount,
-                bridgeParams.destinationDomain,
-                config.mintRecipient,
-                usdc,
-                config.destinationCaller,
-                config.maxFee,
-                config.minFinalityThreshold
-            );
+            ITokenMessengerV2(tokenMessenger)
+                .depositForBurn(
+                    amount,
+                    bridgeParams.destinationDomain,
+                    config.mintRecipient,
+                    usdc,
+                    config.destinationCaller,
+                    config.maxFee,
+                    config.minFinalityThreshold
+                );
         }
 
         // Revoke any leftover approval (defense-in-depth; depositForBurn should consume it all).
@@ -143,9 +128,7 @@ contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase, Ownable2Step {
         );
 
         return _successResult(
-            amount - config.maxFee,
-            token,
-            abi.encode(bridgeParams.destinationDomain, config.mintRecipient)
+            amount - config.maxFee, token, abi.encode(bridgeParams.destinationDomain, config.mintRecipient)
         );
     }
 
@@ -157,7 +140,10 @@ contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase, Ownable2Step {
         uint256 maxFee,
         uint32 minFinalityThreshold,
         bytes calldata hookData
-    ) external onlyOwner {
+    )
+        external
+        onlyOwner
+    {
         if (mintRecipient == bytes32(0)) {
             revert Errors.CCTPBridgeModule_ZeroMintRecipient();
         }
@@ -203,32 +189,7 @@ contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase, Ownable2Step {
         override(ActionModuleBase, IActionModule)
         returns (bool isValid, string memory reason)
     {
-        if (params.length < 32) {
-            return (false, "Invalid params encoding");
-        }
-
-        DataTypes.CCTPBridgeParams memory bridgeParams = decodeParams(params);
-
-        if (amount == 0) {
-            return (false, "Zero bridge amount");
-        }
-        if (token != usdc) {
-            return (false, "Only USDC supported");
-        }
-
-        DataTypes.CCTPDomainConfig memory config = _domainConfigs[bridgeParams.destinationDomain];
-
-        if (!config.isValid) {
-            return (false, "Domain not configured");
-        }
-        if (config.maxFee >= amount) {
-            return (false, "Max fee exceeds amount");
-        }
-        if (!_hasSufficientBalance(token, amount)) {
-            return (false, "Insufficient balance");
-        }
-
-        return (true, "");
+        (isValid, reason,,) = _validateBridgeParams(token, amount, params);
     }
 
     /// @inheritdoc ICCTPBridgeModule
@@ -271,20 +232,60 @@ contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase, Ownable2Step {
     }
 
     /// @inheritdoc ICCTPBridgeModule
-    function encodeParams(DataTypes.CCTPBridgeParams calldata params)
-        external
-        pure
-        returns (bytes memory encoded)
-    {
+    function encodeParams(DataTypes.CCTPBridgeParams calldata params) external pure returns (bytes memory encoded) {
         return abi.encode(params.destinationDomain);
     }
 
     /// @inheritdoc ICCTPBridgeModule
-    function decodeParams(bytes calldata encoded)
-        public
-        pure
-        returns (DataTypes.CCTPBridgeParams memory params)
-    {
+    function decodeParams(bytes calldata encoded) public pure returns (DataTypes.CCTPBridgeParams memory params) {
         (params.destinationDomain) = abi.decode(encoded, (uint32));
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                            INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @dev Shared validation for `execute` and `validate`. Returns the decoded params and domain
+    ///      config on success so callers avoid a redundant decode / storage read.
+    function _validateBridgeParams(
+        address token,
+        uint256 amount,
+        bytes calldata params
+    )
+        private
+        view
+        returns (
+            bool valid,
+            string memory reason,
+            DataTypes.CCTPBridgeParams memory bridgeParams,
+            DataTypes.CCTPDomainConfig memory config
+        )
+    {
+        if (params.length < 32) {
+            return (false, "Invalid params encoding", bridgeParams, config);
+        }
+
+        bridgeParams = decodeParams(params);
+
+        if (amount == 0) {
+            return (false, "Zero bridge amount", bridgeParams, config);
+        }
+        if (token != usdc) {
+            return (false, "Only USDC supported", bridgeParams, config);
+        }
+
+        config = _domainConfigs[bridgeParams.destinationDomain];
+
+        if (!config.isValid) {
+            return (false, "Domain not configured", bridgeParams, config);
+        }
+        if (config.maxFee >= amount) {
+            return (false, "Max fee exceeds amount", bridgeParams, config);
+        }
+        if (!_hasSufficientBalance(token, amount)) {
+            return (false, "Insufficient balance", bridgeParams, config);
+        }
+
+        return (true, "", bridgeParams, config);
     }
 }

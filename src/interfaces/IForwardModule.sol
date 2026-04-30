@@ -32,7 +32,6 @@ import { DataTypes } from "../types/DataTypes.sol";
 ///
 /// These functions ensure consistent serialization across integrations.
 interface IForwardModule is IActionModule {
-
     /// @notice Encode forward parameters into ABI-encoded bytes
     /// @dev Helper function for constructing moduleParams when configuring tokens
     ///

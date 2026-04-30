@@ -106,7 +106,8 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
 
     function test_WhenValidityDurationOverflows_ReturnsFailedResult() external {
         uint32 overflowDuration = type(uint32).max;
-        bytes memory params = _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, overflowDuration, DEFAULT_APP_DATA);
+        bytes memory params =
+            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, overflowDuration, DEFAULT_APP_DATA);
         DataTypes.ExecutionResult memory result = node.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
         assertFalse(result.success);
         assertEq(result.failureReason, "Validity duration overflow");
@@ -114,7 +115,8 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
 
     function test_WhenValidityDurationOverflows_DoesNotLockTokens() external {
         uint32 overflowDuration = type(uint32).max;
-        bytes memory params = _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, overflowDuration, DEFAULT_APP_DATA);
+        bytes memory params =
+            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, overflowDuration, DEFAULT_APP_DATA);
         node.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
         assertEq(sellToken.balanceOf(address(module)), 0);
     }
@@ -145,7 +147,8 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
         FailingTransferERC20 failToken = new FailingTransferERC20();
         failToken.mint(address(node), DEFAULT_SELL_AMOUNT * 10);
 
-        bytes memory params = _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        bytes memory params =
+            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
         DataTypes.ExecutionResult memory result = node.initiateSwap(address(failToken), DEFAULT_SELL_AMOUNT, params);
         assertFalse(result.success);
         assertEq(result.failureReason, "Token transfer failed");
@@ -155,7 +158,8 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
         FailingTransferERC20 failToken = new FailingTransferERC20();
         failToken.mint(address(node), DEFAULT_SELL_AMOUNT * 10);
 
-        bytes memory params = _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        bytes memory params =
+            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
         DataTypes.ExecutionResult memory result = node.initiateSwap(address(failToken), DEFAULT_SELL_AMOUNT, params);
         assertEq(result.data.length, 0);
     }
@@ -180,9 +184,8 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
         _initiateDefaultOrder();
         assertEq(sellToken.allowance(address(module), module.vaultRelayer()), type(uint256).max);
 
-        bytes memory params2 = _buildParams(
-            address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, keccak256("order-2")
-        );
+        bytes memory params2 =
+            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, keccak256("order-2"));
         node.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params2);
         assertEq(sellToken.allowance(address(module), module.vaultRelayer()), type(uint256).max);
     }
@@ -270,7 +273,9 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
         uint256 sellAmount,
         uint256 minBuyAmount,
         uint32 validity
-    ) external {
+    )
+        external
+    {
         sellAmount = bound(sellAmount, 1, DEFAULT_SELL_AMOUNT * 9);
         minBuyAmount = bound(minBuyAmount, 1, type(uint256).max / 2);
         uint256 maxValidity = type(uint32).max - block.timestamp;
@@ -328,9 +333,8 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
         _initiateDefaultOrder();
         assertEq(sellToken.allowance(address(module), module.vaultRelayer()), type(uint256).max);
 
-        bytes memory params2 = _buildParams(
-            address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, keccak256("order-2")
-        );
+        bytes memory params2 =
+            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, keccak256("order-2"));
         DataTypes.ExecutionResult memory r2 = node.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params2);
         assertTrue(r2.success);
         assertEq(sellToken.allowance(address(module), module.vaultRelayer()), type(uint256).max);
@@ -338,13 +342,9 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
 
     function test_ConcurrentSameToken_CancelOrder1_Order2ApprovalUnaffected() external {
         bytes32 id1 = _initiateDefaultOrder();
-        bytes memory params2 = _buildParams(
-            address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, keccak256("order-2")
-        );
-        bytes32 id2 = abi.decode(
-            node.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params2).data,
-            (bytes32)
-        );
+        bytes memory params2 =
+            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, keccak256("order-2"));
+        bytes32 id2 = abi.decode(node.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params2).data, (bytes32));
 
         module.cancelOrder(id1);
 
@@ -359,7 +359,8 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
     function test_Execute_FeeOnTransferSellToken_ModuleReceivesLessThanAmount() external {
         uint256 expectedReceived = DEFAULT_SELL_AMOUNT - (DEFAULT_SELL_AMOUNT * 100 / 10_000);
 
-        bytes memory params = _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        bytes memory params =
+            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
         DataTypes.ExecutionResult memory result = node.initiateSwap(address(fotSellToken), DEFAULT_SELL_AMOUNT, params);
 
         assertTrue(result.success);
@@ -375,7 +376,8 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
     }
 
     function test_Execute_FeeOnTransferSellToken_CowSwapCannotPullFullSellAmount() external {
-        bytes memory params = _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        bytes memory params =
+            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
         DataTypes.ExecutionResult memory result = node.initiateSwap(address(fotSellToken), DEFAULT_SELL_AMOUNT, params);
 
         bytes32 orderId = abi.decode(result.data, (bytes32));

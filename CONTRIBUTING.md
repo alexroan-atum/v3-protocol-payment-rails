@@ -8,14 +8,14 @@ If you have a question that isn't covered here, [open an issue](../../issues/new
 
 There are two tiers for modules. Pick the one that fits your situation.
 
-| | **First-party** | **Community (`contrib/`)** |
-|---|---|---|
-| Path | `src/modules/<category>/` | `src/modules/contrib/<category>/` |
-| Maintainer | CC core team | You / your team |
-| Audit responsibility | CC | You |
-| Review bar | Full review + (eventually) audit | CC reviews for safety only |
-| Approval | CC core team approval required | CC core team approval required |
-| When to choose | The module is a primitive CC wants to own and ship as part of the rail | You want to ship your own module on the rail without ceding ownership |
+|                      | **First-party**                                                        | **Community (`contrib/`)**                                            |
+| -------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Path                 | `src/modules/<category>/`                                              | `src/modules/contrib/<category>/`                                     |
+| Maintainer           | CC core team                                                           | You / your team                                                       |
+| Audit responsibility | CC                                                                     | You                                                                   |
+| Review bar           | Full review + (eventually) audit                                       | CC reviews for safety only                                            |
+| Approval             | CC core team approval required                                         | CC core team approval required                                        |
+| When to choose       | The module is a primitive CC wants to own and ship as part of the rail | You want to ship your own module on the rail without ceding ownership |
 
 When in doubt, start in `contrib/`. A `contrib/` module that gets externally audited and adopted by CC core can be promoted later with a one-line rename.
 

@@ -31,21 +31,13 @@ contract CowSwapModule_CancelOrder_Test is CowSwapModuleBase {
     // -----------------------------------------------------------------------
 
     function test_RevertWhen_CallerIsNotOwner() external givenPendingOrder {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Errors.CowSwapModule_NotOwner.selector, attacker, address(this)
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(Errors.CowSwapModule_NotOwner.selector, attacker, address(this)));
         vm.prank(attacker);
         module.cancelOrder(_orderId);
     }
 
     function test_RevertWhen_CallerIsNode_NotOwner() external givenPendingOrder {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Errors.CowSwapModule_NotOwner.selector, address(node), address(this)
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(Errors.CowSwapModule_NotOwner.selector, address(node), address(this)));
         vm.prank(address(node));
         module.cancelOrder(_orderId);
     }
@@ -55,11 +47,7 @@ contract CowSwapModule_CancelOrder_Test is CowSwapModuleBase {
     // -----------------------------------------------------------------------
 
     function test_RevertGiven_OrderStatusIsCancelled() external givenCancelledOrder {
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Errors.CowSwapModule_OrderAlreadyCancelled.selector, _orderId
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(Errors.CowSwapModule_OrderAlreadyCancelled.selector, _orderId));
         module.cancelOrder(_orderId);
     }
 
@@ -160,11 +148,7 @@ contract CowSwapModule_CancelOrder_Test is CowSwapModuleBase {
         assertTrue(module.getOrder(orderId).cancelled);
 
         // 5. Verify can't cancel again
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                Errors.CowSwapModule_OrderAlreadyCancelled.selector, orderId
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(Errors.CowSwapModule_OrderAlreadyCancelled.selector, orderId));
         module.cancelOrder(orderId);
     }
 }

@@ -17,9 +17,7 @@ contract CCTPBridgeModule_RemoveDomainConfig_Test is CCTPBridgeModuleBase {
     }
 
     function test_RevertWhen_DomainNotConfigured() external {
-        vm.expectRevert(
-            abi.encodeWithSelector(Errors.CCTPBridgeModule_DomainNotConfigured.selector, DOMAIN_BASE)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Errors.CCTPBridgeModule_DomainNotConfigured.selector, DOMAIN_BASE));
         module.removeDomainConfig(DOMAIN_BASE);
     }
 

@@ -28,7 +28,6 @@ import { MockNode } from "../../../../shared/mocks/MockNode.sol";
 ///   - Security: access control, frontrunning griefing
 ///   - Edge cases: expiry, overflow guard, approval hygiene
 contract CowSwapModuleIntegrationTest is Test {
-
     /*//////////////////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////////////////*/
@@ -61,9 +60,9 @@ contract CowSwapModuleIntegrationTest is Test {
     bytes4 internal constant MAGIC_VALUE = 0x1626ba7e;
     bytes4 internal constant FAILURE_VALUE = 0xffffffff;
 
-    uint256 internal constant SELL_AMOUNT = 1_000e18;
+    uint256 internal constant SELL_AMOUNT = 1000e18;
     uint256 internal constant MIN_BUY_AMOUNT = 950e18;
-    uint32 internal constant VALIDITY_DURATION = 3_600;
+    uint32 internal constant VALIDITY_DURATION = 3600;
     bytes32 internal constant APP_DATA = keccak256("receivables-node-v1");
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -86,22 +85,22 @@ contract CowSwapModuleIntegrationTest is Test {
     //////////////////////////////////////////////////////////////////////////*/
 
     function setUp() public {
-        owner    = makeAddr("owner");
-        keeper   = makeAddr("keeper");
+        owner = makeAddr("owner");
+        keeper = makeAddr("keeper");
         attacker = makeAddr("attacker");
 
         cowSettlement = new MockCowSettlement(DOMAIN_SEPARATOR, makeAddr("vaultRelayer"));
-        module        = new CowSwapModule(address(cowSettlement), address(this));
-        mockNode      = new MockNode(address(module));
+        module = new CowSwapModule(address(cowSettlement), address(this));
+        mockNode = new MockNode(address(module));
 
         vm.prank(owner);
         realNode = new Node(owner);
 
         sellToken = new MockERC20("USDC", "USDC");
-        buyToken  = new MockERC20("WETH", "WETH");
+        buyToken = new MockERC20("WETH", "WETH");
 
-        sellToken.mint(address(mockNode),  SELL_AMOUNT * 20);
-        sellToken.mint(address(realNode),  SELL_AMOUNT * 10);
+        sellToken.mint(address(mockNode), SELL_AMOUNT * 20);
+        sellToken.mint(address(realNode), SELL_AMOUNT * 10);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -122,7 +121,7 @@ contract CowSwapModuleIntegrationTest is Test {
 
         assertTrue(success);
         assertEq(sellToken.balanceOf(address(realNode)), SELL_AMOUNT * 10 - SELL_AMOUNT);
-        assertEq(sellToken.balanceOf(address(module)),   SELL_AMOUNT);
+        assertEq(sellToken.balanceOf(address(module)), SELL_AMOUNT);
     }
 
     /// @dev ActionExecuted event from Node reports amountOut=0 — the async pending signal.
@@ -169,9 +168,9 @@ contract CowSwapModuleIntegrationTest is Test {
         assertTrue(orderId != bytes32(0), "orderId must be non-zero");
 
         DataTypes.CowOrderMetadata memory meta = module.getOrder(orderId);
-        assertEq(meta.node,      address(realNode));
+        assertEq(meta.node, address(realNode));
         assertEq(meta.sellToken, address(sellToken));
-        assertEq(meta.buyToken,  address(buyToken));
+        assertEq(meta.buyToken, address(buyToken));
         assertFalse(meta.cancelled, "Order must not be cancelled");
     }
 
@@ -240,7 +239,8 @@ contract CowSwapModuleIntegrationTest is Test {
     function test_Fix_M3_DifferentAppData_BothOrdersSucceed() public {
         bytes32 orderId1 = _initiateOrder(); // appData = APP_DATA
 
-        bytes memory params2 = _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, keccak256("different"));
+        bytes memory params2 =
+            _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, keccak256("different"));
         DataTypes.ExecutionResult memory r2 = mockNode.initiateSwap(address(sellToken), SELL_AMOUNT, params2);
         assertTrue(r2.success, "Different appData -> different orderId -> no collision");
         bytes32 orderId2 = abi.decode(r2.data, (bytes32));
@@ -481,9 +481,7 @@ contract CowSwapModuleIntegrationTest is Test {
 
         // Attacker CANNOT cancel — only the module owner (address(this)) can cancel
         vm.prank(attacker);
-        vm.expectRevert(
-            abi.encodeWithSelector(Errors.CowSwapModule_NotOwner.selector, attacker, address(this))
-        );
+        vm.expectRevert(abi.encodeWithSelector(Errors.CowSwapModule_NotOwner.selector, attacker, address(this)));
         module.cancelOrder(orderId);
 
         // Module owner cancels — sell tokens return to meta.node (the attacker)
@@ -515,12 +513,12 @@ contract CowSwapModuleIntegrationTest is Test {
         assertTrue(attackerOrderId != nodeOrderId, "Different senders -> different receiver -> different orderId");
 
         // Both orders are independent — no collision, no metadata overwrite
-        assertEq(module.getOrder(attackerOrderId).node, attacker,          "Attacker owns their order");
-        assertEq(module.getOrder(nodeOrderId).node,     address(mockNode), "mockNode owns their order");
+        assertEq(module.getOrder(attackerOrderId).node, attacker, "Attacker owns their order");
+        assertEq(module.getOrder(nodeOrderId).node, address(mockNode), "mockNode owns their order");
 
         // Both are pending and each can be cancelled independently
         assertFalse(module.getOrder(attackerOrderId).cancelled, "Attacker order not cancelled");
-        assertFalse(module.getOrder(nodeOrderId).cancelled,     "Node order not cancelled");
+        assertFalse(module.getOrder(nodeOrderId).cancelled, "Node order not cancelled");
 
         // Module holds 2x but they are properly attributed to separate orders
         assertEq(sellToken.balanceOf(address(module)), SELL_AMOUNT * 2);
@@ -632,13 +630,19 @@ contract CowSwapModuleIntegrationTest is Test {
         uint256 minBuyAmount,
         uint32 validityDuration,
         bytes32 appData
-    ) internal view returns (bytes memory) {
-        return module.encodeParams(DataTypes.CowSwapParams({
-            targetToken:      targetToken,
-            minBuyAmount:     minBuyAmount,
-            validityDuration: validityDuration,
-            appData:          appData
-        }));
+    )
+        internal
+        view
+        returns (bytes memory)
+    {
+        return module.encodeParams(
+            DataTypes.CowSwapParams({
+                targetToken: targetToken,
+                minBuyAmount: minBuyAmount,
+                validityDuration: validityDuration,
+                appData: appData
+            })
+        );
     }
 
     function _initiateOrder() internal returns (bytes32 orderId) {
@@ -652,7 +656,10 @@ contract CowSwapModuleIntegrationTest is Test {
         address _buyToken,
         uint256 _sellAmount,
         uint256 _minBuyAmount
-    ) internal returns (bytes32 orderId) {
+    )
+        internal
+        returns (bytes32 orderId)
+    {
         bytes memory params = _buildParams(_buyToken, _minBuyAmount, VALIDITY_DURATION, APP_DATA);
         DataTypes.ExecutionResult memory result = mockNode.initiateSwap(_sellToken, _sellAmount, params);
         return abi.decode(result.data, (bytes32));
@@ -660,9 +667,7 @@ contract CowSwapModuleIntegrationTest is Test {
 
     /// @dev Parse the orderId (first indexed topic) from the first OrderCreated event in logs.
     function _parseOrderCreatedId(Vm.Log[] memory logs) internal view returns (bytes32 orderId) {
-        bytes32 eventSig = keccak256(
-            "OrderCreated(bytes32,address,address,address,uint256,uint256,uint32,bytes32)"
-        );
+        bytes32 eventSig = keccak256("OrderCreated(bytes32,address,address,address,uint256,uint256,uint32,bytes32)");
         for (uint256 i = 0; i < logs.length; i++) {
             if (logs[i].emitter == address(module) && logs[i].topics[0] == eventSig) {
                 return logs[i].topics[1]; // orderId is topic[1] (first indexed)

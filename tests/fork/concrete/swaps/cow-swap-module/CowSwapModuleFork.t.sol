@@ -74,8 +74,8 @@ abstract contract CowSwapModuleForkBase is Test {
     uint256 internal constant USDC_SELL_AMOUNT = 10_000e6; // 10,000 USDC
     uint256 internal constant DAI_SELL_AMOUNT = 10_000e18; // 10,000 DAI
     uint256 internal constant MIN_WETH_BUY = 3e18; // ~3 WETH floor
-    uint256 internal constant MIN_USDC_BUY = 9_500e6; // 9,500 USDC floor
-    uint32  internal constant DEFAULT_VALIDITY = 3_600; // 1 hour
+    uint256 internal constant MIN_USDC_BUY = 9500e6; // 9,500 USDC floor
+    uint32 internal constant DEFAULT_VALIDITY = 3600; // 1 hour
     bytes32 internal constant DEFAULT_APP_DATA = keccak256("receivables-node-v1");
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -158,7 +158,11 @@ abstract contract CowSwapModuleForkBase is Test {
         uint256 minBuyAmount,
         uint32 validityDuration,
         bytes32 appData
-    ) internal view returns (bytes memory) {
+    )
+        internal
+        view
+        returns (bytes memory)
+    {
         return module.encodeParams(
             DataTypes.CowSwapParams({
                 targetToken: targetToken,
@@ -177,7 +181,10 @@ abstract contract CowSwapModuleForkBase is Test {
         uint256 minBuyAmount,
         uint32 validityDuration,
         bytes32 appData
-    ) internal returns (bytes32 orderId) {
+    )
+        internal
+        returns (bytes32 orderId)
+    {
         bytes memory params = _buildParams(buyToken, minBuyAmount, validityDuration, appData);
 
         vm.startPrank(address(node));
@@ -197,7 +204,10 @@ abstract contract CowSwapModuleForkBase is Test {
         uint256 minBuyAmount,
         uint32 validityDuration,
         bytes32 appData
-    ) internal returns (bytes32 orderId) {
+    )
+        internal
+        returns (bytes32 orderId)
+    {
         bytes memory params = _buildParams(buyToken, minBuyAmount, validityDuration, appData);
 
         vm.prank(owner);
@@ -219,9 +229,7 @@ abstract contract CowSwapModuleForkBase is Test {
     function _mockFilledAmount(bytes32 orderId, uint32 validTo, uint256 amount) internal {
         bytes memory orderUid = abi.encodePacked(orderId, address(module), validTo);
         vm.mockCall(
-            GPV2_SETTLEMENT,
-            abi.encodeWithSelector(IGPv2Settlement.filledAmount.selector, orderUid),
-            abi.encode(amount)
+            GPV2_SETTLEMENT, abi.encodeWithSelector(IGPv2Settlement.filledAmount.selector, orderUid), abi.encode(amount)
         );
     }
 
@@ -234,22 +242,15 @@ abstract contract CowSwapModuleForkBase is Test {
         uint256 buyAmount,
         uint32 validTo,
         bytes32 appData
-    ) internal view returns (bytes32) {
+    )
+        internal
+        view
+        returns (bytes32)
+    {
         bytes32 ORDER_TYPE_HASH = keccak256(
-            "Order("
-            "address sellToken,"
-            "address buyToken,"
-            "address receiver,"
-            "uint256 sellAmount,"
-            "uint256 buyAmount,"
-            "uint32 validTo,"
-            "bytes32 appData,"
-            "uint256 feeAmount,"
-            "string kind,"
-            "bool partiallyFillable,"
-            "string sellTokenBalance,"
-            "string buyTokenBalance"
-            ")"
+            "Order(" "address sellToken," "address buyToken," "address receiver," "uint256 sellAmount,"
+            "uint256 buyAmount," "uint32 validTo," "bytes32 appData," "uint256 feeAmount," "string kind,"
+            "bool partiallyFillable," "string sellTokenBalance," "string buyTokenBalance" ")"
         );
         bytes32 KIND_SELL = keccak256("sell");
         bytes32 BALANCE_ERC20 = keccak256("erc20");
@@ -343,7 +344,14 @@ contract CowSwapModuleFork_Execute_Test is CowSwapModuleForkBase {
 
         vm.expectEmit(true, true, true, true, address(module));
         emit OrderCreated(
-            expectedOrderId, address(node), USDC, WETH, USDC_SELL_AMOUNT, MIN_WETH_BUY, expectedValidTo, DEFAULT_APP_DATA
+            expectedOrderId,
+            address(node),
+            USDC,
+            WETH,
+            USDC_SELL_AMOUNT,
+            MIN_WETH_BUY,
+            expectedValidTo,
+            DEFAULT_APP_DATA
         );
 
         module.execute(USDC, USDC_SELL_AMOUNT, params);
@@ -704,20 +712,9 @@ contract CowSwapModuleFork_CowSwapCompatibility_Test is CowSwapModuleForkBase {
     /// @dev The canonical GPv2Order EIP-712 type hash from CowSwap's source.
     ///      See: https://github.com/cowprotocol/contracts/blob/main/src/contracts/libraries/GPv2Order.sol
     bytes32 internal constant COWSWAP_ORDER_TYPE_HASH = keccak256(
-        "Order("
-        "address sellToken,"
-        "address buyToken,"
-        "address receiver,"
-        "uint256 sellAmount,"
-        "uint256 buyAmount,"
-        "uint32 validTo,"
-        "bytes32 appData,"
-        "uint256 feeAmount,"
-        "string kind,"
-        "bool partiallyFillable,"
-        "string sellTokenBalance,"
-        "string buyTokenBalance"
-        ")"
+        "Order(" "address sellToken," "address buyToken," "address receiver," "uint256 sellAmount," "uint256 buyAmount,"
+        "uint32 validTo," "bytes32 appData," "uint256 feeAmount," "string kind," "bool partiallyFillable,"
+        "string sellTokenBalance," "string buyTokenBalance" ")"
     );
 
     function test_OrderTypeHash_MatchesCowSwapCanonical() external {
@@ -744,9 +741,7 @@ contract CowSwapModuleFork_CowSwapCompatibility_Test is CowSwapModuleForkBase {
             "VaultRelayer must have max approval"
         );
         assertEq(
-            IERC20(USDC).allowance(address(module), GPV2_SETTLEMENT),
-            0,
-            "Settlement itself must NOT have approval"
+            IERC20(USDC).allowance(address(module), GPV2_SETTLEMENT), 0, "Settlement itself must NOT have approval"
         );
     }
 
@@ -962,9 +957,8 @@ contract CowSwapModuleFork_Lifecycle_HappyPath_Test is CowSwapModuleForkBase {
 contract CowSwapModuleFork_Lifecycle_CancelPath_Test is CowSwapModuleForkBase {
     /// @dev Full cancel lifecycle: Node executes → owner cancels → tokens return to Node.
     function test_Lifecycle_CancelPath_ReturnsSellTokensToNode() external {
-        bytes32 orderId = _initiateOrderViaNode(
-            USDC, USDC_SELL_AMOUNT, WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA
-        );
+        bytes32 orderId =
+            _initiateOrderViaNode(USDC, USDC_SELL_AMOUNT, WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
         uint256 nodeUsdcBefore = IERC20(USDC).balanceOf(address(node));
 
@@ -982,9 +976,8 @@ contract CowSwapModuleFork_Lifecycle_CancelPath_Test is CowSwapModuleForkBase {
     /// @dev Cancel then re-execute with new appData: verifies clean state recovery.
     function test_Lifecycle_CancelPath_ReExecuteAfterCancel() external {
         // First order
-        bytes32 orderId1 = _initiateOrderViaNode(
-            USDC, USDC_SELL_AMOUNT, WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA
-        );
+        bytes32 orderId1 =
+            _initiateOrderViaNode(USDC, USDC_SELL_AMOUNT, WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
         // Cancel it
         vm.prank(owner);
@@ -1002,9 +995,8 @@ contract CowSwapModuleFork_Lifecycle_CancelPath_Test is CowSwapModuleForkBase {
 
         // Compute new orderId
         uint32 validTo = uint32(block.timestamp + DEFAULT_VALIDITY);
-        bytes32 orderId2 = _computeExpectedOrderId(
-            USDC, WETH, address(node), USDC_SELL_AMOUNT, MIN_WETH_BUY, validTo, newAppData
-        );
+        bytes32 orderId2 =
+            _computeExpectedOrderId(USDC, WETH, address(node), USDC_SELL_AMOUNT, MIN_WETH_BUY, validTo, newAppData);
 
         // New orderId should differ
         assertTrue(orderId1 != orderId2, "Re-executed order should have different orderId");
@@ -1064,9 +1056,8 @@ contract CowSwapModuleFork_Lifecycle_ExpiryPath_Test is CowSwapModuleForkBase {
     /// @dev Validates the full expiry → cancel → re-execute path.
     function test_Lifecycle_ExpiryPath_FullRecoveryFlow() external {
         // Step 1: Create order via Node
-        bytes32 orderId1 = _initiateOrderViaNode(
-            USDC, USDC_SELL_AMOUNT, WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA
-        );
+        bytes32 orderId1 =
+            _initiateOrderViaNode(USDC, USDC_SELL_AMOUNT, WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
         // Step 2: Time passes, order expires
         vm.warp(block.timestamp + DEFAULT_VALIDITY + 1);
@@ -1327,7 +1318,7 @@ contract CowSwapModuleFork_SimulatedSettlement_Test is CowSwapModuleForkBase {
     ///      Uses DAI as buyToken stand-in (since solver delivers buyToken to node address directly).
     function test_SimulatedSettlement_BuyTokenDeliveredDirectlyToNode() external {
         // Create a USDC→DAI order so we can deal DAI (which works on this RPC)
-        _initiateOrder(USDC, USDC_SELL_AMOUNT, DAI, 9_500e18, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        _initiateOrder(USDC, USDC_SELL_AMOUNT, DAI, 9500e18, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
         uint256 nodeDaiBefore = IERC20(DAI).balanceOf(address(node));
         uint256 buyAmount = 10_000e18;

@@ -43,39 +43,34 @@ contract CCTPBridgeModule_Execute_Test is CCTPBridgeModuleBase {
 
     function test_WhenDomainNotConfigured() external {
         vm.prank(address(node));
-        DataTypes.ExecutionResult memory result =
-            module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
         assertFalse(result.success);
         assertEq(result.failureReason, "Domain not configured");
     }
 
     function test_WhenMaxFeeEqualsAmount() external givenDomainConfigured {
         vm.prank(address(node));
-        DataTypes.ExecutionResult memory result =
-            module.execute(address(usdc), DEFAULT_MAX_FEE, _defaultParams());
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_MAX_FEE, _defaultParams());
         assertFalse(result.success);
         assertEq(result.failureReason, "Max fee exceeds amount");
     }
 
     function test_WhenMaxFeeExceedsAmount() external givenDomainConfigured {
         vm.prank(address(node));
-        DataTypes.ExecutionResult memory result =
-            module.execute(address(usdc), DEFAULT_MAX_FEE - 1, _defaultParams());
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_MAX_FEE - 1, _defaultParams());
         assertFalse(result.success);
         assertEq(result.failureReason, "Max fee exceeds amount");
     }
 
     function test_WhenCallerHasInsufficientBalance() external givenDomainConfigured {
         vm.prank(attacker);
-        DataTypes.ExecutionResult memory result =
-            module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
         assertFalse(result.success);
         assertEq(result.failureReason, "Insufficient balance");
     }
 
     function test_WhenTokenTransferFails() external {
-        CCTPBridgeModule failModule =
-            new CCTPBridgeModule(address(tokenMessenger), address(failToken), owner);
+        CCTPBridgeModule failModule = new CCTPBridgeModule(address(tokenMessenger), address(failToken), owner);
         failModule.setDomainConfig(
             DOMAIN_BASE,
             DEFAULT_MINT_RECIPIENT,
@@ -319,12 +314,7 @@ contract CCTPBridgeModule_Execute_Test is CCTPBridgeModuleBase {
     function test_WhenDestinationCallerIsSet_PassesItToTokenMessenger() external {
         bytes32 specificCaller = bytes32(uint256(uint160(0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF)));
         module.setDomainConfig(
-            DOMAIN_BASE,
-            DEFAULT_MINT_RECIPIENT,
-            specificCaller,
-            DEFAULT_MAX_FEE,
-            FINALITY_FAST,
-            DEFAULT_HOOK_DATA
+            DOMAIN_BASE, DEFAULT_MINT_RECIPIENT, specificCaller, DEFAULT_MAX_FEE, FINALITY_FAST, DEFAULT_HOOK_DATA
         );
 
         _executeBridgeFromNode(DEFAULT_BRIDGE_AMOUNT);

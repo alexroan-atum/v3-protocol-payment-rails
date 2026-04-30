@@ -18,9 +18,13 @@ contract ReentrantSellToken is ERC20 {
         moduleOwner = _owner;
     }
 
-    function mint(address to, uint256 amount) external { _mint(to, amount); }
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
 
-    function setTargetOrder(bytes32 orderId) external { targetOrderId = orderId; }
+    function setTargetOrder(bytes32 orderId) external {
+        targetOrderId = orderId;
+    }
 
     function _update(address from, address to, uint256 amount) internal override {
         super._update(from, to, amount);

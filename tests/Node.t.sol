@@ -54,11 +54,8 @@ contract NodeTest is Test {
 
     function test_ConfigureToken() public {
         // Encode forward params
-        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
-            recipient: recipient,
-            requireSuccessfulReceipt: false,
-            minAmount: 0
-        });
+        DataTypes.ForwardParams memory params =
+            DataTypes.ForwardParams({ recipient: recipient, requireSuccessfulReceipt: false, minAmount: 0 });
         bytes memory encodedParams = forwardModule.encodeParams(params);
 
         // Configure token
@@ -68,7 +65,7 @@ contract NodeTest is Test {
             address(forwardModule),
             100 * 10 ** 18, // minBalance
             encodedParams,
-            true            // enabled
+            true // enabled
         );
 
         // Verify configuration
@@ -80,21 +77,11 @@ contract NodeTest is Test {
 
     function test_ExecuteForwardAction() public {
         // Setup: Configure token
-        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
-            recipient: recipient,
-            requireSuccessfulReceipt: false,
-            minAmount: 0
-        });
+        DataTypes.ForwardParams memory params =
+            DataTypes.ForwardParams({ recipient: recipient, requireSuccessfulReceipt: false, minAmount: 0 });
         bytes memory encodedParams = forwardModule.encodeParams(params);
 
-        node.configureToken(
-            address(token),
-            "FORWARD",
-            address(forwardModule),
-            100 * 10 ** 18,
-            encodedParams,
-            true
-        );
+        node.configureToken(address(token), "FORWARD", address(forwardModule), 100 * 10 ** 18, encodedParams, true);
 
         // Check initial balances
         uint256 nodeBalanceBefore = token.balanceOf(address(node));
@@ -118,19 +105,11 @@ contract NodeTest is Test {
 
     function test_ExecuteAction_PublicExecution() public {
         // Configure token
-        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
-            recipient: recipient,
-            requireSuccessfulReceipt: false,
-            minAmount: 0
-        });
+        DataTypes.ForwardParams memory params =
+            DataTypes.ForwardParams({ recipient: recipient, requireSuccessfulReceipt: false, minAmount: 0 });
 
         node.configureToken(
-            address(token),
-            "FORWARD",
-            address(forwardModule),
-            100 * 10 ** 18,
-            forwardModule.encodeParams(params),
-            true
+            address(token), "FORWARD", address(forwardModule), 100 * 10 ** 18, forwardModule.encodeParams(params), true
         );
 
         // Execute from different address (simulating public execution)
@@ -145,11 +124,8 @@ contract NodeTest is Test {
 
     function test_ExecuteAction_BelowMinimumBalance() public {
         // Configure with minimum balance of 100 tokens
-        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
-            recipient: recipient,
-            requireSuccessfulReceipt: false,
-            minAmount: 0
-        });
+        DataTypes.ForwardParams memory params =
+            DataTypes.ForwardParams({ recipient: recipient, requireSuccessfulReceipt: false, minAmount: 0 });
 
         node.configureToken(
             address(token),
@@ -167,11 +143,8 @@ contract NodeTest is Test {
 
     function test_ExecuteAction_PartialAmount() public {
         // Configure token
-        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
-            recipient: recipient,
-            requireSuccessfulReceipt: false,
-            minAmount: 0
-        });
+        DataTypes.ForwardParams memory params =
+            DataTypes.ForwardParams({ recipient: recipient, requireSuccessfulReceipt: false, minAmount: 0 });
 
         node.configureToken(
             address(token),
@@ -200,23 +173,17 @@ contract NodeTest is Test {
 
     function test_ExecuteAction_InsufficientBalance() public {
         // Configure token
-        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
-            recipient: recipient,
-            requireSuccessfulReceipt: false,
-            minAmount: 0
-        });
+        DataTypes.ForwardParams memory params =
+            DataTypes.ForwardParams({ recipient: recipient, requireSuccessfulReceipt: false, minAmount: 0 });
 
         node.configureToken(
-            address(token),
-            "FORWARD",
-            address(forwardModule),
-            100 * 10 ** 18,
-            forwardModule.encodeParams(params),
-            true
+            address(token), "FORWARD", address(forwardModule), 100 * 10 ** 18, forwardModule.encodeParams(params), true
         );
 
         // Try to execute more than balance
-        vm.expectRevert(abi.encodeWithSelector(Errors.Node_InsufficientBalance.selector, 1000 * 10 ** 18, 10_000 * 10 ** 18));
+        vm.expectRevert(
+            abi.encodeWithSelector(Errors.Node_InsufficientBalance.selector, 1000 * 10 ** 18, 10_000 * 10 ** 18)
+        );
         node.executeAction(address(token), 10_000 * 10 ** 18); // Node only has 1000
     }
 
@@ -226,19 +193,11 @@ contract NodeTest is Test {
         node.previewExecution(address(token));
 
         // Configure token
-        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
-            recipient: recipient,
-            requireSuccessfulReceipt: false,
-            minAmount: 0
-        });
+        DataTypes.ForwardParams memory params =
+            DataTypes.ForwardParams({ recipient: recipient, requireSuccessfulReceipt: false, minAmount: 0 });
 
         node.configureToken(
-            address(token),
-            "FORWARD",
-            address(forwardModule),
-            100 * 10 ** 18,
-            forwardModule.encodeParams(params),
-            true
+            address(token), "FORWARD", address(forwardModule), 100 * 10 ** 18, forwardModule.encodeParams(params), true
         );
 
         // Should be able to execute with estimated output
@@ -253,11 +212,8 @@ contract NodeTest is Test {
     }
 
     function test_PreviewExecution_NotEnabled() public {
-        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
-            recipient: recipient,
-            requireSuccessfulReceipt: false,
-            minAmount: 0
-        });
+        DataTypes.ForwardParams memory params =
+            DataTypes.ForwardParams({ recipient: recipient, requireSuccessfulReceipt: false, minAmount: 0 });
 
         // Configure but disabled
         node.configureToken(
@@ -275,29 +231,16 @@ contract NodeTest is Test {
 
     function test_DisableToken() public {
         // Configure token as enabled
-        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
-            recipient: recipient,
-            requireSuccessfulReceipt: false,
-            minAmount: 0
-        });
+        DataTypes.ForwardParams memory params =
+            DataTypes.ForwardParams({ recipient: recipient, requireSuccessfulReceipt: false, minAmount: 0 });
 
         node.configureToken(
-            address(token),
-            "FORWARD",
-            address(forwardModule),
-            100 * 10 ** 18,
-            forwardModule.encodeParams(params),
-            true
+            address(token), "FORWARD", address(forwardModule), 100 * 10 ** 18, forwardModule.encodeParams(params), true
         );
 
         // Reconfigure token as disabled
         node.configureToken(
-            address(token),
-            "FORWARD",
-            address(forwardModule),
-            100 * 10 ** 18,
-            forwardModule.encodeParams(params),
-            false
+            address(token), "FORWARD", address(forwardModule), 100 * 10 ** 18, forwardModule.encodeParams(params), false
         );
 
         // Should not be able to execute
@@ -307,12 +250,7 @@ contract NodeTest is Test {
 
         // Re-enable
         node.configureToken(
-            address(token),
-            "FORWARD",
-            address(forwardModule),
-            100 * 10 ** 18,
-            forwardModule.encodeParams(params),
-            true
+            address(token), "FORWARD", address(forwardModule), 100 * 10 ** 18, forwardModule.encodeParams(params), true
         );
 
         // Should work now
@@ -322,28 +260,17 @@ contract NodeTest is Test {
 
     function test_ReconfigureToken() public {
         // Configure token
-        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({
-            recipient: recipient,
-            requireSuccessfulReceipt: false,
-            minAmount: 0
-        });
+        DataTypes.ForwardParams memory params =
+            DataTypes.ForwardParams({ recipient: recipient, requireSuccessfulReceipt: false, minAmount: 0 });
 
         node.configureToken(
-            address(token),
-            "FORWARD",
-            address(forwardModule),
-            100 * 10 ** 18,
-            forwardModule.encodeParams(params),
-            true
+            address(token), "FORWARD", address(forwardModule), 100 * 10 ** 18, forwardModule.encodeParams(params), true
         );
 
         // Reconfigure with new recipient
         address newRecipient = makeAddr("newRecipient");
-        DataTypes.ForwardParams memory newParams = DataTypes.ForwardParams({
-            recipient: newRecipient,
-            requireSuccessfulReceipt: false,
-            minAmount: 0
-        });
+        DataTypes.ForwardParams memory newParams =
+            DataTypes.ForwardParams({ recipient: newRecipient, requireSuccessfulReceipt: false, minAmount: 0 });
 
         node.configureToken(
             address(token),

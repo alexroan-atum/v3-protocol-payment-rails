@@ -40,11 +40,10 @@ contract CCTPBridgeModuleIntegration_Test is Test {
     //////////////////////////////////////////////////////////////////////////*/
 
     uint32 internal constant DOMAIN_BASE = 6;
-    bytes32 internal constant MINT_RECIPIENT =
-        bytes32(uint256(uint160(0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB)));
+    bytes32 internal constant MINT_RECIPIENT = bytes32(uint256(uint160(0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB)));
     uint256 internal constant MAX_FEE = 1e6;
     uint32 internal constant FINALITY_FAST = 1000;
-    uint256 internal constant BRIDGE_AMOUNT = 1_000e6;
+    uint256 internal constant BRIDGE_AMOUNT = 1000e6;
     uint256 internal constant MIN_BALANCE = 100e6;
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -81,7 +80,9 @@ contract CCTPBridgeModuleIntegration_Test is Test {
 
         bytes memory moduleParams = abi.encode(uint32(DOMAIN_BASE));
         vm.prank(nodeOwner);
-        nodeContract.configureToken(address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, moduleParams, true);
+        nodeContract.configureToken(
+            address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, moduleParams, true
+        );
 
         usdc.mint(address(nodeContract), BRIDGE_AMOUNT);
     }
@@ -101,8 +102,7 @@ contract CCTPBridgeModuleIntegration_Test is Test {
             uint256 amount,
             uint32 destinationDomain,
             bytes32 mintRecipient,
-            address burnToken,
-            ,
+            address burnToken,,
             uint256 maxFee,
             uint32 minFinalityThreshold,
         ) = tokenMessenger.depositCalls(0);
@@ -118,12 +118,7 @@ contract CCTPBridgeModuleIntegration_Test is Test {
     function test_NodeEmitsActionExecuted() external {
         vm.expectEmit(true, false, false, true);
         emit ActionExecuted(
-            address(usdc),
-            "CCTP_BRIDGE",
-            BRIDGE_AMOUNT,
-            BRIDGE_AMOUNT - MAX_FEE,
-            address(usdc),
-            executor
+            address(usdc), "CCTP_BRIDGE", BRIDGE_AMOUNT, BRIDGE_AMOUNT - MAX_FEE, address(usdc), executor
         );
 
         vm.prank(executor);
@@ -133,13 +128,7 @@ contract CCTPBridgeModuleIntegration_Test is Test {
     function test_BridgeModuleEmitsBridgeInitiated() external {
         vm.expectEmit(true, true, false, true);
         emit BridgeInitiated(
-            address(nodeContract),
-            BRIDGE_AMOUNT,
-            DOMAIN_BASE,
-            MINT_RECIPIENT,
-            MAX_FEE,
-            FINALITY_FAST,
-            ""
+            address(nodeContract), BRIDGE_AMOUNT, DOMAIN_BASE, MINT_RECIPIENT, MAX_FEE, FINALITY_FAST, ""
         );
 
         vm.prank(executor);
@@ -196,9 +185,7 @@ contract CCTPBridgeModuleIntegration_Test is Test {
         uint256 smallAmount = MIN_BALANCE - 1;
 
         vm.prank(executor);
-        vm.expectRevert(
-            abi.encodeWithSelector(Errors.Node_BelowMinimumBalance.selector, smallAmount, MIN_BALANCE)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Errors.Node_BelowMinimumBalance.selector, smallAmount, MIN_BALANCE));
         nodeContract.executeAction(address(usdc), smallAmount);
     }
 
@@ -206,16 +193,16 @@ contract CCTPBridgeModuleIntegration_Test is Test {
         uint256 tooMuch = BRIDGE_AMOUNT + 1;
 
         vm.prank(executor);
-        vm.expectRevert(
-            abi.encodeWithSelector(Errors.Node_InsufficientBalance.selector, BRIDGE_AMOUNT, tooMuch)
-        );
+        vm.expectRevert(abi.encodeWithSelector(Errors.Node_InsufficientBalance.selector, BRIDGE_AMOUNT, tooMuch));
         nodeContract.executeAction(address(usdc), tooMuch);
     }
 
     function test_RevertWhen_TokenNotEnabled() external {
         vm.prank(nodeOwner);
         bytes memory moduleParams = abi.encode(uint32(DOMAIN_BASE));
-        nodeContract.configureToken(address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, moduleParams, false);
+        nodeContract.configureToken(
+            address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, moduleParams, false
+        );
 
         vm.prank(executor);
         vm.expectRevert(Errors.Node_TokenNotEnabled.selector);
@@ -237,8 +224,8 @@ contract CCTPBridgeModuleIntegration_Test is Test {
         vm.prank(executor);
         nodeContract.executeAction(address(usdc), BRIDGE_AMOUNT / 2);
 
-        (, , bytes32 recipient1, , , , ,) = tokenMessenger.depositCalls(0);
-        (, , bytes32 recipient2, , , uint256 fee2, ,) = tokenMessenger.depositCalls(1);
+        (,, bytes32 recipient1,,,,,) = tokenMessenger.depositCalls(0);
+        (,, bytes32 recipient2,,, uint256 fee2,,) = tokenMessenger.depositCalls(1);
 
         assertEq(recipient1, MINT_RECIPIENT);
         assertEq(recipient2, newRecipient);

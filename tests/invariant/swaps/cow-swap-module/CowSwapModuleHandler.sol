@@ -21,7 +21,10 @@ contract NodeProxy is Test {
         address token,
         uint256 amount,
         bytes calldata params
-    ) external returns (DataTypes.ExecutionResult memory) {
+    )
+        external
+        returns (DataTypes.ExecutionResult memory)
+    {
         IERC20(token).approve(address(module), amount);
         return module.execute(token, amount, params);
     }
@@ -58,10 +61,10 @@ contract CowSwapModuleHandler is Test {
                                 MODULE UNDER TEST
     //////////////////////////////////////////////////////////////////////////*/
 
-    CowSwapModule      internal module;
-    NodeProxy                internal node;
-    MockERC20         internal sellToken;
-    MockERC20         internal buyToken;
+    CowSwapModule internal module;
+    NodeProxy internal node;
+    MockERC20 internal sellToken;
+    MockERC20 internal buyToken;
     MockCowSettlement internal cowSettlement;
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -97,16 +100,16 @@ contract CowSwapModuleHandler is Test {
     //////////////////////////////////////////////////////////////////////////*/
 
     constructor(
-        CowSwapModule      _module,
-        NodeProxy                _node,
-        MockERC20         _sellToken,
-        MockERC20         _buyToken,
+        CowSwapModule _module,
+        NodeProxy _node,
+        MockERC20 _sellToken,
+        MockERC20 _buyToken,
         MockCowSettlement _cowSettlement
     ) {
-        module        = _module;
-        node          = _node;
-        sellToken     = _sellToken;
-        buyToken      = _buyToken;
+        module = _module;
+        node = _node;
+        sellToken = _sellToken;
+        buyToken = _buyToken;
         cowSettlement = _cowSettlement;
     }
 
@@ -116,14 +119,10 @@ contract CowSwapModuleHandler is Test {
 
     /// @dev Creates a new order with bounded fuzz inputs.
     ///      validityDuration has NO upper bound — full uint32 range tested.
-    function handler_execute(
-        uint256 sellAmount,
-        uint256 minBuyAmount,
-        uint32  validityDuration
-    ) external {
+    function handler_execute(uint256 sellAmount, uint256 minBuyAmount, uint32 validityDuration) external {
         // Bound to realistic values (but validityDuration is unbounded)
-        sellAmount       = bound(sellAmount, 1, 100_000e18);
-        minBuyAmount     = bound(minBuyAmount, 1, type(uint128).max);
+        sellAmount = bound(sellAmount, 1, 100_000e18);
+        minBuyAmount = bound(minBuyAmount, 1, type(uint128).max);
         // validityDuration: only lower bound (>0), NO upper bound
         vm.assume(validityDuration >= 1);
 
@@ -131,10 +130,10 @@ contract CowSwapModuleHandler is Test {
         sellToken.mint(address(node), sellAmount);
 
         DataTypes.CowSwapParams memory params = DataTypes.CowSwapParams({
-            targetToken:      address(buyToken),
-            minBuyAmount:     minBuyAmount,
+            targetToken: address(buyToken),
+            minBuyAmount: minBuyAmount,
             validityDuration: validityDuration,
-            appData:          keccak256("handler.test")
+            appData: keccak256("handler.test")
         });
         bytes memory encodedParams = module.encodeParams(params);
 
@@ -150,8 +149,8 @@ contract CowSwapModuleHandler is Test {
             if (ghost_orderSellAmount[orderId] == 0) {
                 ghost_allOrderIds.push(orderId);
                 ghost_orderSellAmount[orderId] = sellAmount;
-                ghost_orderSellToken[orderId]  = address(sellToken);
-                ghost_orderStatus[orderId]     = 0;
+                ghost_orderSellToken[orderId] = address(sellToken);
+                ghost_orderStatus[orderId] = 0;
             }
             // For collision: second deposit adds to ghost_totalDeposited but metadata is NOT
             // updated in ghost (mirrors the contract: metadata overwritten, but both token deposits land)
@@ -210,17 +209,19 @@ contract CowSwapModuleHandler is Test {
         // isValidSignature: EIP-1271 — must NEVER revert
         try module.isValidSignature(hash, sig) returns (bytes4 result) {
             assertTrue(
-                result == 0x1626ba7e || result == 0xffffffff,
-                "isValidSignature must return MAGIC or FAILURE only"
+                result == 0x1626ba7e || result == 0xffffffff, "isValidSignature must return MAGIC or FAILURE only"
             );
         } catch {
             ghost_viewFunctionReverted = true;
         }
 
         // getOrder: must NEVER revert
-        try module.getOrder(hash) returns (DataTypes.CowOrderMetadata memory) {
-            // any return value is fine
-        } catch {
+        try module.getOrder(hash) returns (
+            DataTypes.CowOrderMetadata memory
+        ) {
+        // any return value is fine
+        }
+        catch {
             ghost_viewFunctionReverted = true;
         }
     }
@@ -246,10 +247,7 @@ contract CowSwapModuleHandler is Test {
     function ghost_sumPendingSellAmountsFor(address token) external view returns (uint256 sum) {
         for (uint256 i = 0; i < ghost_allOrderIds.length; i++) {
             bytes32 id = ghost_allOrderIds[i];
-            if (
-                ghost_orderStatus[id] == 0 &&
-                ghost_orderSellToken[id] == token
-            ) {
+            if (ghost_orderStatus[id] == 0 && ghost_orderSellToken[id] == token) {
                 sum += ghost_orderSellAmount[id];
             }
         }

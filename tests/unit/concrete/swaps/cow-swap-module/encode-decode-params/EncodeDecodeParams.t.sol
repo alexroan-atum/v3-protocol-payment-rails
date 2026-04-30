@@ -58,15 +58,17 @@ contract CowSwapModule_EncodeDecodeParams_Test is CowSwapModuleBase {
         assertEq(decoded.appData, original.appData);
     }
 
-    function testFuzz_RoundTrip(address targetToken, uint256 minBuyAmount, uint32 validity, bytes32 appData)
+    function testFuzz_RoundTrip(
+        address targetToken,
+        uint256 minBuyAmount,
+        uint32 validity,
+        bytes32 appData
+    )
         external
         view
     {
         DataTypes.CowSwapParams memory original = DataTypes.CowSwapParams({
-            targetToken: targetToken,
-            minBuyAmount: minBuyAmount,
-            validityDuration: validity,
-            appData: appData
+            targetToken: targetToken, minBuyAmount: minBuyAmount, validityDuration: validity, appData: appData
         });
         DataTypes.CowSwapParams memory decoded = module.decodeParams(module.encodeParams(original));
         assertEq(decoded.targetToken, original.targetToken);

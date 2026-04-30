@@ -47,7 +47,6 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 /// - Minimal storage operations (stateless module)
 /// - Direct transfer without intermediate steps
 contract ForwardModule is IForwardModule, ActionModuleBase {
-
     /*//////////////////////////////////////////////////////////////////////////
                         USER-FACING STATE-CHANGING FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
@@ -91,7 +90,11 @@ contract ForwardModule is IForwardModule, ActionModuleBase {
         address token,
         uint256 amount,
         bytes calldata params
-    ) external override(ActionModuleBase, IActionModule) returns (DataTypes.ExecutionResult memory result) {
+    )
+        external
+        override(ActionModuleBase, IActionModule)
+        returns (DataTypes.ExecutionResult memory result)
+    {
         // Step 1: Decode configuration parameters
         // Convert generic bytes calldata into typed ForwardParams struct
         DataTypes.ForwardParams memory forwardParams = decodeParams(params);
@@ -174,7 +177,12 @@ contract ForwardModule is IForwardModule, ActionModuleBase {
         address token,
         uint256 amount,
         bytes calldata params
-    ) external view override(ActionModuleBase, IActionModule) returns (bool isValid, string memory reason) {
+    )
+        external
+        view
+        override(ActionModuleBase, IActionModule)
+        returns (bool isValid, string memory reason)
+    {
         // Step 1: Decode configuration parameters
         DataTypes.ForwardParams memory forwardParams = decodeParams(params);
 
@@ -228,7 +236,12 @@ contract ForwardModule is IForwardModule, ActionModuleBase {
         address token,
         uint256 amount,
         bytes calldata /* params */
-    ) external pure override(ActionModuleBase, IActionModule) returns (uint256 estimatedOutput, address outputToken) {
+    )
+        external
+        pure
+        override(ActionModuleBase, IActionModule)
+        returns (uint256 estimatedOutput, address outputToken)
+    {
         // For forward, output equals input (1:1 transfer)
         return (amount, token);
     }
@@ -318,9 +331,7 @@ contract ForwardModule is IForwardModule, ActionModuleBase {
     /// @param encoded The ABI-encoded parameter bytes
     /// @return params The decoded ForwardParams struct
     function decodeParams(bytes calldata encoded) public pure returns (DataTypes.ForwardParams memory params) {
-        (params.recipient, params.requireSuccessfulReceipt, params.minAmount) = abi.decode(
-            encoded,
-            (address, bool, uint256)
-        );
+        (params.recipient, params.requireSuccessfulReceipt, params.minAmount) =
+            abi.decode(encoded, (address, bool, uint256));
     }
 }

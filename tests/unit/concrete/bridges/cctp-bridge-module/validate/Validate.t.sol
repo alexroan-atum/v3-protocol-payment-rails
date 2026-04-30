@@ -34,30 +34,26 @@ contract CCTPBridgeModule_Validate_Test is CCTPBridgeModuleBase {
     }
 
     function test_WhenDomainNotConfigured() external view {
-        (bool isValid, string memory reason) =
-            module.validate(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
+        (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
         assertFalse(isValid);
         assertEq(reason, "Domain not configured");
     }
 
     function test_WhenMaxFeeEqualsAmount() external givenDomainConfigured {
-        (bool isValid, string memory reason) =
-            module.validate(address(usdc), DEFAULT_MAX_FEE, _defaultParams());
+        (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_MAX_FEE, _defaultParams());
         assertFalse(isValid);
         assertEq(reason, "Max fee exceeds amount");
     }
 
     function test_WhenMaxFeeExceedsAmount() external givenDomainConfigured {
-        (bool isValid, string memory reason) =
-            module.validate(address(usdc), DEFAULT_MAX_FEE - 1, _defaultParams());
+        (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_MAX_FEE - 1, _defaultParams());
         assertFalse(isValid);
         assertEq(reason, "Max fee exceeds amount");
     }
 
     function test_WhenCallerHasInsufficientBalance() external givenDomainConfigured {
         vm.prank(attacker);
-        (bool isValid, string memory reason) =
-            module.validate(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
+        (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
         assertFalse(isValid);
         assertEq(reason, "Insufficient balance");
     }
@@ -68,8 +64,7 @@ contract CCTPBridgeModule_Validate_Test is CCTPBridgeModuleBase {
 
     function test_WhenAllChecksPass() external givenDomainConfigured {
         vm.prank(address(node));
-        (bool isValid, string memory reason) =
-            module.validate(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
+        (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
         assertTrue(isValid);
         assertEq(reason, "");
     }

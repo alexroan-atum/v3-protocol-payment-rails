@@ -85,7 +85,6 @@ import { DataTypes } from "../types/DataTypes.sol";
 /// - TokenConfigured: Emitted when token configuration changes
 /// - ActionExecuted: Emitted when action executes successfully (includes executor)
 interface INode {
-
     /*//////////////////////////////////////////////////////////////////////////
                                     EVENTS
     //////////////////////////////////////////////////////////////////////////*/
@@ -95,11 +94,7 @@ interface INode {
     /// @param token The token address that was configured
     /// @param actionType The action type string (e.g., "FORWARD", "SWAP")
     /// @param actionModule The module contract address
-    event TokenConfigured(
-        address indexed token,
-        string actionType,
-        address actionModule
-    );
+    event TokenConfigured(address indexed token, string actionType, address actionModule);
 
     /// @notice Emitted when an action is successfully executed
     /// @dev Emitted by executeAction() after module returns success=true
@@ -219,7 +214,8 @@ interface INode {
         uint256 minBalance,
         bytes calldata moduleParams,
         bool enabled
-    ) external;
+    )
+        external;
 
     /*//////////////////////////////////////////////////////////////////////////
                                    EXECUTION
@@ -380,8 +376,5 @@ interface INode {
     /// @param token Token address to preview
     /// @return estimatedOutput Estimated output amount if execution succeeds
     /// @return outputToken Address of output token
-    function previewExecution(address token)
-        external
-        view
-        returns (uint256 estimatedOutput, address outputToken);
+    function previewExecution(address token) external view returns (uint256 estimatedOutput, address outputToken);
 }

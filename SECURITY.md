@@ -15,13 +15,16 @@ We aim to acknowledge within 72 hours and will coordinate disclosure with you.
 ## Scope
 
 **In scope:**
+
 - Contracts in `src/core/`, `src/abstracts/`, `src/interfaces/`, `src/libraries/`
 - First-party modules in `src/modules/<category>/` (excluding `contrib/`)
 
 **Out of scope** — report directly to the module's maintainer (see `MODULES.md`):
+
 - Community modules in `src/modules/contrib/`
 
 **Out of scope** — report upstream:
+
 - Issues in dependencies (OpenZeppelin, forge-std, etc.)
 
 ## Supported versions

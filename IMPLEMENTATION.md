@@ -11,7 +11,9 @@ This is the first minimal working version of the **Receivables Node** system - a
 ### Core Contracts
 
 #### 1. **Node.sol** (`src/core/Node.sol`)
+
 The central router contract that:
+
 - Maintains token configurations mapping each token to an action module
 - Enforces cooldown periods and minimum balance thresholds
 - Delegates execution to configured action modules
@@ -19,6 +21,7 @@ The central router contract that:
 - **Owner-only configuration** - only owner can set destinations and parameters
 
 **Key Features:**
+
 - Modular design: delegates to separate action modules
 - Per-token configuration with independent parameters
 - Cooldown mechanism to prevent spam and encourage batching
@@ -26,20 +29,26 @@ The central router contract that:
 - No pause, no emergency withdraw - fix issues via configuration updates
 
 #### 2. **ForwardModule.sol** (`src/modules/ForwardModule.sol`)
+
 Fully implemented module for simple token transfers.
+
 - Transfers tokens to a pre-configured destination address
 - Validates recipient address and minimum amounts
 - 1:1 transfer (input amount = output amount)
 
 #### 3. **SwapModule.sol** (`src/modules/SwapModule.sol`)
+
 Skeleton implementation for token swaps.
+
 - **Status**: Skeleton only (not implemented)
 - **TODO**: Integrate with DEX routers (Uniswap, CalSwap, etc.)
 - **TODO**: Implement oracle price validation
 - **TODO**: Add TWAP protection
 
 #### 4. **BridgeModule.sol** (`src/modules/BridgeModule.sol`)
+
 Skeleton implementation for cross-chain bridging.
+
 - **Status**: Skeleton only (not implemented)
 - **TODO**: Integrate with CCTP, LayerZero, or other bridges
 - **TODO**: Implement bridge health checks
@@ -186,6 +195,7 @@ receivables-node/
 ## Next Steps
 
 ### Priority 1: Complete SwapModule
+
 - [ ] Integrate with Uniswap V3 router
 - [ ] Add Chainlink oracle price validation
 - [ ] Implement slippage protection
@@ -193,6 +203,7 @@ receivables-node/
 - [ ] Test with real DEX on fork
 
 ### Priority 2: Complete BridgeModule
+
 - [ ] Integrate with CCTP for USDC bridging
 - [ ] Add bridge health oracle integration
 - [ ] Implement fee estimation
@@ -200,6 +211,7 @@ receivables-node/
 - [ ] Test cross-chain flow on testnets
 
 ### Priority 3: Advanced Features
+
 - [ ] Multi-path routing (swap A→B→C in single action)
 - [ ] Gas optimization for batch executions
 - [ ] Event indexing for off-chain monitoring
@@ -207,6 +219,7 @@ receivables-node/
 - [ ] Integration with existing CashFlow Controller
 
 ### Priority 4: Security
+
 - [ ] External security audit
 - [ ] Formal verification of critical functions
 - [ ] MEV protection analysis
@@ -248,20 +261,25 @@ receivables-node/
 ### How to Recover from Issues
 
 **Problem: Bug in module**
+
 - Solution: Deploy fixed module, call `updateModuleParams()` or reconfigure token with new module
 
 **Problem: Wrong configuration**
+
 - Solution: Call `updateModuleParams()` to update destination/parameters
 
 **Problem: Need to stop token processing**
+
 - Solution: Call `setTokenEnabled(token, false)` to disable
 
 **Problem: Module not working, need funds back**
+
 - Solution: Configure token to use ForwardModule with owner as recipient
 
 ## MEV Protection (To Be Implemented in SwapModule)
 
 The SwapModule will implement multi-layered MEV protection:
+
 1. **Oracle price validation** (Chainlink) - Compare swap output vs oracle price
 2. **TWAP comparison** (Uniswap V3) - Validate against time-weighted average
 3. **Slippage bounds** - Enforce max deviation from expected price
