@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.29;
 
-import { CowSwapModule } from "../../../src/modules/CowSwapModule.sol";
+import { CowSwapModule } from "../../../src/modules/swaps/CowSwapModule.sol";
 import { DataTypes } from "../../../src/types/DataTypes.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.29;
 
-import { CCTPBridgeModule } from "../../../src/modules/CCTPBridgeModule.sol";
+import { CCTPBridgeModule } from "../../../src/modules/bridges/CCTPBridgeModule.sol";
 import { DataTypes } from "../../../src/types/DataTypes.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 

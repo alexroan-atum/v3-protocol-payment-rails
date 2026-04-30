@@ -3,7 +3,7 @@ pragma solidity ^0.8.29;
 
 import { Test } from "forge-std/src/Test.sol";
 import { Node } from "../src/core/Node.sol";
-import { ForwardModule } from "../src/modules/ForwardModule.sol";
+import { ForwardModule } from "../src/modules/forwards/ForwardModule.sol";
 import { INode } from "../src/interfaces/INode.sol";
 import { IForwardModule } from "../src/interfaces/IForwardModule.sol";
 import { DataTypes } from "../src/types/DataTypes.sol";

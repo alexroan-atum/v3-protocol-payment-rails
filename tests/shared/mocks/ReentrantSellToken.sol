@@ -2,7 +2,7 @@
 pragma solidity ^0.8.29;
 
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import { CowSwapModule } from "../../../src/modules/CowSwapModule.sol";
+import { CowSwapModule } from "../../../src/modules/swaps/CowSwapModule.sol";
 
 /// @dev Reentrant sell token: re-enters module.cancelOrder() on transfer FROM the module.
 ///      Used to verify CEI prevents double-drain (status is CANCELLED before transfer fires).

@@ -2,7 +2,7 @@
 pragma solidity >=0.8.29 <0.9.0;
 
 import { console2 } from "forge-std/src/Script.sol";
-import { CowSwapModule } from "../../../src/modules/CowSwapModule.sol";
+import { CowSwapModule } from "../../../src/modules/swaps/CowSwapModule.sol";
 
 import { BaseScript } from "../Base.s.sol";
 
