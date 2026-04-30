@@ -90,10 +90,10 @@
 
 [rpc_endpoints]
   # === MAINNETS ===
-  ethereum = "https://eth.llamarpc.com"
+  ethereum = "${ETHEREUM_RPC_URL}"
   arbitrum = "https://arbitrum.llamarpc.com"
   avalanche = "https://avalanche.public-rpc.com"
-  base = "https://mainnet.base.org"
+  base = "${BASE_RPC_URL}"
   bsc = "https://bsc-dataseed.binance.org"
   gnosis = "https://rpc.gnosischain.com"
   optimism = "https://optimism.llamarpc.com"
@@ -122,9 +122,9 @@
   # xdc = "https://rpc.xdc.org/${YOUR_RPC_KEY}"
 
   # === TESTNETS ===
-  sepolia = "https://ethereum-sepolia-rpc.publicnode.com"
+  sepolia = "${SEPOLIA_RPC_URL}"
   arbitrum_sepolia = "https://sepolia-rollup.arbitrum.io/rpc"
-  base_sepolia = "https://sepolia.base.org"
+  base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
   optimism_sepolia = "https://sepolia.optimism.io"
   mode_sepolia = "https://sepolia.mode.network"
 
