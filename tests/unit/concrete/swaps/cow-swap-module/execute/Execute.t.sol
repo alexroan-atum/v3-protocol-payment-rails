@@ -314,9 +314,8 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
     function test_Execute_TwiceSameBlock_DifferentAppData_ProducesDifferentOrderIds() external {
         bytes32 id1 = _initiateDefaultOrder();
 
-        bytes memory params2 = _buildParams(
-            address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, keccak256("different-app-data")
-        );
+        bytes memory params2 =
+            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, keccak256("different-app-data"));
         DataTypes.ExecutionResult memory result2 = node.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params2);
 
         assertTrue(result2.success);

@@ -33,7 +33,11 @@ contract SwapModule is ISwapModule {
 
         if (swapParams.targetToken == address(0)) {
             return DataTypes.ExecutionResult({
-                success: false, amountOut: 0, outputToken: address(0), data: "", failureReason: "Zero target token"
+                success: false,
+                amountOut: 0,
+                outputToken: address(0),
+                data: "",
+                failureReason: "Zero target token"
             });
         }
 

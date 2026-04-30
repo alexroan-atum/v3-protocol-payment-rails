@@ -68,7 +68,10 @@ contract CowSwapModule_EncodeDecodeParams_Test is CowSwapModuleBase {
         view
     {
         DataTypes.CowSwapParams memory original = DataTypes.CowSwapParams({
-            targetToken: targetToken, minBuyAmount: minBuyAmount, validityDuration: validity, appData: appData
+            targetToken: targetToken,
+            minBuyAmount: minBuyAmount,
+            validityDuration: validity,
+            appData: appData
         });
         DataTypes.CowSwapParams memory decoded = module.decodeParams(module.encodeParams(original));
         assertEq(decoded.targetToken, original.targetToken);

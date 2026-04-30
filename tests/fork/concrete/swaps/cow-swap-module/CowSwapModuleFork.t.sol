@@ -932,9 +932,8 @@ contract CowSwapModuleFork_Lifecycle_HappyPath_Test is CowSwapModuleForkBase {
         assertEq(IERC20(DAI).balanceOf(address(node)), nodeDaiBefore - DAI_SELL_AMOUNT);
 
         uint32 validTo = uint32(block.timestamp + DEFAULT_VALIDITY);
-        bytes32 orderId = _computeExpectedOrderId(
-            DAI, USDC, address(node), DAI_SELL_AMOUNT, MIN_USDC_BUY, validTo, DEFAULT_APP_DATA
-        );
+        bytes32 orderId =
+            _computeExpectedOrderId(DAI, USDC, address(node), DAI_SELL_AMOUNT, MIN_USDC_BUY, validTo, DEFAULT_APP_DATA);
 
         // isValidSignature should be valid
         assertEq(module.isValidSignature(orderId, abi.encode(orderId)), EIP1271_MAGIC);
@@ -1080,9 +1079,8 @@ contract CowSwapModuleFork_Lifecycle_ExpiryPath_Test is CowSwapModuleForkBase {
 
         // New order is valid
         uint32 newValidTo = uint32(block.timestamp + DEFAULT_VALIDITY);
-        bytes32 orderId2 = _computeExpectedOrderId(
-            USDC, WETH, address(node), USDC_SELL_AMOUNT, MIN_WETH_BUY, newValidTo, newAppData
-        );
+        bytes32 orderId2 =
+            _computeExpectedOrderId(USDC, WETH, address(node), USDC_SELL_AMOUNT, MIN_WETH_BUY, newValidTo, newAppData);
         assertEq(module.isValidSignature(orderId2, abi.encode(orderId2)), EIP1271_MAGIC);
     }
 }
