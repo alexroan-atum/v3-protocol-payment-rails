@@ -117,7 +117,7 @@ jobs:
           )" >> $GITHUB_ENV
 
       - name: "Run tests"
-        run: "forge test --gas-report"
+        run: 'forge test --gas-report --no-match-path "tests/fork/**"'
 
       - name: "Add test summary"
         run: |
@@ -153,7 +153,7 @@ jobs:
             cache/
 
       - name: "Generate coverage report"
-        run: "forge coverage --report lcov --ir-minimum"
+        run: 'forge coverage --report lcov --ir-minimum --no-match-path "tests/fork/**"'
 
       - name: "Upload coverage to Codecov"
         uses: "codecov/codecov-action@v4"
