@@ -117,7 +117,9 @@ jobs:
           )" >> $GITHUB_ENV
 
       - name: "Run tests"
-        run: 'forge test --gas-report --no-match-path "tests/fork/**"'
+        env:
+          ETHEREUM_RPC_URL: ${{ secrets.ETHEREUM_RPC_URL }}
+        run: "forge test --gas-report"
 
       - name: "Add test summary"
         run: |
@@ -153,7 +155,9 @@ jobs:
             cache/
 
       - name: "Generate coverage report"
-        run: 'forge coverage --report lcov --ir-minimum --no-match-path "tests/fork/**"'
+        env:
+          ETHEREUM_RPC_URL: ${{ secrets.ETHEREUM_RPC_URL }}
+        run: "forge coverage --report lcov --ir-minimum"
 
       - name: "Upload coverage to Codecov"
         uses: "codecov/codecov-action@v4"
