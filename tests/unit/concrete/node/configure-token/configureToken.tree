@@ -1,0 +1,35 @@
+Node_ConfigureToken
+├── when caller is not the owner
+│   └── it should revert with OwnableUnauthorizedAccount
+├── when token is zero address
+│   └── it should revert with Node_ZeroTokenAddress
+├── given actionType is empty string
+│   ├── when actionModule is not zero address
+│   │   └── it should revert with Node_NoneActionRequiresZeroModule
+│   └── when actionModule is zero address
+│       ├── it should store the cleared configuration
+│       └── it should emit TokenConfigured
+├── given actionType is not empty
+│   ├── when actionModule is zero address
+│   │   └── it should revert with Node_ZeroModuleAddress
+│   ├── when actionModule has no code (EOA)
+│   │   └── it should revert (Solidity extcodesize check)
+│   ├── when actionModule reverts on moduleType()
+│   │   └── it should revert with Node_ModuleValidationFailed
+│   ├── when actionModule returns empty moduleType
+│   │   └── it should revert with Node_InvalidModule
+│   └── when all parameters are valid
+│       ├── it should store the token configuration
+│       ├── it should set enabled correctly
+│       ├── it should emit TokenConfigured
+│       ├── when reconfiguring an existing token
+│       │   ├── it should overwrite the previous configuration
+│       │   └── it should emit TokenConfigured with new values
+│       ├── when clearing a previously configured token
+│       │   ├── it should reset config to defaults
+│       │   └── it should block subsequent execution
+│       └── when configuring multiple tokens
+│           └── it should store independent configs
+└── fuzz
+    └── when minBalance is arbitrary
+        └── it should store the exact minBalance value

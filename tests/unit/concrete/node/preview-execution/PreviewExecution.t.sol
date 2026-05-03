@@ -1,0 +1,96 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.29;
+
+import { NodeBase } from "../NodeBase.t.sol";
+import { Errors } from "../../../../../src/libraries/Errors.sol";
+import { MockERC20 } from "../../../../shared/mocks/MockERC20.sol";
+
+contract NodePreviewExecutionTest is NodeBase {
+    /*//////////////////////////////////////////////////////////////////////////
+                        REVERT TESTS — validation checks
+    //////////////////////////////////////////////////////////////////////////*/
+
+    function test_RevertWhen_TokenIsZeroAddress() external {
+        vm.expectRevert(Errors.Node_ZeroTokenAddress.selector);
+        node.previewExecution(address(0));
+    }
+
+    function test_RevertWhen_NoActionConfigured() external {
+        vm.expectRevert(Errors.Node_NoActionConfigured.selector);
+        node.previewExecution(address(token));
+    }
+
+    function test_RevertWhen_TokenNotEnabled() external givenTokenConfiguredDisabled {
+        vm.expectRevert(Errors.Node_TokenNotEnabled.selector);
+        node.previewExecution(address(token));
+    }
+
+    function test_RevertWhen_ModuleHasNoCode() external {
+        vm.prank(owner);
+        node.configureToken(
+            address(token), ACTION_TYPE, address(actionModule), MIN_BALANCE, _defaultModuleParams(), true
+        );
+
+        // Remove the module's code to simulate a destroyed contract.
+        vm.etch(address(actionModule), "");
+
+        vm.expectRevert(Errors.Node_InvalidModule.selector);
+        node.previewExecution(address(token));
+    }
+
+    function test_RevertWhen_BalanceIsZero() external givenTokenConfigured {
+        // Deploy a fresh token with zero balance in the node
+        MockERC20 emptyToken = new MockERC20("Empty", "EMP");
+
+        vm.prank(owner);
+        node.configureToken(address(emptyToken), ACTION_TYPE, address(actionModule), 0, _defaultModuleParams(), true);
+
+        vm.expectRevert(Errors.Node_ZeroAmount.selector);
+        node.previewExecution(address(emptyToken));
+    }
+
+    function test_RevertWhen_BalanceBelowMinBalance() external {
+        // Configure with minBalance higher than current balance
+        uint256 highMinBalance = INITIAL_BALANCE + 1;
+
+        vm.prank(owner);
+        node.configureToken(
+            address(token), ACTION_TYPE, address(actionModule), highMinBalance, _defaultModuleParams(), true
+        );
+
+        vm.expectRevert(
+            abi.encodeWithSelector(Errors.Node_BelowMinimumBalance.selector, INITIAL_BALANCE, highMinBalance)
+        );
+        node.previewExecution(address(token));
+    }
+
+    function test_RevertWhen_ModuleValidationFails() external givenTokenConfigured {
+        actionModule.setValidationResult(false, "bad params");
+
+        vm.expectRevert("bad params");
+        node.previewExecution(address(token));
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                    SUCCESS TESTS — all checks pass
+    //////////////////////////////////////////////////////////////////////////*/
+
+    function test_WhenAllChecksPass_ReturnsEstimatedOutput() external givenTokenConfigured {
+        (uint256 estimatedOutput,) = node.previewExecution(address(token));
+        assertEq(estimatedOutput, INITIAL_BALANCE);
+    }
+
+    function test_WhenAllChecksPass_ReturnsOutputToken() external givenTokenConfigured {
+        (, address outputToken) = node.previewExecution(address(token));
+        assertEq(outputToken, address(token));
+    }
+
+    function test_WhenMinBalanceIsZero_Succeeds() external {
+        vm.prank(owner);
+        node.configureToken(address(token), ACTION_TYPE, address(actionModule), 0, _defaultModuleParams(), true);
+
+        (uint256 estimatedOutput, address outputToken) = node.previewExecution(address(token));
+        assertEq(estimatedOutput, INITIAL_BALANCE);
+        assertEq(outputToken, address(token));
+    }
+}
