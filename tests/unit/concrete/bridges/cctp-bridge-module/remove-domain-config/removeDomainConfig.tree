@@ -6,4 +6,10 @@ CCTPBridgeModule_RemoveDomainConfig
 └── given domain is configured
     ├── it should delete the domain config
     ├── it should set isValid to false
-    └── it should emit DomainConfigRemoved
+    ├── it should emit DomainConfigRemoved
+    ├── it should not affect other configured domains
+    ├── it should allow reconfiguring the removed domain
+    ├── when removing the same domain twice
+    │   └── it should revert on second removal with DomainNotConfigured
+    └── when executing after domain removal
+        └── it should return failed result with "Domain not configured"
