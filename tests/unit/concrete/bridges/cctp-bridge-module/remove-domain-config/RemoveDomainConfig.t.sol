@@ -6,7 +6,7 @@ import { DataTypes } from "../../../../../../src/types/DataTypes.sol";
 import { Errors } from "../../../../../../src/libraries/Errors.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
-contract CCTPBridgeModule_RemoveDomainConfig_Test is CCTPBridgeModuleBase {
+contract CCTPBridgeModuleRemoveDomainConfigTest is CCTPBridgeModuleBase {
     /*//////////////////////////////////////////////////////////////////////////
                             REVERT TESTS
     //////////////////////////////////////////////////////////////////////////*/
@@ -74,5 +74,21 @@ contract CCTPBridgeModule_RemoveDomainConfig_Test is CCTPBridgeModuleBase {
         DataTypes.CCTPDomainConfig memory config = module.getDomainConfig(DOMAIN_BASE);
         assertTrue(config.isValid);
         assertEq(config.mintRecipient, newRecipient);
+    }
+
+    function test_GivenDomainRemoved_DoubleRemoveReverts() external givenDomainConfigured {
+        module.removeDomainConfig(DOMAIN_BASE);
+
+        vm.expectRevert(abi.encodeWithSelector(Errors.CCTPBridgeModule_DomainNotConfigured.selector, DOMAIN_BASE));
+        module.removeDomainConfig(DOMAIN_BASE);
+    }
+
+    function test_GivenDomainRemoved_ExecuteReturnsFailure() external givenDomainConfigured {
+        module.removeDomainConfig(DOMAIN_BASE);
+
+        vm.prank(address(node));
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
+        assertFalse(result.success);
+        assertEq(result.failureReason, "Domain not configured");
     }
 }

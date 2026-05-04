@@ -13,6 +13,11 @@ CCTPBridgeModule_SetDomainConfig
 ├── when all parameters are valid with non-empty hook data
 │   ├── it should store hookData in the domain config
 │   └── it should emit DomainConfigSet
-└── when updating an existing domain config
-    ├── it should overwrite the previous config
-    └── it should emit DomainConfigSet with new values
+├── when updating an existing domain config
+│   ├── it should overwrite the previous config
+│   └── it should emit DomainConfigSet with new values
+├── when configuring multiple domains
+│   └── it should store each domain independently
+└── fuzz
+    └── when minFinalityThreshold is not 1000 or 2000
+        └── it should revert with CCTPBridgeModule_InvalidFinalityThreshold

@@ -1,0 +1,10 @@
+ForwardModule_EncodeDecodeParams
+├── it should encode and decode recipient correctly
+├── it should encode and decode requireSuccessfulReceipt correctly
+├── it should encode and decode minAmount correctly
+├── it should roundtrip with different parameter combinations
+├── it should roundtrip with zero address recipient
+├── it should roundtrip with max values
+├── it should revert when encoded data is too short
+├── it should revert when encoded data is empty
+└── it should roundtrip any values [fuzz]

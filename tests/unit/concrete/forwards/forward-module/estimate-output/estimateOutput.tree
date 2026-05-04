@@ -1,0 +1,6 @@
+ForwardModule_EstimateOutput
+├── it should return amount as estimatedOutput
+├── it should return token as outputToken
+├── it should return zero for zero amount
+├── it should return same output regardless of params
+└── it should return exact input values for any input [fuzz]

@@ -4,10 +4,9 @@ pragma solidity ^0.8.29;
 import { CCTPBridgeModuleBase } from "../CCTPBridgeModuleBase.t.sol";
 import { CCTPBridgeModule } from "../../../../../../src/modules/bridges/CCTPBridgeModule.sol";
 import { DataTypes } from "../../../../../../src/types/DataTypes.sol";
-import { MockTokenMessengerV2 } from "../../../../../shared/mocks/MockTokenMessengerV2.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-contract CCTPBridgeModule_Execute_Test is CCTPBridgeModuleBase {
+contract CCTPBridgeModuleExecuteTest is CCTPBridgeModuleBase {
     /*//////////////////////////////////////////////////////////////////////////
                         FAILED-RESULT TESTS (no revert, returns failure)
     //////////////////////////////////////////////////////////////////////////*/
@@ -321,6 +320,29 @@ contract CCTPBridgeModule_Execute_Test is CCTPBridgeModuleBase {
 
         (,,,, bytes32 destinationCaller,,,) = tokenMessenger.depositCalls(0);
         assertEq(destinationCaller, specificCaller);
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                    PERMISSIONLESS EXECUTION
+    //////////////////////////////////////////////////////////////////////////*/
+
+    function test_WhenCalledByNonOwner_Succeeds() external givenDomainConfigured {
+        DataTypes.ExecutionResult memory result = _executeBridgeFromNode(DEFAULT_BRIDGE_AMOUNT);
+        assertTrue(result.success);
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                    BOUNDARY CONDITION TESTS
+    //////////////////////////////////////////////////////////////////////////*/
+
+    function test_WhenAmountEqualsMaxFeePlusOne_SucceedsWithAmountOutOne() external givenDomainConfigured {
+        uint256 amount = DEFAULT_MAX_FEE + 1;
+        usdc.mint(address(node), amount);
+
+        DataTypes.ExecutionResult memory result = _executeBridgeFromNode(amount);
+
+        assertTrue(result.success);
+        assertEq(result.amountOut, 1);
     }
 
     /*//////////////////////////////////////////////////////////////////////////

@@ -1,0 +1,11 @@
+Node_GetTokenConfig
+├── when token has no configuration
+│   └── it should return default empty config
+├── when token is configured
+│   ├── it should return the correct actionType
+│   ├── it should return the correct actionModule
+│   ├── it should return the correct enabled status
+│   ├── it should return the correct minBalance
+│   └── it should return the correct moduleParams
+└── when token configuration was cleared
+    └── it should return default empty config again
