@@ -3,7 +3,7 @@ pragma solidity >=0.8.29 <0.9.0;
 
 import { Script, console2 } from "forge-std/src/Script.sol";
 import { Node } from "../../../../src/core/Node.sol";
-import { CowSwapModule } from "../../../../src/modules/CowSwapModule.sol";
+import { CowSwapModule } from "../../../../src/modules/swaps/CowSwapModule.sol";
 import { DataTypes } from "../../../../src/types/DataTypes.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -60,7 +60,7 @@ contract CowSwapSmoke is Script {
     uint256 internal constant DEFAULT_SELL_AMOUNT = 1_000_000; // 1 USDC
     uint256 internal constant DEFAULT_MIN_BUY_AMOUNT = 200_000_000_000_000; // 0.0002 WETH (~$0.42 floor)
     uint256 internal constant DEFAULT_MIN_BALANCE = 1_000_000; // 1 USDC
-    uint32 internal constant DEFAULT_VALIDITY_DURATION = 1_800; // 30 minutes
+    uint32 internal constant DEFAULT_VALIDITY_DURATION = 1800; // 30 minutes
 
     /*//////////////////////////////////////////////////////////////////////////
                                     STRUCTS
@@ -247,10 +247,7 @@ contract CowSwapSmoke is Script {
             })
         );
 
-        node.configureToken(
-            cfg.sellToken, "COWSWAP", address(module), cfg.minBalance, moduleParams, true
-        );
+        node.configureToken(cfg.sellToken, "COWSWAP", address(module), cfg.minBalance, moduleParams, true);
         console2.log("[CONFIGURED] %s -> COWSWAP", vm.toString(cfg.sellToken));
     }
-
 }

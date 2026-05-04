@@ -2,7 +2,7 @@
 pragma solidity ^0.8.29;
 
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import { CowSwapModule } from "../../../src/modules/CowSwapModule.sol";
+import { CowSwapModule } from "../../../src/modules/swaps/CowSwapModule.sol";
 
 /// @dev Reentrant sell token: re-enters module.cancelOrder() on transfer FROM the module.
 ///      Used to verify CEI prevents double-drain (status is CANCELLED before transfer fires).
@@ -18,9 +18,13 @@ contract ReentrantSellToken is ERC20 {
         moduleOwner = _owner;
     }
 
-    function mint(address to, uint256 amount) external { _mint(to, amount); }
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
 
-    function setTargetOrder(bytes32 orderId) external { targetOrderId = orderId; }
+    function setTargetOrder(bytes32 orderId) external {
+        targetOrderId = orderId;
+    }
 
     function _update(address from, address to, uint256 amount) internal override {
         super._update(from, to, amount);

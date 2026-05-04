@@ -24,7 +24,8 @@ interface ITokenMessengerV2 {
         bytes32 destinationCaller,
         uint256 maxFee,
         uint32 minFinalityThreshold
-    ) external;
+    )
+        external;
 
     /// @notice Burns tokens with hook data for destination-side post-mint automation.
     /// @dev Identical to `depositForBurn` but attaches opaque `hookData` that CCTP delivers to the
@@ -46,5 +47,6 @@ interface ITokenMessengerV2 {
         uint256 maxFee,
         uint32 minFinalityThreshold,
         bytes calldata hookData
-    ) external;
+    )
+        external;
 }

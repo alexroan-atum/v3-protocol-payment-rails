@@ -103,7 +103,8 @@ contract Node is INode, NodeState, Ownable, ReentrancyGuard {
         }
 
         // Check: Module validation
-        (bool isValid, string memory reason) = IActionModule(config.actionModule).validate(token, balance, config.moduleParams);
+        (bool isValid, string memory reason) =
+            IActionModule(config.actionModule).validate(token, balance, config.moduleParams);
         if (!isValid) {
             // Module validation failed - revert with module's reason
             // Note: Cannot revert with module's custom error, so we use a descriptive revert
@@ -146,7 +147,10 @@ contract Node is INode, NodeState, Ownable, ReentrancyGuard {
         uint256 minBalance,
         bytes calldata moduleParams,
         bool enabled
-    ) external onlyOwner {
+    )
+        external
+        onlyOwner
+    {
         // Check: Token address not zero
         if (token == address(0)) {
             revert Errors.Node_ZeroTokenAddress();
@@ -260,7 +264,11 @@ contract Node is INode, NodeState, Ownable, ReentrancyGuard {
     /// @param amount The amount of tokens to process
     /// @param config The token configuration containing module address and parameters
     /// @return success True if module execution succeeded, false otherwise
-    function _executeActionInternal(address token, uint256 amount, DataTypes.TokenConfig memory config)
+    function _executeActionInternal(
+        address token,
+        uint256 amount,
+        DataTypes.TokenConfig memory config
+    )
         private
         returns (bool success)
     {
@@ -273,9 +281,7 @@ contract Node is INode, NodeState, Ownable, ReentrancyGuard {
         ) {
             if (result.success) {
                 // Log: Emit success event
-                emit ActionExecuted(
-                    token, config.actionType, amount, result.amountOut, result.outputToken, msg.sender
-                );
+                emit ActionExecuted(token, config.actionType, amount, result.amountOut, result.outputToken, msg.sender);
                 return true;
             } else {
                 // Effect: Revoke approval on module-reported failure

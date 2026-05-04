@@ -26,14 +26,7 @@ interface ISwapModule is IActionModule {
     /// @param tokenOut Output token address.
     /// @param oracle   Price oracle contract address (e.g., Chainlink).
     /// @return price   Price of `tokenIn` denominated in `tokenOut` (scaled by oracle decimals).
-    function getOraclePrice(
-        address tokenIn,
-        address tokenOut,
-        address oracle
-    )
-        external
-        view
-        returns (uint256 price);
+    function getOraclePrice(address tokenIn, address tokenOut, address oracle) external view returns (uint256 price);
 
     /// @notice Validates swap output against an oracle price with a deviation tolerance.
     /// @param tokenIn           Input token address.

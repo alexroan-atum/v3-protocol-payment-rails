@@ -110,7 +110,8 @@ interface ICCTPBridgeModule is IActionModule {
         uint256 maxFee,
         uint32 minFinalityThreshold,
         bytes calldata hookData
-    ) external;
+    )
+        external;
 
     /// @notice Removes the routing configuration for a destination domain.
     /// @dev Only callable by the module owner. Emits {DomainConfigRemoved}.
@@ -128,10 +129,7 @@ interface ICCTPBridgeModule is IActionModule {
     /// @notice Returns the current routing configuration for a destination domain.
     /// @param destinationDomain CCTP domain ID to query.
     /// @return config The domain config. `isValid == false` if not configured.
-    function getDomainConfig(uint32 destinationDomain)
-        external
-        view
-        returns (DataTypes.CCTPDomainConfig memory config);
+    function getDomainConfig(uint32 destinationDomain) external view returns (DataTypes.CCTPDomainConfig memory config);
 
     /// @notice Address of Circle's TokenMessengerV2 contract on this chain (immutable).
     function tokenMessenger() external view returns (address);
@@ -142,16 +140,10 @@ interface ICCTPBridgeModule is IActionModule {
     /// @notice ABI-encodes a {CCTPBridgeParams} struct into bytes for `Node.configureToken()`.
     /// @param params   Typed struct containing `destinationDomain`.
     /// @return encoded ABI-encoded bytes.
-    function encodeParams(DataTypes.CCTPBridgeParams calldata params)
-        external
-        pure
-        returns (bytes memory encoded);
+    function encodeParams(DataTypes.CCTPBridgeParams calldata params) external pure returns (bytes memory encoded);
 
     /// @notice Decodes bytes back into a typed {CCTPBridgeParams} struct.
     /// @param encoded ABI-encoded bytes produced by `encodeParams()`.
     /// @return params Decoded struct.
-    function decodeParams(bytes calldata encoded)
-        external
-        pure
-        returns (DataTypes.CCTPBridgeParams memory params);
+    function decodeParams(bytes calldata encoded) external pure returns (DataTypes.CCTPBridgeParams memory params);
 }

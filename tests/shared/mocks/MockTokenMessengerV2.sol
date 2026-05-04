@@ -34,7 +34,9 @@ contract MockTokenMessengerV2 {
         bytes32 destinationCaller,
         uint256 maxFee,
         uint32 minFinalityThreshold
-    ) external {
+    )
+        external
+    {
         if (shouldRevert) revert(revertReason);
 
         depositCalls.push(
@@ -60,7 +62,9 @@ contract MockTokenMessengerV2 {
         uint256 maxFee,
         uint32 minFinalityThreshold,
         bytes calldata hookData
-    ) external {
+    )
+        external
+    {
         if (shouldRevert) revert(revertReason);
 
         depositWithHookCalls.push(

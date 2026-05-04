@@ -51,7 +51,6 @@ import { DataTypes } from "../types/DataTypes.sol";
 /// - SwapModule: DEX swap with slippage protection (future)
 /// - BridgeModule: Cross-chain token bridge (future)
 interface IActionModule {
-
     /// @notice Execute the configured action for a token
     /// @dev Called by Node contract after validation and token approval
     ///
@@ -98,7 +97,9 @@ interface IActionModule {
         address token,
         uint256 amount,
         bytes calldata params
-    ) external returns (DataTypes.ExecutionResult memory result);
+    )
+        external
+        returns (DataTypes.ExecutionResult memory result);
 
     /// @notice Validate if execution is safe/possible without executing
     /// @dev View function to check if execute() would succeed
@@ -145,7 +146,10 @@ interface IActionModule {
         address token,
         uint256 amount,
         bytes calldata params
-    ) external view returns (bool isValid, string memory reason);
+    )
+        external
+        view
+        returns (bool isValid, string memory reason);
 
     /// @notice Estimate output amount for an action
     /// @dev Provides expected output for off-chain monitoring and preview
@@ -199,7 +203,10 @@ interface IActionModule {
         address token,
         uint256 amount,
         bytes calldata params
-    ) external view returns (uint256 estimatedOutput, address outputToken);
+    )
+        external
+        view
+        returns (uint256 estimatedOutput, address outputToken);
 
     /// @notice Get human-readable identifier for this module type
     /// @dev Returns a constant string identifying the module implementation

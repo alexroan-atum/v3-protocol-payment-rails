@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.29;
 
-import { CCTPBridgeModule } from "../../../src/modules/CCTPBridgeModule.sol";
+import { CCTPBridgeModule } from "../../../src/modules/bridges/CCTPBridgeModule.sol";
 import { DataTypes } from "../../../src/types/DataTypes.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -9,13 +9,18 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 contract MockBridgeNode {
     CCTPBridgeModule public immutable module;
 
-    constructor(address _module) { module = CCTPBridgeModule(_module); }
+    constructor(address _module) {
+        module = CCTPBridgeModule(_module);
+    }
 
     function initiateBridge(
         address token,
         uint256 amount,
         bytes calldata params
-    ) external returns (DataTypes.ExecutionResult memory) {
+    )
+        external
+        returns (DataTypes.ExecutionResult memory)
+    {
         IERC20(token).approve(address(module), amount);
         return module.execute(token, amount, params);
     }
