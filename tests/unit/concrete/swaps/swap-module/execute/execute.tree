@@ -1,0 +1,18 @@
+SwapModule_Execute
+├── when targetToken is zero address
+│   ├── it should return success false with "Zero target token"
+│   └── it should return zero address as outputToken
+├── when dexRouter is zero address
+│   ├── it should return success false with "Zero DEX router"
+│   └── it should return targetToken as outputToken
+├── when caller has insufficient balance
+│   └── it should return success false with "Insufficient balance"
+├── when multiple validations fail
+│   └── it should return the first failing validation
+├── when input token equals target token
+│   └── it should still return "Swap not implemented" (no same-token guard in execute)
+└── when all validations pass
+    ├── it should return success false with "Swap not implemented"
+    ├── it should return zero amountOut
+    ├── it should return targetToken as outputToken
+    └── it should not transfer any tokens

@@ -6,7 +6,7 @@ import { DataTypes } from "../../../../../../src/types/DataTypes.sol";
 import { Errors } from "../../../../../../src/libraries/Errors.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
-contract CCTPBridgeModule_SetDomainConfig_Test is CCTPBridgeModuleBase {
+contract CCTPBridgeModuleSetDomainConfigTest is CCTPBridgeModuleBase {
     /*//////////////////////////////////////////////////////////////////////////
                             REVERT TESTS
     //////////////////////////////////////////////////////////////////////////*/
@@ -195,5 +195,23 @@ contract CCTPBridgeModule_SetDomainConfig_Test is CCTPBridgeModuleBase {
         assertEq(configBase.maxFee, DEFAULT_MAX_FEE);
         assertEq(configArb.mintRecipient, recipientArb);
         assertEq(configArb.maxFee, 0);
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                            FUZZ TESTS
+    //////////////////////////////////////////////////////////////////////////*/
+
+    function testFuzz_RevertWhen_FinalityThresholdIsInvalid(uint32 threshold) external {
+        vm.assume(threshold != 1000 && threshold != 2000);
+
+        vm.expectRevert(abi.encodeWithSelector(Errors.CCTPBridgeModule_InvalidFinalityThreshold.selector, threshold));
+        module.setDomainConfig(
+            DOMAIN_BASE,
+            DEFAULT_MINT_RECIPIENT,
+            DEFAULT_DESTINATION_CALLER,
+            DEFAULT_MAX_FEE,
+            threshold,
+            DEFAULT_HOOK_DATA
+        );
     }
 }

@@ -4,14 +4,13 @@ pragma solidity ^0.8.29;
 import { Test } from "forge-std/src/Test.sol";
 import { Node } from "../../../../../src/core/Node.sol";
 import { CCTPBridgeModule } from "../../../../../src/modules/bridges/CCTPBridgeModule.sol";
-import { DataTypes } from "../../../../../src/types/DataTypes.sol";
 import { Errors } from "../../../../../src/libraries/Errors.sol";
 import { MockERC20 } from "../../../../shared/mocks/MockERC20.sol";
 import { MockTokenMessengerV2 } from "../../../../shared/mocks/MockTokenMessengerV2.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-/// @dev Integration tests that exercise the full Node → CCTPBridgeModule → TokenMessengerV2 path.
-contract CCTPBridgeModuleIntegration_Test is Test {
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+
+contract CCTPBridgeModuleIntegrationTest is Test {
     /*//////////////////////////////////////////////////////////////////////////
                                     EVENTS
     //////////////////////////////////////////////////////////////////////////*/
@@ -293,5 +292,238 @@ contract CCTPBridgeModuleIntegration_Test is Test {
 
         (,,,,,,, bytes memory hookData) = tokenMessenger.depositWithHookCalls(0);
         assertEq(hookData, hex"cafebabe");
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                    MULTI-NODE — SHARED MODULE
+    //////////////////////////////////////////////////////////////////////////*/
+
+    function test_MultiNode_TwoNodesShareOneModule_BothSucceed() external {
+        Node nodeB = new Node(nodeOwner);
+        vm.prank(nodeOwner);
+        nodeB.configureToken(
+            address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, abi.encode(uint32(DOMAIN_BASE)), true
+        );
+        usdc.mint(address(nodeB), BRIDGE_AMOUNT);
+
+        vm.prank(executor);
+        bool successA = nodeContract.executeAction(address(usdc), BRIDGE_AMOUNT);
+
+        vm.prank(executor);
+        bool successB = nodeB.executeAction(address(usdc), BRIDGE_AMOUNT);
+
+        assertTrue(successA);
+        assertTrue(successB);
+        assertEq(tokenMessenger.getDepositCallCount(), 2);
+        assertEq(usdc.balanceOf(address(nodeContract)), 0);
+        assertEq(usdc.balanceOf(address(nodeB)), 0);
+    }
+
+    function test_MultiNode_DifferentDomains_RoutesCorrectly() external {
+        uint32 domainArbitrum = 3;
+        bytes32 recipientArb = bytes32(uint256(uint160(0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa)));
+
+        vm.prank(moduleOwner);
+        bridgeModule.setDomainConfig(domainArbitrum, recipientArb, bytes32(0), 0, FINALITY_FAST, "");
+
+        Node nodeB = new Node(nodeOwner);
+        vm.prank(nodeOwner);
+        nodeB.configureToken(
+            address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, abi.encode(domainArbitrum), true
+        );
+        usdc.mint(address(nodeB), BRIDGE_AMOUNT);
+
+        vm.prank(executor);
+        nodeContract.executeAction(address(usdc), BRIDGE_AMOUNT);
+
+        vm.prank(executor);
+        nodeB.executeAction(address(usdc), BRIDGE_AMOUNT);
+
+        (, uint32 domain1, bytes32 recipient1,,,,,) = tokenMessenger.depositCalls(0);
+        (, uint32 domain2, bytes32 recipient2,,,,,) = tokenMessenger.depositCalls(1);
+
+        assertEq(domain1, DOMAIN_BASE);
+        assertEq(recipient1, MINT_RECIPIENT);
+        assertEq(domain2, domainArbitrum);
+        assertEq(recipient2, recipientArb);
+    }
+
+    function test_MultiNode_DomainRemoval_AffectsBothNodes() external {
+        Node nodeB = new Node(nodeOwner);
+        vm.prank(nodeOwner);
+        nodeB.configureToken(
+            address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, abi.encode(uint32(DOMAIN_BASE)), true
+        );
+        usdc.mint(address(nodeB), BRIDGE_AMOUNT);
+
+        vm.prank(moduleOwner);
+        bridgeModule.removeDomainConfig(DOMAIN_BASE);
+
+        vm.prank(executor);
+        bool successA = nodeContract.executeAction(address(usdc), BRIDGE_AMOUNT);
+
+        vm.prank(executor);
+        bool successB = nodeB.executeAction(address(usdc), BRIDGE_AMOUNT);
+
+        assertFalse(successA);
+        assertFalse(successB);
+        assertEq(usdc.balanceOf(address(nodeContract)), BRIDGE_AMOUNT);
+        assertEq(usdc.balanceOf(address(nodeB)), BRIDGE_AMOUNT);
+    }
+
+    function test_MultiNode_InterleavedExecutions() external {
+        Node nodeB = new Node(nodeOwner);
+        vm.prank(nodeOwner);
+        nodeB.configureToken(
+            address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, abi.encode(uint32(DOMAIN_BASE)), true
+        );
+        usdc.mint(address(nodeB), BRIDGE_AMOUNT);
+
+        uint256 half = BRIDGE_AMOUNT / 2;
+
+        vm.prank(executor);
+        nodeContract.executeAction(address(usdc), half);
+
+        vm.prank(executor);
+        nodeB.executeAction(address(usdc), half);
+
+        vm.prank(executor);
+        nodeContract.executeAction(address(usdc), half);
+
+        vm.prank(executor);
+        nodeB.executeAction(address(usdc), half);
+
+        assertEq(tokenMessenger.getDepositCallCount(), 4);
+        assertEq(usdc.balanceOf(address(nodeContract)), 0);
+        assertEq(usdc.balanceOf(address(nodeB)), 0);
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                    MULTI-DOMAIN — NODE RECONFIGURATION
+    //////////////////////////////////////////////////////////////////////////*/
+
+    function test_MultiDomain_ReconfigureNodeToDifferentDomain() external {
+        vm.prank(executor);
+        nodeContract.executeAction(address(usdc), BRIDGE_AMOUNT / 2);
+
+        uint32 domainArbitrum = 3;
+        bytes32 recipientArb = bytes32(uint256(uint160(0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa)));
+        vm.prank(moduleOwner);
+        bridgeModule.setDomainConfig(domainArbitrum, recipientArb, bytes32(0), 0, FINALITY_FAST, "");
+
+        vm.prank(nodeOwner);
+        nodeContract.configureToken(
+            address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, abi.encode(domainArbitrum), true
+        );
+
+        vm.prank(executor);
+        nodeContract.executeAction(address(usdc), BRIDGE_AMOUNT / 2);
+
+        (, uint32 domain1,,,,,,) = tokenMessenger.depositCalls(0);
+        (, uint32 domain2,,,,,,) = tokenMessenger.depositCalls(1);
+        assertEq(domain1, DOMAIN_BASE);
+        assertEq(domain2, domainArbitrum);
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                    MODULE OWNERSHIP — INTEGRATION
+    //////////////////////////////////////////////////////////////////////////*/
+
+    function test_ModuleOwnershipTransfer_NewOwnerCanReconfigure() external {
+        address newModuleOwner = makeAddr("newModuleOwner");
+
+        vm.prank(moduleOwner);
+        bridgeModule.transferOwnership(newModuleOwner);
+
+        vm.prank(newModuleOwner);
+        bridgeModule.acceptOwnership();
+
+        bytes32 newRecipient = bytes32(uint256(uint160(0xDDdDddDdDdddDDddDDddDDDDdDdDDdDDdDDDDDDd)));
+        vm.prank(newModuleOwner);
+        bridgeModule.setDomainConfig(DOMAIN_BASE, newRecipient, bytes32(0), 0, FINALITY_FAST, "");
+
+        vm.prank(executor);
+        bool success = nodeContract.executeAction(address(usdc), BRIDGE_AMOUNT);
+        assertTrue(success);
+
+        (,, bytes32 recipient,,,,,) = tokenMessenger.depositCalls(0);
+        assertEq(recipient, newRecipient);
+    }
+
+    function test_ModuleOwnershipTransfer_OldOwnerBlocked() external {
+        address newModuleOwner = makeAddr("newModuleOwner");
+
+        vm.prank(moduleOwner);
+        bridgeModule.transferOwnership(newModuleOwner);
+
+        vm.prank(newModuleOwner);
+        bridgeModule.acceptOwnership();
+
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, moduleOwner));
+        vm.prank(moduleOwner);
+        bridgeModule.setDomainConfig(DOMAIN_BASE, MINT_RECIPIENT, bytes32(0), MAX_FEE, FINALITY_FAST, "");
+    }
+
+    function test_ModuleOwnershipRenounce_ExistingDomainsStillWork() external {
+        vm.prank(moduleOwner);
+        bridgeModule.renounceOwnership();
+
+        vm.prank(executor);
+        bool success = nodeContract.executeAction(address(usdc), BRIDGE_AMOUNT);
+        assertTrue(success);
+        assertEq(tokenMessenger.getDepositCallCount(), 1);
+    }
+
+    function test_ModuleOwnershipRenounce_CannotAddNewDomains() external {
+        vm.prank(moduleOwner);
+        bridgeModule.renounceOwnership();
+
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, moduleOwner));
+        vm.prank(moduleOwner);
+        bridgeModule.setDomainConfig(uint32(3), MINT_RECIPIENT, bytes32(0), MAX_FEE, FINALITY_FAST, "");
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                    NODE RECONFIGURATION — DISABLE / RE-ENABLE
+    //////////////////////////////////////////////////////////////////////////*/
+
+    function test_NodeDisableThenReEnable_BridgeWorks() external {
+        vm.prank(nodeOwner);
+        nodeContract.configureToken(
+            address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, abi.encode(uint32(DOMAIN_BASE)), false
+        );
+
+        vm.prank(executor);
+        vm.expectRevert(Errors.Node_TokenNotEnabled.selector);
+        nodeContract.executeAction(address(usdc), BRIDGE_AMOUNT);
+
+        vm.prank(nodeOwner);
+        nodeContract.configureToken(
+            address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, abi.encode(uint32(DOMAIN_BASE)), true
+        );
+
+        vm.prank(executor);
+        bool success = nodeContract.executeAction(address(usdc), BRIDGE_AMOUNT);
+        assertTrue(success);
+    }
+
+    function test_NodeSwapToNewModule() external {
+        MockTokenMessengerV2 tokenMessenger2 = new MockTokenMessengerV2();
+        CCTPBridgeModule moduleB = new CCTPBridgeModule(address(tokenMessenger2), address(usdc), moduleOwner);
+
+        vm.prank(moduleOwner);
+        moduleB.setDomainConfig(DOMAIN_BASE, MINT_RECIPIENT, bytes32(0), 0, FINALITY_FAST, "");
+
+        vm.prank(nodeOwner);
+        nodeContract.configureToken(
+            address(usdc), "CCTP_BRIDGE", address(moduleB), MIN_BALANCE, abi.encode(uint32(DOMAIN_BASE)), true
+        );
+
+        vm.prank(executor);
+        bool success = nodeContract.executeAction(address(usdc), BRIDGE_AMOUNT);
+        assertTrue(success);
+
+        assertEq(tokenMessenger.getDepositCallCount(), 0);
+        assertEq(tokenMessenger2.getDepositCallCount(), 1);
     }
 }

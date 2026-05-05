@@ -1,0 +1,2 @@
+SwapModule_GetOraclePrice
+└── it should return zero for any inputs
