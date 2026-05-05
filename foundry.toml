@@ -63,7 +63,7 @@
 [doc]
   ignore = ["**/*.t.sol"]
   out = "docs"
-  repository = "https://github.com/yourorg/foundry-template"
+  repository = "https://github.com/credit-cooperative/v3-protocol-payment-rails"
 
 [etherscan]
   etherscan = { key = "${ETHERSCAN_API_KEY}" }
