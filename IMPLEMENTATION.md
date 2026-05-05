@@ -174,7 +174,7 @@ forge test --match-test test_ExecuteForwardAction
 ## Directory Structure
 
 ```
-receivables-node/
+v3-protocol-payment-rails/
 ├── src/
 │   ├── interfaces/
 │   │   ├── INode.sol
