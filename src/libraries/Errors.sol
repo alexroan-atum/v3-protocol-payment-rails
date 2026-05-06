@@ -83,32 +83,28 @@ library Errors {
     error ForwardModule_TransferFailed(address recipient, uint256 amount);
 
     /*//////////////////////////////////////////////////////////////////////////
-                        DEX AGGREGATOR MODULE ERRORS
+                        UNISWAP SWAP MODULE ERRORS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Thrown when the target token in static params is the zero address.
-    error DexAggregatorModule_ZeroTargetToken();
-
     /// @notice Thrown when a router address is the zero address (addRouter / executionData).
-    error DexAggregatorModule_ZeroRouter();
+    error UniswapSwapModule_ZeroRouter();
+
+    /// @notice Thrown when a router address has no deployed code (is an EOA).
+    /// @param router The EOA address that was rejected.
+    error UniswapSwapModule_RouterNotContract(address router);
 
     /// @notice Thrown when the caller supplies a router that is not whitelisted.
     /// @param router The disallowed router address.
-    error DexAggregatorModule_RouterNotAllowed(address router);
+    error UniswapSwapModule_RouterNotAllowed(address router);
 
     /// @notice Thrown when the router already exists in the whitelist.
     /// @param router The duplicate router address.
-    error DexAggregatorModule_RouterAlreadyAdded(address router);
+    error UniswapSwapModule_RouterAlreadyAdded(address router);
 
     /// @notice Thrown when actual swap output is below the caller-supplied minimum.
     /// @param amountOut Actual output from the swap.
     /// @param minAmountOut Minimum acceptable output.
-    error DexAggregatorModule_InsufficientOutput(uint256 amountOut, uint256 minAmountOut);
-
-    /// @notice Thrown when the execution deadline has passed.
-    /// @param deadline Caller-supplied deadline timestamp.
-    /// @param currentTime Current block.timestamp.
-    error DexAggregatorModule_DeadlineExpired(uint256 deadline, uint256 currentTime);
+    error UniswapSwapModule_InsufficientOutput(uint256 amountOut, uint256 minAmountOut);
 
     /*//////////////////////////////////////////////////////////////////////////
                             COWSWAP MODULE ERRORS

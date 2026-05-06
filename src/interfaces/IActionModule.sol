@@ -48,8 +48,9 @@ import { DataTypes } from "../types/DataTypes.sol";
 ///
 /// Example modules:
 /// - ForwardModule: Simple token transfer to recipient
-/// - DexAggregatorModule: Atomic swap via whitelisted DEX routers
-/// - BridgeModule: Cross-chain token bridge (future)
+/// - UniswapSwapModule: Atomic swap via whitelisted Uniswap routers
+/// - CowSwapModule: Async order-book swap via CowSwap
+/// - CCTPBridgeModule: Cross-chain USDC bridge via CCTP
 interface IActionModule {
     /// @notice Execute the configured action for a token
     /// @dev Called by PaymentRails contract after validation and token approval
@@ -94,7 +95,7 @@ interface IActionModule {
     /// @param params Module-specific parameters (ABI encoded)
     /// @param executionData Dynamic per-execution data (ABI encoded). Modules that only need
     ///        static configuration ignore this field (it will be empty bytes). Modules that
-    ///        require fresh data per execution (e.g., DEX aggregator calldata) decode and
+    ///        require fresh data per execution (e.g., swap calldata) decode and
     ///        validate it against the static constraints in `params`.
     /// @return result Execution result with success status and output details
     function execute(
@@ -234,8 +235,8 @@ interface IActionModule {
     ///
     /// # Examples
     /// - ForwardModule → "FORWARD"
-    /// - DexAggregatorModule → "DEXAGGREGATOR"
-    /// - BridgeModule → "BRIDGE"
+    /// - UniswapSwapModule → "SWAP"
+    /// - CCTPBridgeModule → "BRIDGE"
     /// - StakingModule → "STAKE"
     /// - CompoundModule → "COMPOUND"
     ///
