@@ -1,0 +1,5 @@
+PaymentRails_GetTokenBalance
+├── when paymentRails holds zero balance
+│   └── it should return zero
+└── when paymentRails holds positive balance
+    └── it should return the correct balance

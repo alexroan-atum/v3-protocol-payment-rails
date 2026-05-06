@@ -2,14 +2,13 @@
 pragma solidity ^0.8.29;
 
 import { CowSwapModuleBase } from "../CowSwapModuleBase.t.sol";
-import { DataTypes } from "../../../../../../src/types/DataTypes.sol";
 import { Errors } from "../../../../../../src/libraries/Errors.sol";
 
 /// @notice Unit tests for CowSwapModule.cancelOrder()
 /// @dev Tree: tests/unit/concrete/cow-swap-module/cancel-order/cancelOrder.tree
 ///
 /// Access model: only the module owner (set at construction, address(this) in tests) may cancel.
-/// Tokens always return to meta.node (the Node that placed the order), regardless of caller.
+/// Tokens always return to meta.paymentRails (the PaymentRails that placed the order), regardless of caller.
 contract CowSwapModule_CancelOrder_Test is CowSwapModuleBase {
     // -----------------------------------------------------------------------
     // when order is unknown
@@ -36,9 +35,11 @@ contract CowSwapModule_CancelOrder_Test is CowSwapModuleBase {
         module.cancelOrder(_orderId);
     }
 
-    function test_RevertWhen_CallerIsNode_NotOwner() external givenPendingOrder {
-        vm.expectRevert(abi.encodeWithSelector(Errors.CowSwapModule_NotOwner.selector, address(node), address(this)));
-        vm.prank(address(node));
+    function test_RevertWhen_CallerIsPaymentRails_NotOwner() external givenPendingOrder {
+        vm.expectRevert(
+            abi.encodeWithSelector(Errors.CowSwapModule_NotOwner.selector, address(paymentRails), address(this))
+        );
+        vm.prank(address(paymentRails));
         module.cancelOrder(_orderId);
     }
 
@@ -70,7 +71,7 @@ contract CowSwapModule_CancelOrder_Test is CowSwapModuleBase {
         givenSolverPulledSellToken
     {
         vm.expectEmit(true, true, false, true, address(module));
-        emit OrderCancelled(_orderId, address(node), address(sellToken), 0);
+        emit OrderCancelled(_orderId, address(paymentRails), address(sellToken), 0);
         module.cancelOrder(_orderId);
     }
 
@@ -79,9 +80,9 @@ contract CowSwapModule_CancelOrder_Test is CowSwapModuleBase {
         givenPendingOrder
         givenSolverPulledSellToken
     {
-        uint256 nodeBalanceBefore = sellToken.balanceOf(address(node));
+        uint256 paymentRailsBalanceBefore = sellToken.balanceOf(address(paymentRails));
         module.cancelOrder(_orderId);
-        assertEq(sellToken.balanceOf(address(node)), nodeBalanceBefore);
+        assertEq(sellToken.balanceOf(address(paymentRails)), paymentRailsBalanceBefore);
     }
 
     function test_GivenSolverAlreadyPulledSellToken_DoesNotRevert()
@@ -106,16 +107,16 @@ contract CowSwapModule_CancelOrder_Test is CowSwapModuleBase {
         assertEq(sellToken.allowance(address(module), module.vaultRelayer()), type(uint256).max);
     }
 
-    function test_GivenSellTokenStillInModule_TransfersSellTokensBackToNode() external givenPendingOrder {
-        uint256 nodeBalanceBefore = sellToken.balanceOf(address(node));
+    function test_GivenSellTokenStillInModule_TransfersSellTokensBackToPaymentRails() external givenPendingOrder {
+        uint256 paymentRailsBalanceBefore = sellToken.balanceOf(address(paymentRails));
         module.cancelOrder(_orderId);
-        assertEq(sellToken.balanceOf(address(node)), nodeBalanceBefore + DEFAULT_SELL_AMOUNT);
+        assertEq(sellToken.balanceOf(address(paymentRails)), paymentRailsBalanceBefore + DEFAULT_SELL_AMOUNT);
         assertEq(sellToken.balanceOf(address(module)), 0);
     }
 
     function test_GivenSellTokenStillInModule_EmitsOrderCancelled() external givenPendingOrder {
         vm.expectEmit(true, true, false, true, address(module));
-        emit OrderCancelled(_orderId, address(node), address(sellToken), DEFAULT_SELL_AMOUNT);
+        emit OrderCancelled(_orderId, address(paymentRails), address(sellToken), DEFAULT_SELL_AMOUNT);
         module.cancelOrder(_orderId);
     }
 
@@ -132,17 +133,17 @@ contract CowSwapModule_CancelOrder_Test is CowSwapModuleBase {
     function test_FullLifecycle_ExecuteCancelRecover() external {
         // 1. Initiate order
         bytes32 orderId = _initiateDefaultOrder();
-        uint256 nodeBalanceAfterExecute = sellToken.balanceOf(address(node));
+        uint256 paymentRailsBalanceAfterExecute = sellToken.balanceOf(address(paymentRails));
 
         // 2. Verify tokens locked in module, max approval set
         assertEq(sellToken.balanceOf(address(module)), DEFAULT_SELL_AMOUNT);
         assertEq(sellToken.allowance(address(module), module.vaultRelayer()), type(uint256).max);
 
-        // 3. Module owner (address(this)) cancels — tokens go to meta.node (node)
+        // 3. Module owner (address(this)) cancels — tokens go to meta.paymentRails (paymentRails)
         module.cancelOrder(orderId);
 
         // 4. Verify recovery: tokens returned, cancelled flag set, approval stays max
-        assertEq(sellToken.balanceOf(address(node)), nodeBalanceAfterExecute + DEFAULT_SELL_AMOUNT);
+        assertEq(sellToken.balanceOf(address(paymentRails)), paymentRailsBalanceAfterExecute + DEFAULT_SELL_AMOUNT);
         assertEq(sellToken.balanceOf(address(module)), 0);
         assertEq(sellToken.allowance(address(module), module.vaultRelayer()), type(uint256).max);
         assertTrue(module.getOrder(orderId).cancelled);

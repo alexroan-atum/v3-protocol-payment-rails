@@ -193,7 +193,8 @@ contract CCTPBridgeModuleOwnershipTest is CCTPBridgeModuleBase {
         usdc.mint(address(this), DEFAULT_BRIDGE_AMOUNT);
         usdc.approve(address(module), DEFAULT_BRIDGE_AMOUNT);
 
-        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
+        DataTypes.ExecutionResult memory result =
+            module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams(), "");
         assertTrue(result.success);
     }
 

@@ -4,14 +4,14 @@ pragma solidity ^0.8.29;
 import { Test } from "forge-std/src/Test.sol";
 import { CCTPBridgeModule } from "../../../../src/modules/bridges/CCTPBridgeModule.sol";
 import { DataTypes } from "../../../../src/types/DataTypes.sol";
-import { CCTPBridgeModuleHandler, BridgeNodeProxy } from "./CCTPBridgeModuleHandler.sol";
+import { CCTPBridgeModuleHandler, BridgePaymentRailsProxy } from "./CCTPBridgeModuleHandler.sol";
 import { MockERC20 } from "../../../shared/mocks/MockERC20.sol";
 import { MockTokenMessengerV2 } from "../../../shared/mocks/MockTokenMessengerV2.sol";
 
 contract CCTPBridgeModuleInvariant is Test {
     CCTPBridgeModule internal module;
     CCTPBridgeModuleHandler internal handler;
-    BridgeNodeProxy internal node;
+    BridgePaymentRailsProxy internal paymentRails;
     MockERC20 internal usdc;
     MockERC20 internal otherToken;
     MockTokenMessengerV2 internal tokenMessenger;
@@ -24,13 +24,13 @@ contract CCTPBridgeModuleInvariant is Test {
         usdc = new MockERC20("USD Coin", "USDC");
         otherToken = new MockERC20("Other Token", "OTH");
         module = new CCTPBridgeModule(address(tokenMessenger), address(usdc), moduleOwner);
-        node = new BridgeNodeProxy(address(module));
+        paymentRails = new BridgePaymentRailsProxy(address(module));
 
-        handler = new CCTPBridgeModuleHandler(module, node, usdc, otherToken, tokenMessenger, moduleOwner);
+        handler = new CCTPBridgeModuleHandler(module, paymentRails, usdc, otherToken, tokenMessenger, moduleOwner);
 
         targetContract(address(handler));
         excludeContract(address(module));
-        excludeContract(address(node));
+        excludeContract(address(paymentRails));
         excludeContract(address(usdc));
         excludeContract(address(otherToken));
         excludeContract(address(tokenMessenger));
@@ -89,14 +89,14 @@ contract CCTPBridgeModuleInvariant is Test {
     //////////////////////////////////////////////////////////////////////////*/
 
     function invariant_USDCConservation() public view {
-        uint256 totalMinted = handler.ghost_totalMintedToNode();
-        uint256 nodeBalance = usdc.balanceOf(address(node));
+        uint256 totalMinted = handler.ghost_totalMintedToPaymentRails();
+        uint256 nodeBalance = usdc.balanceOf(address(paymentRails));
         uint256 moduleBalance = usdc.balanceOf(address(module));
 
         assertEq(
             totalMinted,
             nodeBalance + moduleBalance,
-            "INV-5: total minted must equal node balance + module balance (mock does not burn)"
+            "INV-5: total minted must equal paymentRails balance + module balance (mock does not burn)"
         );
     }
 

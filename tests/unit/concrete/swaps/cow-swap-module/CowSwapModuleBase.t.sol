@@ -4,14 +4,11 @@ pragma solidity ^0.8.29;
 import { Test } from "forge-std/src/Test.sol";
 import { CowSwapModule } from "../../../../../src/modules/swaps/CowSwapModule.sol";
 import { DataTypes } from "../../../../../src/types/DataTypes.sol";
-import { Errors } from "../../../../../src/libraries/Errors.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { MockERC20 } from "../../../../shared/mocks/MockERC20.sol";
-import { FailingTransferERC20 } from "../../../../shared/mocks/FailingTransferERC20.sol";
 import { FeeOnTransferERC20 } from "../../../../shared/mocks/FeeOnTransferERC20.sol";
 import { MockCowSettlement } from "../../../../shared/mocks/MockCowSettlement.sol";
-import { MockNode } from "../../../../shared/mocks/MockNode.sol";
+import { MockPaymentRails } from "../../../../shared/mocks/MockPaymentRails.sol";
 
 /*//////////////////////////////////////////////////////////////////////////
                             BASE TEST CONTRACT
@@ -26,7 +23,7 @@ abstract contract CowSwapModuleBase is Test {
 
     event OrderCreated(
         bytes32 indexed orderId,
-        address indexed node,
+        address indexed paymentRails,
         address sellToken,
         address buyToken,
         uint256 sellAmount,
@@ -34,7 +31,7 @@ abstract contract CowSwapModuleBase is Test {
         uint32 validTo,
         bytes32 appData
     );
-    event OrderCancelled(bytes32 indexed orderId, address indexed node, address token, uint256 amount);
+    event OrderCancelled(bytes32 indexed orderId, address indexed paymentRails, address token, uint256 amount);
 
     /*//////////////////////////////////////////////////////////////////////////
                                     CONSTANTS
@@ -47,7 +44,7 @@ abstract contract CowSwapModuleBase is Test {
     uint256 internal constant DEFAULT_SELL_AMOUNT = 1000e18;
     uint256 internal constant DEFAULT_MIN_BUY_AMOUNT = 950e18;
     uint32 internal constant DEFAULT_VALIDITY = 3600; // 1 hour
-    bytes32 internal constant DEFAULT_APP_DATA = keccak256("receivables-node-v1");
+    bytes32 internal constant DEFAULT_APP_DATA = keccak256("receivables-paymentRails-v1");
 
     /*//////////////////////////////////////////////////////////////////////////
                                 TEST CONTRACTS
@@ -55,7 +52,7 @@ abstract contract CowSwapModuleBase is Test {
 
     CowSwapModule internal module;
     MockCowSettlement internal cowSettlement;
-    MockNode internal node;
+    MockPaymentRails internal paymentRails;
     MockERC20 internal sellToken;
     MockERC20 internal buyToken;
     FeeOnTransferERC20 internal fotSellToken;
@@ -76,13 +73,13 @@ abstract contract CowSwapModuleBase is Test {
         address vaultRelayerAddr = makeAddr("vaultRelayer");
         cowSettlement = new MockCowSettlement(DOMAIN_SEPARATOR, vaultRelayerAddr);
         module = new CowSwapModule(address(cowSettlement), address(this));
-        node = new MockNode(address(module));
+        paymentRails = new MockPaymentRails(address(module));
         sellToken = new MockERC20("USDC", "USDC");
         buyToken = new MockERC20("WETH", "WETH");
         fotSellToken = new FeeOnTransferERC20();
 
-        sellToken.mint(address(node), DEFAULT_SELL_AMOUNT * 10);
-        fotSellToken.mint(address(node), DEFAULT_SELL_AMOUNT * 10);
+        sellToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 10);
+        fotSellToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 10);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -149,7 +146,7 @@ abstract contract CowSwapModuleBase is Test {
 
     function _initiateDefaultOrder() internal returns (bytes32 orderId) {
         DataTypes.ExecutionResult memory result =
-            node.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _buildDefaultParams());
+            paymentRails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _buildDefaultParams());
         return abi.decode(result.data, (bytes32));
     }
 
@@ -163,7 +160,7 @@ abstract contract CowSwapModuleBase is Test {
         internal
         returns (bytes32 orderId)
     {
-        DataTypes.ExecutionResult memory result = node.initiateSwap(
+        DataTypes.ExecutionResult memory result = paymentRails.initiateSwap(
             address(sellToken), sellAmount, _buildParams(targetToken, minBuyAmount, validityDuration, appData)
         );
         return abi.decode(result.data, (bytes32));

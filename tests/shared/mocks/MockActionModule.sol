@@ -5,7 +5,7 @@ import { IActionModule } from "../../../src/interfaces/IActionModule.sol";
 import { DataTypes } from "../../../src/types/DataTypes.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-/// @dev Controllable mock implementing IActionModule for Node unit tests.
+/// @dev Controllable mock implementing IActionModule for PaymentRails unit tests.
 contract MockActionModule is IActionModule {
     bool public shouldSucceed = true;
     bool public shouldRevert;
@@ -31,6 +31,7 @@ contract MockActionModule is IActionModule {
     function execute(
         address token,
         uint256 amount,
+        bytes calldata,
         bytes calldata
     )
         external
@@ -51,7 +52,17 @@ contract MockActionModule is IActionModule {
         }
     }
 
-    function validate(address, uint256, bytes calldata) external view override returns (bool, string memory) {
+    function validate(
+        address,
+        uint256,
+        bytes calldata,
+        bytes calldata
+    )
+        external
+        view
+        override
+        returns (bool, string memory)
+    {
         return (validationResult, validationReason);
     }
 
@@ -73,14 +84,14 @@ contract MockActionModule is IActionModule {
     }
 }
 
-/// @dev Mock module that returns an empty moduleType string (for testing Node_InvalidModule).
+/// @dev Mock module that returns an empty moduleType string (for testing PaymentRails_InvalidModule).
 contract EmptyModuleTypeMock {
     function moduleType() external pure returns (string memory) {
         return "";
     }
 }
 
-/// @dev Mock module whose moduleType() reverts (for testing Node_ModuleValidationFailed).
+/// @dev Mock module whose moduleType() reverts (for testing PaymentRails_ModuleValidationFailed).
 contract RevertingModuleMock {
     function moduleType() external pure returns (string memory) {
         revert("not a module");
