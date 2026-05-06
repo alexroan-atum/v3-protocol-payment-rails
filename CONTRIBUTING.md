@@ -51,7 +51,7 @@ Fork tests need RPC URLs — copy `.env.example` to `.env` and fill them in.
    - First-party: `src/modules/<category>/<YourModule>.sol`
    - Community: `src/modules/contrib/<category>/<YourModule>.sol`
 
-2. **Implement `IActionModule`** (or a more specific interface like `ISwapModule`, `IBridgeModule`). Inherit from `ActionModuleBase` where it fits.
+2. **Implement `IActionModule`** (or a more specific interface like `IUniswapSwapModule`, `ICCTPBridgeModule`). Inherit from `ActionModuleBase` where it fits.
 
 3. **NatSpec on every public/external function.** Include `@notice`, `@param`, `@return` as appropriate.
 
