@@ -59,24 +59,24 @@ library DataTypes {
     }
 
     /*//////////////////////////////////////////////////////////////////////////
-                        UNISWAP SWAP MODULE TYPES
+                        DEX SWAP MODULE TYPES
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Static configuration for Uniswap swaps (stored in PaymentRails.moduleParams).
+    /// @notice Static configuration for DEX swaps (stored in PaymentRails.moduleParams).
     /// @param targetToken Required output token — module rejects any swap producing a different token.
-    struct UniswapSwapParams {
+    struct DexSwapParams {
         address targetToken;
     }
 
-    /// @notice Per-execution data for Uniswap swaps (passed as `executionData`).
-    /// @dev Constructed off-chain from a Uniswap router quote. The module validates every field
-    ///      against the static {UniswapSwapParams} constraints before executing.
-    /// @param router Uniswap router contract to call. Must be whitelisted in the module.
+    /// @notice Per-execution data for DEX swaps (passed as `executionData`).
+    /// @dev Constructed off-chain from a DEX router quote. The module validates every field
+    ///      against the static {DexSwapParams} constraints before executing.
+    /// @param router DEX router contract to call. Must be whitelisted in the module.
     /// @param minAmountOut Minimum acceptable output (slippage-adjusted amount from the quote).
     /// @param deadline Transaction deadline — reverts if `block.timestamp > deadline`.
     /// @param routerCalldata ABI-encoded call to the router. Must route output tokens
     ///        directly to the PaymentRails (msg.sender in the module's execute context).
-    struct UniswapSwapExecutionData {
+    struct DexSwapExecutionData {
         address router;
         uint256 minAmountOut;
         uint256 deadline;

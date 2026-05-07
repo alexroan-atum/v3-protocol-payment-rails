@@ -48,7 +48,7 @@ import { DataTypes } from "../types/DataTypes.sol";
 ///
 /// Example modules:
 /// - ForwardModule: Simple token transfer to recipient
-/// - UniswapSwapModule: Atomic swap via whitelisted Uniswap routers
+/// - DexSwapModule: Atomic swap via whitelisted DEX routers
 /// - CowSwapModule: Async order-book swap via CowSwap
 /// - CCTPBridgeModule: Cross-chain USDC bridge via CCTP
 interface IActionModule {
@@ -235,7 +235,7 @@ interface IActionModule {
     ///
     /// # Examples
     /// - ForwardModule → "FORWARD"
-    /// - UniswapSwapModule → "SWAP"
+    /// - DexSwapModule → "SWAP"
     /// - CCTPBridgeModule → "BRIDGE"
     /// - StakingModule → "STAKE"
     /// - CompoundModule → "COMPOUND"

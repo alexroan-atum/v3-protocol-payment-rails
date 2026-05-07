@@ -1,0 +1,10 @@
+DexSwapModule_RemoveRouter
+├── when caller is not owner
+│   └── it should revert with OwnableUnauthorizedAccount
+├── when router is not in whitelist
+│   └── it should revert with DexSwapModule_RouterNotAllowed
+└── when all validations pass
+    ├── it should remove the router from whitelist
+    ├── it should emit RouterRemoved
+    ├── it should return false for isRouterAllowed
+    └── it should allow re-adding the router after removal

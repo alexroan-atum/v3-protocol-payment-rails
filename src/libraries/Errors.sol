@@ -87,24 +87,24 @@ library Errors {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Thrown when a router address is the zero address (addRouter / executionData).
-    error UniswapSwapModule_ZeroRouter();
+    error DexSwapModule_ZeroRouter();
 
     /// @notice Thrown when a router address has no deployed code (is an EOA).
     /// @param router The EOA address that was rejected.
-    error UniswapSwapModule_RouterNotContract(address router);
+    error DexSwapModule_RouterNotContract(address router);
 
     /// @notice Thrown when the caller supplies a router that is not whitelisted.
     /// @param router The disallowed router address.
-    error UniswapSwapModule_RouterNotAllowed(address router);
+    error DexSwapModule_RouterNotAllowed(address router);
 
     /// @notice Thrown when the router already exists in the whitelist.
     /// @param router The duplicate router address.
-    error UniswapSwapModule_RouterAlreadyAdded(address router);
+    error DexSwapModule_RouterAlreadyAdded(address router);
 
     /// @notice Thrown when actual swap output is below the caller-supplied minimum.
     /// @param amountOut Actual output from the swap.
     /// @param minAmountOut Minimum acceptable output.
-    error UniswapSwapModule_InsufficientOutput(uint256 amountOut, uint256 minAmountOut);
+    error DexSwapModule_InsufficientOutput(uint256 amountOut, uint256 minAmountOut);
 
     /*//////////////////////////////////////////////////////////////////////////
                             COWSWAP MODULE ERRORS

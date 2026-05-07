@@ -3,7 +3,7 @@ pragma solidity ^0.8.29;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-/// @dev Controllable router mock for UniswapSwapModule unit tests.
+/// @dev Controllable router mock for DexSwapModule unit tests.
 /// Simulates a whitelisted router that can succeed, fail, partially fill, or steal tokens.
 contract MockRouter {
     bool public shouldRevert;
