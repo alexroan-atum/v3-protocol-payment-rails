@@ -3,7 +3,7 @@ pragma solidity >=0.8.29 <0.9.0;
 
 import { Script, console2 } from "forge-std/src/Script.sol";
 import { StdCheats } from "forge-std/src/StdCheats.sol";
-import { Node } from "../../../../src/core/Node.sol";
+import { PaymentRails } from "../../../../src/core/PaymentRails.sol";
 import { CowSwapModule } from "../../../../src/modules/swaps/CowSwapModule.sol";
 import { DataTypes } from "../../../../src/types/DataTypes.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -12,11 +12,11 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 /// @author Credit Cooperative
 /// @notice Full end-to-end simulation: deploy + configure + fund + execute in one script.
 /// @dev Use this to validate the entire CowSwap flow BEFORE spending real gas.
-///      Deploys fresh contracts, configures the token route, funds the Node, and calls
+///      Deploys fresh contracts, configures the token route, funds the PaymentRails, and calls
 ///      executeAction() - all in a single simulation. No --broadcast needed.
 ///
 ///      This script is for simulation/validation only. For real deployments, use:
-///        1. deploy/DeployNode.s.sol + deploy/DeployCowSwapModule.s.sol   (deploy with --broadcast)
+///        1. deploy/DeployPaymentRails.s.sol + deploy/DeployCowSwapModule.s.sol   (deploy with --broadcast)
 ///        2. interactions/CowSwapSmoke.s.sol (test against deployed contracts)
 ///
 ///      Usage (Base simulation):
@@ -91,8 +91,8 @@ contract CowSwapDryRun is Script, StdCheats {
         console2.log("  cowSettlement:    ", module.cowSettlement());
         console2.log("  domainSeparator: ", vm.toString(module.cowDomainSeparator()));
 
-        Node node = new Node(deployer);
-        console2.log("[DEPLOYED] Node:          ", address(node));
+        PaymentRails paymentRails = new PaymentRails(deployer);
+        console2.log("[DEPLOYED] PaymentRails:          ", address(paymentRails));
 
         // --- CONFIGURE ---
         bytes memory moduleParams = module.encodeParams(
@@ -103,30 +103,30 @@ contract CowSwapDryRun is Script, StdCheats {
                 appData: cfg.appData
             })
         );
-        node.configureToken(cfg.sellToken, "COWSWAP", address(module), cfg.minBalance, moduleParams, true);
+        paymentRails.configureToken(cfg.sellToken, "COWSWAP", address(module), cfg.minBalance, moduleParams, true);
         console2.log("[CONFIGURED] Token route set");
 
         // --- FUND ---
         // If deployer has enough, transfer. Otherwise use deal() for simulation.
         if (deployerBal >= cfg.sellAmount) {
-            IERC20(cfg.sellToken).transfer(address(node), cfg.sellAmount);
-            console2.log("[FUNDED] Node from deployer wallet:", cfg.sellAmount);
+            IERC20(cfg.sellToken).transfer(address(paymentRails), cfg.sellAmount);
+            console2.log("[FUNDED] PaymentRails from deployer wallet:", cfg.sellAmount);
         } else {
             vm.stopBroadcast();
-            deal(cfg.sellToken, address(node), cfg.sellAmount);
+            deal(cfg.sellToken, address(paymentRails), cfg.sellAmount);
             vm.startBroadcast(deployerKey);
-            console2.log("[FUNDED] Node via deal() (simulation only):", cfg.sellAmount);
+            console2.log("[FUNDED] PaymentRails via deal() (simulation only):", cfg.sellAmount);
         }
 
         // --- EXECUTE ---
-        bool success = node.executeAction(cfg.sellToken, cfg.sellAmount);
+        bool success = paymentRails.executeAction(cfg.sellToken, cfg.sellAmount);
         require(success, "executeAction failed");
         console2.log("[EXECUTED] CowSwap order created on-chain");
 
         vm.stopBroadcast();
 
         // --- VERIFY ---
-        _verifyAndLog(cfg, module, node);
+        _verifyAndLog(cfg, module, paymentRails);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -161,14 +161,14 @@ contract CowSwapDryRun is Script, StdCheats {
         }
     }
 
-    function _verifyAndLog(Config memory cfg, CowSwapModule module, Node node) internal view {
+    function _verifyAndLog(Config memory cfg, CowSwapModule module, PaymentRails paymentRails) internal view {
         uint32 validTo = uint32(block.timestamp + uint256(cfg.validityDuration));
 
         bytes32 orderId = _computeOrderDigest(
             module.cowDomainSeparator(),
             cfg.sellToken,
             cfg.buyToken,
-            address(node),
+            address(paymentRails),
             cfg.sellAmount,
             cfg.minBuyAmount,
             validTo,
@@ -176,14 +176,14 @@ contract CowSwapDryRun is Script, StdCheats {
         );
 
         DataTypes.CowOrderMetadata memory meta = module.getOrder(orderId);
-        require(meta.node == address(node), "Order not found - orderId mismatch");
+        require(meta.paymentRails == address(paymentRails), "Order not found - orderId mismatch");
 
         console2.log("");
         console2.log("=============================================================");
         console2.log("  SIMULATION RESULTS");
         console2.log("=============================================================");
         console2.log("[VERIFIED] Order ID:", vm.toString(orderId));
-        console2.log("  node:       ", meta.node);
+        console2.log("  paymentRails:       ", meta.paymentRails);
         console2.log("  sellToken:  ", meta.sellToken);
         console2.log("  buyToken:   ", meta.buyToken);
         console2.log("  sellAmount: ", meta.sellAmount);
@@ -203,11 +203,11 @@ contract CowSwapDryRun is Script, StdCheats {
 
         // Verify module state
         uint256 moduleBalance = IERC20(cfg.sellToken).balanceOf(address(module));
-        uint256 nodeBalance = IERC20(cfg.sellToken).balanceOf(address(node));
+        uint256 paymentRailsBalance = IERC20(cfg.sellToken).balanceOf(address(paymentRails));
         console2.log("");
         console2.log("Post-execute state:");
         console2.log("  Module sellToken balance: ", moduleBalance, " (locked for CowSwap)");
-        console2.log("  Node sellToken balance:   ", nodeBalance, " (should be 0)");
+        console2.log("  PaymentRails sellToken balance:   ", paymentRailsBalance, " (should be 0)");
 
         // Check approval targets VaultRelayer (not Settlement)
         uint256 relayerAllowance = IERC20(cfg.sellToken).allowance(address(module), module.vaultRelayer());
@@ -216,7 +216,7 @@ contract CowSwapDryRun is Script, StdCheats {
         console2.log("");
         console2.log("=============================================================");
         console2.log("  ALL CHECKS PASSED - safe to deploy for real");
-        console2.log("  Next: deploy/DeployNode.s.sol + deploy/DeployCowSwapModule.s.sol with --broadcast");
+        console2.log("  Next: deploy/DeployPaymentRails.s.sol + deploy/DeployCowSwapModule.s.sol with --broadcast");
         console2.log("=============================================================");
     }
 

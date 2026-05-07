@@ -1,4 +1,0 @@
-SwapModule_EstimateOutput
-├── it should return zero as estimatedOutput
-├── it should return targetToken as outputToken
-└── it should always return zero regardless of amount [fuzz]

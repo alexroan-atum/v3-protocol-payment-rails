@@ -153,7 +153,8 @@ contract CowSwapModule_IsValidSignature_Test is CowSwapModuleBase {
 
         // Create a pending order with the fuzzed validity duration
         bytes memory params = _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, validity, DEFAULT_APP_DATA);
-        DataTypes.ExecutionResult memory result = node.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
+        DataTypes.ExecutionResult memory result =
+            paymentRails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
         assertTrue(result.success, "Order initiation should succeed (non-overflow validity)");
 
         bytes32 orderId = abi.decode(result.data, (bytes32));

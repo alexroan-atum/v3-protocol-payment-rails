@@ -2,7 +2,7 @@
 pragma solidity >=0.8.29 <0.9.0;
 
 import { Script, console2 } from "forge-std/src/Script.sol";
-import { Node } from "../../../../src/core/Node.sol";
+import { PaymentRails } from "../../../../src/core/PaymentRails.sol";
 import { CowSwapModule } from "../../../../src/modules/swaps/CowSwapModule.sol";
 import { DataTypes } from "../../../../src/types/DataTypes.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -10,14 +10,14 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 /// @title CowSwapSmoke
 /// @author Credit Cooperative
 /// @notice Smoke test for the CowSwap module against already-deployed contracts.
-/// @dev Operates on an existing Node + CowSwapModule deployment. Does NOT deploy new contracts.
-///      Configures the token route, funds the Node, calls executeAction(), and logs:
+/// @dev Operates on an existing PaymentRails + CowSwapModule deployment. Does NOT deploy new contracts.
+///      Configures the token route, funds the PaymentRails, calls executeAction(), and logs:
 ///        - The exact curl command to submit the order to the CowSwap API
 ///        - The CowSwap Explorer link to monitor settlement
 ///        - Cast commands to verify balances and cancel if needed
 ///
 ///      REQUIRED environment variables:
-///        NODE_ADDRESS    - Deployed Node contract address
+///        PAYMENT_RAILS_ADDRESS    - Deployed PaymentRails contract address
 ///        MODULE_ADDRESS  - Deployed CowSwapModule contract address
 ///
 ///      OPTIONAL environment variables (defaults are for Ethereum mainnet USDC->WETH):
@@ -26,10 +26,10 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 ///        SELL_AMOUNT         - Amount in wei             (default: 5000000 = 5 USDC)
 ///        MIN_BUY_AMOUNT      - Floor on output in wei    (default: 1000000000000000 = 0.001 WETH)
 ///        VALIDITY_DURATION   - Order TTL in seconds      (default: 1800 = 30 min)
-///        MIN_BALANCE         - Node minBalance threshold  (default: 1000000 = 1 USDC)
+///        MIN_BALANCE         - PaymentRails minBalance threshold  (default: 1000000 = 1 USDC)
 ///        COWSWAP_API         - API base URL              (default: https://api.cow.fi/mainnet)
 ///        SKIP_CONFIGURE      - Set to "true" to skip configureToken (already configured)
-///        SKIP_FUND           - Set to "true" to skip funding (Node already has balance)
+///        SKIP_FUND           - Set to "true" to skip funding (PaymentRails already has balance)
 ///
 ///      IMPORTANT: Token addresses differ per chain. When running on Base, Arbitrum, etc.
 ///      you MUST set SELL_TOKEN, BUY_TOKEN, and COWSWAP_API for that chain.
@@ -88,10 +88,10 @@ contract CowSwapSmoke is Script {
         // =====================================================================
         // Load deployed contract addresses (required)
         // =====================================================================
-        address nodeAddr = vm.envAddress("NODE_ADDRESS");
+        address paymentRailsAddr = vm.envAddress("PAYMENT_RAILS_ADDRESS");
         address moduleAddr = vm.envAddress("MODULE_ADDRESS");
 
-        Node node = Node(nodeAddr);
+        PaymentRails paymentRails = PaymentRails(paymentRailsAddr);
         CowSwapModule module = CowSwapModule(moduleAddr);
 
         // =====================================================================
@@ -113,7 +113,7 @@ contract CowSwapSmoke is Script {
         console2.log("  CowSwap Smoke Test");
         console2.log("=============================================================");
         console2.log("Deployer:       ", deployer);
-        console2.log("Node:           ", nodeAddr);
+        console2.log("PaymentRails:           ", paymentRailsAddr);
         console2.log("Module:         ", moduleAddr);
         console2.log("Sell token:     ", cfg.sellToken);
         console2.log("Buy token:      ", cfg.buyToken);
@@ -127,7 +127,7 @@ contract CowSwapSmoke is Script {
         // =====================================================================
         // Pre-flight checks
         // =====================================================================
-        _preflight(cfg, module, node, deployer);
+        _preflight(cfg, module, paymentRails, deployer);
 
         // =====================================================================
         // Broadcast: configure, fund, execute
@@ -135,15 +135,15 @@ contract CowSwapSmoke is Script {
         vm.startBroadcast(deployerKey);
 
         if (!cfg.skipConfigure) {
-            _configure(cfg, module, node);
+            _configure(cfg, module, paymentRails);
         }
 
         if (!cfg.skipFund) {
-            IERC20(cfg.sellToken).transfer(nodeAddr, cfg.sellAmount);
-            console2.log("[FUNDED] Node with:", cfg.sellAmount);
+            IERC20(cfg.sellToken).transfer(paymentRailsAddr, cfg.sellAmount);
+            console2.log("[FUNDED] PaymentRails with:", cfg.sellAmount);
         }
 
-        bool success = node.executeAction(cfg.sellToken, cfg.sellAmount);
+        bool success = paymentRails.executeAction(cfg.sellToken, cfg.sellAmount);
         require(success, "executeAction failed");
         console2.log("[EXECUTED] CowSwap order created on-chain");
 
@@ -206,20 +206,28 @@ contract CowSwapSmoke is Script {
         }
     }
 
-    function _preflight(Config memory cfg, CowSwapModule module, Node node, address deployer) internal view {
+    function _preflight(
+        Config memory cfg,
+        CowSwapModule module,
+        PaymentRails paymentRails,
+        address deployer
+    )
+        internal
+        view
+    {
         // Verify contracts exist
         require(address(module).code.length > 0, "MODULE_ADDRESS is not a contract");
-        require(address(node).code.length > 0, "NODE_ADDRESS is not a contract");
+        require(address(paymentRails).code.length > 0, "PAYMENT_RAILS_ADDRESS is not a contract");
 
         // Verify module is a CowSwapModule (check cowSettlement is set)
         require(module.cowSettlement() != address(0), "Module cowSettlement is zero");
         console2.log("[OK] Module cowSettlement:", module.cowSettlement());
 
-        // Verify Node ownership (deployer must be owner to configure)
+        // Verify PaymentRails ownership (deployer must be owner to configure)
         if (!cfg.skipConfigure) {
-            address nodeOwner = node.owner();
-            require(nodeOwner == deployer, "Deployer is not Node owner - cannot configure");
-            console2.log("[OK] Deployer is Node owner");
+            address paymentRailsOwner = paymentRails.owner();
+            require(paymentRailsOwner == deployer, "Deployer is not PaymentRails owner - cannot configure");
+            console2.log("[OK] Deployer is PaymentRails owner");
         }
 
         // Verify deployer has enough sellToken to fund (unless skipping)
@@ -229,15 +237,15 @@ contract CowSwapSmoke is Script {
             console2.log("[OK] Deployer sell token balance:", balance);
         }
 
-        // If skipping fund, verify Node already has enough balance
+        // If skipping fund, verify PaymentRails already has enough balance
         if (cfg.skipFund) {
-            uint256 nodeBalance = IERC20(cfg.sellToken).balanceOf(address(node));
-            require(nodeBalance >= cfg.sellAmount, "Node has insufficient sell token balance");
-            console2.log("[OK] Node sell token balance:", nodeBalance);
+            uint256 paymentRailsBalance = IERC20(cfg.sellToken).balanceOf(address(paymentRails));
+            require(paymentRailsBalance >= cfg.sellAmount, "PaymentRails has insufficient sell token balance");
+            console2.log("[OK] PaymentRails sell token balance:", paymentRailsBalance);
         }
     }
 
-    function _configure(Config memory cfg, CowSwapModule module, Node node) internal {
+    function _configure(Config memory cfg, CowSwapModule module, PaymentRails paymentRails) internal {
         bytes memory moduleParams = module.encodeParams(
             DataTypes.CowSwapParams({
                 targetToken: cfg.buyToken,
@@ -247,7 +255,7 @@ contract CowSwapSmoke is Script {
             })
         );
 
-        node.configureToken(cfg.sellToken, "COWSWAP", address(module), cfg.minBalance, moduleParams, true);
+        paymentRails.configureToken(cfg.sellToken, "COWSWAP", address(module), cfg.minBalance, moduleParams, true);
         console2.log("[CONFIGURED] %s -> COWSWAP", vm.toString(cfg.sellToken));
     }
 }

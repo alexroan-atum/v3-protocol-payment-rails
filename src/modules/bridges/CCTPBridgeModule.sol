@@ -15,7 +15,7 @@ import { Ownable2Step, Ownable } from "@openzeppelin/contracts/access/Ownable2St
 /// @author Credit Cooperative
 /// @notice Action module that bridges USDC cross-chain via Circle's CCTP V2 protocol.
 /// @dev See {ICCTPBridgeModule} for the full lifecycle, configuration model, and security notes.
-/// A single instance may be shared across multiple Nodes bridging to the same destinations.
+/// A single instance may be shared across multiple PaymentRails bridging to the same destinations.
 contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase, Ownable2Step {
     using SafeERC20 for IERC20;
 
@@ -61,7 +61,8 @@ contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase, Ownable2Step {
     function execute(
         address token,
         uint256 amount,
-        bytes calldata params
+        bytes calldata params,
+        bytes calldata /* executionData */
     )
         external
         override(ActionModuleBase, IActionModule)
@@ -88,7 +89,7 @@ contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase, Ownable2Step {
 
         // Branch on hook data: non-empty → depositForBurnWithHook, empty → depositForBurn.
         // If the CCTP call reverts (paused, burn-limit exceeded, etc.) the entire execute() reverts
-        // atomically — the Node's try/catch restores USDC to the Node.
+        // atomically — the PaymentRails's try/catch restores USDC to the PaymentRails.
         if (config.hookData.length > 0) {
             ITokenMessengerV2(tokenMessenger)
                 .depositForBurnWithHook(
@@ -182,7 +183,8 @@ contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase, Ownable2Step {
     function validate(
         address token,
         uint256 amount,
-        bytes calldata params
+        bytes calldata params,
+        bytes calldata /* executionData */
     )
         external
         view

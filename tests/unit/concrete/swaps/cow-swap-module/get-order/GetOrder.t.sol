@@ -11,9 +11,9 @@ contract CowSwapModule_GetOrder_Test is CowSwapModuleBase {
     // when order id is unknown
     // -----------------------------------------------------------------------
 
-    function test_WhenOrderIdIsUnknown_ReturnsEmptyMetadataWithZeroNodeAddress() external view {
+    function test_WhenOrderIdIsUnknown_ReturnsEmptyMetadataWithZeroPaymentRailsAddress() external view {
         DataTypes.CowOrderMetadata memory meta = module.getOrder(bytes32(0));
-        assertEq(meta.node, address(0));
+        assertEq(meta.paymentRails, address(0));
     }
 
     function test_WhenOrderIdIsUnknown_ReturnsZeroSellToken() external view {
@@ -31,9 +31,9 @@ contract CowSwapModule_GetOrder_Test is CowSwapModuleBase {
     // given an existing order
     // -----------------------------------------------------------------------
 
-    function test_GivenExistingOrder_ReturnsCorrectNodeAddress() external givenPendingOrder {
+    function test_GivenExistingOrder_ReturnsCorrectPaymentRailsAddress() external givenPendingOrder {
         DataTypes.CowOrderMetadata memory meta = module.getOrder(_orderId);
-        assertEq(meta.node, address(node));
+        assertEq(meta.paymentRails, address(paymentRails));
     }
 
     function test_GivenExistingOrder_ReturnsCorrectSellToken() external givenPendingOrder {

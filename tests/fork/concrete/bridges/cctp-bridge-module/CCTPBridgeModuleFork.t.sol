@@ -3,7 +3,7 @@ pragma solidity ^0.8.29;
 
 import { Test } from "forge-std/src/Test.sol";
 import { CCTPBridgeModule } from "../../../../../src/modules/bridges/CCTPBridgeModule.sol";
-import { Node } from "../../../../../src/core/Node.sol";
+import { PaymentRails } from "../../../../../src/core/PaymentRails.sol";
 import { DataTypes } from "../../../../../src/types/DataTypes.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
@@ -13,22 +13,22 @@ import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 /// @dev Forks Ethereum mainnet and interacts with the real TokenMessengerV2 and USDC contracts.
 ///
 ///      FORK vs UNIT vs INTEGRATION — scope boundaries:
-///        - Unit tests:        MockTokenMessengerV2, MockERC20, MockBridgeNode — logic in isolation.
-///        - Integration tests: Real Node + real module, but mocked external deps.
+///        - Unit tests:        MockTokenMessengerV2, MockERC20, MockBridgePaymentRails — logic in isolation.
+///        - Integration tests: Real PaymentRails + real module, but mocked external deps.
 ///        - Fork tests (here): Real TokenMessengerV2, real USDC, real burn lifecycle.
 ///
 ///      What fork tests uniquely verify:
 ///        1. ABI compatibility — our ITokenMessengerV2 interface matches the deployed bytecode.
 ///        2. Real USDC behavior — 6 decimals, approval semantics, actual burn mechanics.
 ///        3. Full burn lifecycle — USDC is actually burned by TokenMessengerV2 + TokenMinter.
-///        4. Full lifecycle through Node — configure → executeAction → bridge → verify balances.
+///        4. Full lifecycle through PaymentRails — configure → executeAction → bridge → verify balances.
 abstract contract CCTPBridgeModuleForkBase is Test {
     /*//////////////////////////////////////////////////////////////////////////
                                     EVENTS
     //////////////////////////////////////////////////////////////////////////*/
 
     event BridgeInitiated(
-        address indexed node,
+        address indexed paymentRails,
         uint256 amount,
         uint32 indexed destinationDomain,
         bytes32 mintRecipient,
@@ -87,7 +87,7 @@ abstract contract CCTPBridgeModuleForkBase is Test {
     //////////////////////////////////////////////////////////////////////////*/
 
     CCTPBridgeModule internal module;
-    Node internal node;
+    PaymentRails internal paymentRails;
     address internal owner;
     address internal attacker;
 
@@ -108,10 +108,10 @@ abstract contract CCTPBridgeModuleForkBase is Test {
 
         vm.startPrank(owner);
         module = new CCTPBridgeModule(TOKEN_MESSENGER_V2, USDC, owner);
-        node = new Node(owner);
+        paymentRails = new PaymentRails(owner);
         vm.stopPrank();
 
-        deal(USDC, address(node), BRIDGE_AMOUNT * 10);
+        deal(USDC, address(paymentRails), BRIDGE_AMOUNT * 10);
 
         vm.prank(owner);
         module.setDomainConfig(
@@ -151,21 +151,21 @@ abstract contract CCTPBridgeModuleForkBase is Test {
     function _executeBridgeToDomain(uint256 amount, uint32 domain) internal returns (DataTypes.ExecutionResult memory) {
         bytes memory params = _buildParams(domain);
 
-        vm.startPrank(address(node));
+        vm.startPrank(address(paymentRails));
         IERC20(USDC).approve(address(module), amount);
-        DataTypes.ExecutionResult memory result = module.execute(USDC, amount, params);
+        DataTypes.ExecutionResult memory result = module.execute(USDC, amount, params, "");
         vm.stopPrank();
 
         return result;
     }
 
-    function _executeBridgeViaNode(uint256 amount) internal returns (bool success) {
+    function _executeBridgeViaPaymentRails(uint256 amount) internal returns (bool success) {
         bytes memory params = _buildParams(DOMAIN_BASE);
 
         vm.prank(owner);
-        node.configureToken(USDC, "CCTP_BRIDGE", address(module), amount, params, true);
+        paymentRails.configureToken(USDC, "CCTP_BRIDGE", address(module), amount, params, true);
 
-        return node.executeAction(USDC, amount);
+        return paymentRails.executeAction(USDC, amount);
     }
 }
 
@@ -220,12 +220,12 @@ contract CCTPBridgeModuleForkABICompatibilityTest is CCTPBridgeModuleForkBase {
 /// @dev Execute tests verify real USDC is burned by the TokenMessengerV2 + TokenMinter pipeline.
 ///      Unlike unit tests (where MockTokenMessengerV2 just records calls), here USDC is destroyed.
 contract CCTPBridgeModuleForkExecuteTest is CCTPBridgeModuleForkBase {
-    function test_Execute_BurnsRealUSDC_NodeBalanceDecreases() external {
-        uint256 nodeBefore = IERC20(USDC).balanceOf(address(node));
+    function test_Execute_BurnsRealUSDC_PaymentRailsBalanceDecreases() external {
+        uint256 nodeBefore = IERC20(USDC).balanceOf(address(paymentRails));
 
         _executeBridge(BRIDGE_AMOUNT);
 
-        assertEq(IERC20(USDC).balanceOf(address(node)), nodeBefore - BRIDGE_AMOUNT);
+        assertEq(IERC20(USDC).balanceOf(address(paymentRails)), nodeBefore - BRIDGE_AMOUNT);
     }
 
     function test_Execute_BurnsRealUSDC_ModuleBalanceIsZero() external {
@@ -244,15 +244,21 @@ contract CCTPBridgeModuleForkExecuteTest is CCTPBridgeModuleForkBase {
     function test_Execute_EmitsBridgeInitiatedEvent() external {
         bytes memory params = _buildParams(DOMAIN_BASE);
 
-        vm.startPrank(address(node));
+        vm.startPrank(address(paymentRails));
         IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
 
         vm.expectEmit(true, true, true, true, address(module));
         emit BridgeInitiated(
-            address(node), BRIDGE_AMOUNT, DOMAIN_BASE, DEFAULT_MINT_RECIPIENT, DEFAULT_MAX_FEE, FINALITY_STANDARD, ""
+            address(paymentRails),
+            BRIDGE_AMOUNT,
+            DOMAIN_BASE,
+            DEFAULT_MINT_RECIPIENT,
+            DEFAULT_MAX_FEE,
+            FINALITY_STANDARD,
+            ""
         );
 
-        module.execute(USDC, BRIDGE_AMOUNT, params);
+        module.execute(USDC, BRIDGE_AMOUNT, params, "");
         vm.stopPrank();
     }
 
@@ -274,12 +280,12 @@ contract CCTPBridgeModuleForkExecuteTest is CCTPBridgeModuleForkBase {
     function test_Execute_WithHookData_EmitsBridgeInitiatedWithHookData() external givenDomainConfiguredWithHookData {
         bytes memory params = _buildParams(DOMAIN_BASE);
 
-        vm.startPrank(address(node));
+        vm.startPrank(address(paymentRails));
         IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
 
         vm.expectEmit(true, true, true, true, address(module));
         emit BridgeInitiated(
-            address(node),
+            address(paymentRails),
             BRIDGE_AMOUNT,
             DOMAIN_BASE,
             DEFAULT_MINT_RECIPIENT,
@@ -288,7 +294,7 @@ contract CCTPBridgeModuleForkExecuteTest is CCTPBridgeModuleForkBase {
             hex"deadbeef"
         );
 
-        module.execute(USDC, BRIDGE_AMOUNT, params);
+        module.execute(USDC, BRIDGE_AMOUNT, params, "");
         vm.stopPrank();
     }
 
@@ -328,8 +334,8 @@ contract CCTPBridgeModuleForkValidateTest is CCTPBridgeModuleForkBase {
     function test_Validate_ValidParams_ReturnsTrue() external {
         bytes memory params = _buildParams(DOMAIN_BASE);
 
-        vm.prank(address(node));
-        (bool isValid, string memory reason) = module.validate(USDC, BRIDGE_AMOUNT, params);
+        vm.prank(address(paymentRails));
+        (bool isValid, string memory reason) = module.validate(USDC, BRIDGE_AMOUNT, params, "");
 
         assertTrue(isValid);
         assertEq(bytes(reason).length, 0);
@@ -339,7 +345,7 @@ contract CCTPBridgeModuleForkValidateTest is CCTPBridgeModuleForkBase {
         address fakeToken = makeAddr("fakeToken");
         bytes memory params = _buildParams(DOMAIN_BASE);
 
-        (bool isValid, string memory reason) = module.validate(fakeToken, BRIDGE_AMOUNT, params);
+        (bool isValid, string memory reason) = module.validate(fakeToken, BRIDGE_AMOUNT, params, "");
 
         assertFalse(isValid);
         assertEq(reason, "Only USDC supported");
@@ -348,7 +354,7 @@ contract CCTPBridgeModuleForkValidateTest is CCTPBridgeModuleForkBase {
     function test_Validate_ZeroAmount_ReturnsFalse() external view {
         bytes memory params = _buildParams(DOMAIN_BASE);
 
-        (bool isValid, string memory reason) = module.validate(USDC, 0, params);
+        (bool isValid, string memory reason) = module.validate(USDC, 0, params, "");
 
         assertFalse(isValid);
         assertEq(reason, "Zero bridge amount");
@@ -357,18 +363,18 @@ contract CCTPBridgeModuleForkValidateTest is CCTPBridgeModuleForkBase {
     function test_Validate_UnconfiguredDomain_ReturnsFalse() external view {
         bytes memory params = _buildParams(uint32(99));
 
-        (bool isValid, string memory reason) = module.validate(USDC, BRIDGE_AMOUNT, params);
+        (bool isValid, string memory reason) = module.validate(USDC, BRIDGE_AMOUNT, params, "");
 
         assertFalse(isValid);
         assertEq(reason, "Domain not configured");
     }
 
     function test_Validate_InsufficientBalance_ReturnsFalse() external {
-        address emptyNode = makeAddr("emptyNode");
+        address emptyPaymentRails = makeAddr("emptyPaymentRails");
         bytes memory params = _buildParams(DOMAIN_BASE);
 
-        vm.prank(emptyNode);
-        (bool isValid, string memory reason) = module.validate(USDC, BRIDGE_AMOUNT, params);
+        vm.prank(emptyPaymentRails);
+        (bool isValid, string memory reason) = module.validate(USDC, BRIDGE_AMOUNT, params, "");
 
         assertFalse(isValid);
         assertEq(reason, "Insufficient balance");
@@ -470,9 +476,9 @@ contract CCTPBridgeModuleForkDomainConfigTest is CCTPBridgeModuleForkBase {
 
         bytes memory params = _buildParams(DOMAIN_BASE);
 
-        vm.startPrank(address(node));
+        vm.startPrank(address(paymentRails));
         IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
-        DataTypes.ExecutionResult memory result = module.execute(USDC, BRIDGE_AMOUNT, params);
+        DataTypes.ExecutionResult memory result = module.execute(USDC, BRIDGE_AMOUNT, params, "");
         vm.stopPrank();
 
         assertFalse(result.success);
@@ -484,74 +490,74 @@ contract CCTPBridgeModuleForkDomainConfigTest is CCTPBridgeModuleForkBase {
                     NODE INTEGRATION LIFECYCLE TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-/// @dev These tests exercise the full production path: Node.configureToken → Node.executeAction →
+/// @dev These tests exercise the full production path: PaymentRails.configureToken → PaymentRails.executeAction →
 ///      CCTPBridgeModule.execute → TokenMessengerV2.depositForBurn → USDC burned.
-contract CCTPBridgeModuleForkNodeIntegrationTest is CCTPBridgeModuleForkBase {
-    function test_NodeIntegration_FullLifecycle_BridgesSuccessfully() external {
+contract CCTPBridgeModuleForkPaymentRailsIntegrationTest is CCTPBridgeModuleForkBase {
+    function test_PaymentRailsIntegration_FullLifecycle_BridgesSuccessfully() external {
         bytes memory params = _buildParams(DOMAIN_BASE);
 
         vm.prank(owner);
-        node.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
+        paymentRails.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
 
-        uint256 nodeBefore = IERC20(USDC).balanceOf(address(node));
+        uint256 nodeBefore = IERC20(USDC).balanceOf(address(paymentRails));
 
-        bool success = node.executeAction(USDC, BRIDGE_AMOUNT);
+        bool success = paymentRails.executeAction(USDC, BRIDGE_AMOUNT);
 
-        assertTrue(success, "Node executeAction should succeed");
-        assertEq(IERC20(USDC).balanceOf(address(node)), nodeBefore - BRIDGE_AMOUNT);
+        assertTrue(success, "PaymentRails executeAction should succeed");
+        assertEq(IERC20(USDC).balanceOf(address(paymentRails)), nodeBefore - BRIDGE_AMOUNT);
         assertEq(IERC20(USDC).balanceOf(address(module)), 0, "Module should hold zero after bridge");
     }
 
-    function test_NodeIntegration_EmitsActionExecutedEvent() external {
+    function test_PaymentRailsIntegration_EmitsActionExecutedEvent() external {
         bytes memory params = _buildParams(DOMAIN_BASE);
 
         vm.prank(owner);
-        node.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
+        paymentRails.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
 
-        vm.expectEmit(true, true, true, true, address(node));
+        vm.expectEmit(true, true, true, true, address(paymentRails));
         emit ActionExecuted(USDC, "CCTP_BRIDGE", BRIDGE_AMOUNT, BRIDGE_AMOUNT, USDC, address(this));
 
-        node.executeAction(USDC, BRIDGE_AMOUNT);
+        paymentRails.executeAction(USDC, BRIDGE_AMOUNT);
     }
 
-    function test_NodeIntegration_PreviewExecution_ReturnsCorrectValues() external {
+    function test_PaymentRailsIntegration_PreviewExecution_ReturnsCorrectValues() external {
         bytes memory params = _buildParams(DOMAIN_BASE);
 
         vm.prank(owner);
-        node.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
+        paymentRails.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
 
-        uint256 nodeBalance = IERC20(USDC).balanceOf(address(node));
-        (uint256 estimatedOutput, address outputToken) = node.previewExecution(USDC);
+        uint256 nodeBalance = IERC20(USDC).balanceOf(address(paymentRails));
+        (uint256 estimatedOutput, address outputToken) = paymentRails.previewExecution(USDC);
 
         assertEq(estimatedOutput, nodeBalance);
         assertEq(outputToken, USDC);
     }
 
-    function test_NodeIntegration_ConsecutiveExecutions_DrainNode() external {
+    function test_PaymentRailsIntegration_ConsecutiveExecutions_DrainPaymentRails() external {
         bytes memory params = _buildParams(DOMAIN_BASE);
 
         vm.prank(owner);
-        node.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
+        paymentRails.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
 
-        assertTrue(node.executeAction(USDC, BRIDGE_AMOUNT));
-        assertTrue(node.executeAction(USDC, BRIDGE_AMOUNT));
+        assertTrue(paymentRails.executeAction(USDC, BRIDGE_AMOUNT));
+        assertTrue(paymentRails.executeAction(USDC, BRIDGE_AMOUNT));
 
         assertEq(IERC20(USDC).balanceOf(address(module)), 0);
     }
 
-    function test_NodeIntegration_TwoNodesShareOneModule() external {
-        Node node2 = new Node(owner);
-        deal(USDC, address(node2), BRIDGE_AMOUNT * 10);
+    function test_PaymentRailsIntegration_TwoPaymentRailsShareOneModule() external {
+        PaymentRails paymentRails2 = new PaymentRails(owner);
+        deal(USDC, address(paymentRails2), BRIDGE_AMOUNT * 10);
 
         bytes memory params = _buildParams(DOMAIN_BASE);
 
         vm.startPrank(owner);
-        node.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
-        node2.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
+        paymentRails.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
+        paymentRails2.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
         vm.stopPrank();
 
-        assertTrue(node.executeAction(USDC, BRIDGE_AMOUNT));
-        assertTrue(node2.executeAction(USDC, BRIDGE_AMOUNT));
+        assertTrue(paymentRails.executeAction(USDC, BRIDGE_AMOUNT));
+        assertTrue(paymentRails2.executeAction(USDC, BRIDGE_AMOUNT));
 
         assertEq(IERC20(USDC).balanceOf(address(module)), 0);
     }
@@ -657,7 +663,7 @@ contract CCTPBridgeModuleForkSecurityTest is CCTPBridgeModuleForkBase {
 
         vm.startPrank(randomCaller);
         IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
-        DataTypes.ExecutionResult memory result = module.execute(USDC, BRIDGE_AMOUNT, params);
+        DataTypes.ExecutionResult memory result = module.execute(USDC, BRIDGE_AMOUNT, params, "");
         vm.stopPrank();
 
         assertTrue(result.success, "Any address should be able to execute");
@@ -690,15 +696,15 @@ contract CCTPBridgeModuleForkSecurityTest is CCTPBridgeModuleForkBase {
         assertEq(supplyAfter, supplyBefore - BRIDGE_AMOUNT, "Real USDC burn must reduce total supply");
     }
 
-    function test_Security_NodeApprovalToModuleConsumedAfterExecute() external {
+    function test_Security_PaymentRailsApprovalToModuleConsumedAfterExecute() external {
         bytes memory params = _buildParams(DOMAIN_BASE);
 
         vm.prank(owner);
-        node.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
+        paymentRails.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
 
-        node.executeAction(USDC, BRIDGE_AMOUNT);
+        paymentRails.executeAction(USDC, BRIDGE_AMOUNT);
 
-        uint256 nodeToModuleAllowance = IERC20(USDC).allowance(address(node), address(module));
-        assertEq(nodeToModuleAllowance, 0, "Node approval to module should be consumed after execute");
+        uint256 paymentRailsToModuleAllowance = IERC20(USDC).allowance(address(paymentRails), address(module));
+        assertEq(paymentRailsToModuleAllowance, 0, "PaymentRails approval to module should be consumed after execute");
     }
 }

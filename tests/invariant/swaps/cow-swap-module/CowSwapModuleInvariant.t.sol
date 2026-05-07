@@ -4,7 +4,7 @@ pragma solidity ^0.8.29;
 import { Test } from "forge-std/src/Test.sol";
 import { CowSwapModule } from "../../../../src/modules/swaps/CowSwapModule.sol";
 import { DataTypes } from "../../../../src/types/DataTypes.sol";
-import { CowSwapModuleHandler, NodeProxy } from "./CowSwapModuleHandler.sol";
+import { CowSwapModuleHandler, PaymentRailsProxy } from "./CowSwapModuleHandler.sol";
 import { MockERC20 } from "../../../shared/mocks/MockERC20.sol";
 import { MockCowSettlement } from "../../../shared/mocks/MockCowSettlement.sol";
 
@@ -48,7 +48,7 @@ contract CowSwapModuleInvariant is Test {
 
     CowSwapModule internal module;
     CowSwapModuleHandler internal handler;
-    NodeProxy internal node;
+    PaymentRailsProxy internal paymentRails;
     MockERC20 internal sellToken;
     MockERC20 internal buyToken;
     MockCowSettlement internal cowSettlement;
@@ -56,18 +56,18 @@ contract CowSwapModuleInvariant is Test {
     function setUp() public {
         cowSettlement = new MockCowSettlement(DOMAIN_SEPARATOR, makeAddr("vaultRelayer"));
         module = new CowSwapModule(address(cowSettlement), address(this));
-        node = new NodeProxy(address(module));
+        paymentRails = new PaymentRailsProxy(address(module));
         sellToken = new MockERC20("USDC", "USDC");
         buyToken = new MockERC20("WETH", "WETH");
 
-        handler = new CowSwapModuleHandler(module, node, sellToken, buyToken, cowSettlement);
+        handler = new CowSwapModuleHandler(module, paymentRails, sellToken, buyToken, cowSettlement);
 
         // Target only the handler — Foundry calls random handler functions
         targetContract(address(handler));
 
-        // Exclude direct calls to module/node/tokens from the invariant runner
+        // Exclude direct calls to module/paymentRails/tokens from the invariant runner
         excludeContract(address(module));
-        excludeContract(address(node));
+        excludeContract(address(paymentRails));
         excludeContract(address(sellToken));
         excludeContract(address(buyToken));
         excludeContract(address(cowSettlement));
@@ -131,9 +131,9 @@ contract CowSwapModuleInvariant is Test {
             // Ghost and on-chain status must agree (no silent state transitions)
             assertEq(ghostStatus, onChainStatus, "INV-2: ghost order status disagrees with on-chain order status");
 
-            // For PENDING orders: verify the order is reachable (has a valid node)
+            // For PENDING orders: verify the order is reachable (has a valid paymentRails)
             if (ghostStatus == 0) {
-                assertNotEq(meta.node, address(0), "INV-2: PENDING order must have a valid node");
+                assertNotEq(meta.paymentRails, address(0), "INV-2: PENDING order must have a valid paymentRails");
             }
         }
     }

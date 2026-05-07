@@ -12,8 +12,8 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
     function test_WhenRecipientIsZeroAddress_ReturnsFailedResult() external whenRecipientIsZeroAddress {
         bytes memory params = _buildParams(address(0), false, 0);
 
-        vm.prank(node);
-        DataTypes.ExecutionResult memory result = module.execute(address(token), DEFAULT_AMOUNT, params);
+        vm.prank(paymentRails);
+        DataTypes.ExecutionResult memory result = module.execute(address(token), DEFAULT_AMOUNT, params, "");
 
         assertFalse(result.success, "success");
         assertEq(result.failureReason, "Zero recipient address", "failureReason");
@@ -26,8 +26,8 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
         bytes memory params = _buildParams(recipient, false, DEFAULT_MIN_AMOUNT);
         uint256 belowMinAmount = DEFAULT_MIN_AMOUNT - 1;
 
-        vm.prank(node);
-        DataTypes.ExecutionResult memory result = module.execute(address(token), belowMinAmount, params);
+        vm.prank(paymentRails);
+        DataTypes.ExecutionResult memory result = module.execute(address(token), belowMinAmount, params, "");
 
         assertFalse(result.success, "success");
         assertEq(result.failureReason, "Amount below minimum", "failureReason");
@@ -35,10 +35,10 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
 
     function test_WhenCallerHasInsufficientBalance_ReturnsFailedResult() external whenCallerHasInsufficientBalance {
         bytes memory params = _defaultParams();
-        address emptyNode = makeAddr("emptyNode");
+        address emptyPaymentRails = makeAddr("emptyPaymentRails");
 
-        vm.prank(emptyNode);
-        DataTypes.ExecutionResult memory result = module.execute(address(token), DEFAULT_AMOUNT, params);
+        vm.prank(emptyPaymentRails);
+        DataTypes.ExecutionResult memory result = module.execute(address(token), DEFAULT_AMOUNT, params, "");
 
         assertFalse(result.success, "success");
         assertEq(result.failureReason, "Insufficient balance", "failureReason");
@@ -47,8 +47,8 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
     function test_WhenTransferReturnsFalse_ReturnsFailedResult() external whenTransferReturnsFalse {
         bytes memory params = _defaultParams();
 
-        vm.prank(node);
-        DataTypes.ExecutionResult memory result = module.execute(address(failingToken), DEFAULT_AMOUNT, params);
+        vm.prank(paymentRails);
+        DataTypes.ExecutionResult memory result = module.execute(address(failingToken), DEFAULT_AMOUNT, params, "");
 
         assertFalse(result.success, "success");
         assertEq(result.failureReason, "Transfer failed", "failureReason");
@@ -57,8 +57,8 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
     function test_WhenTransferReverts_ReturnsFailedResult() external whenTransferReverts {
         bytes memory params = _defaultParams();
 
-        vm.prank(node);
-        DataTypes.ExecutionResult memory result = module.execute(address(revertingToken), DEFAULT_AMOUNT, params);
+        vm.prank(paymentRails);
+        DataTypes.ExecutionResult memory result = module.execute(address(revertingToken), DEFAULT_AMOUNT, params, "");
 
         assertFalse(result.success, "success");
         assertEq(result.failureReason, "Transfer failed", "failureReason");
@@ -67,8 +67,8 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
     function test_WhenMultipleValidationsFail_ReturnsFirstFailure() external {
         bytes memory params = _buildParams(address(0), false, DEFAULT_AMOUNT + 1);
 
-        vm.prank(node);
-        DataTypes.ExecutionResult memory result = module.execute(address(token), DEFAULT_AMOUNT, params);
+        vm.prank(paymentRails);
+        DataTypes.ExecutionResult memory result = module.execute(address(token), DEFAULT_AMOUNT, params, "");
 
         assertFalse(result.success, "success");
         assertEq(result.failureReason, "Zero recipient address", "failureReason");
@@ -80,21 +80,21 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
 
     function test_WhenAllValidationsPass_TransfersTokensFromCallerToRecipient() external whenAllValidationsPass {
         bytes memory params = _defaultParams();
-        uint256 nodeBefore = token.balanceOf(node);
+        uint256 nodeBefore = token.balanceOf(paymentRails);
         uint256 recipientBefore = token.balanceOf(recipient);
 
-        vm.prank(node);
-        module.execute(address(token), DEFAULT_AMOUNT, params);
+        vm.prank(paymentRails);
+        module.execute(address(token), DEFAULT_AMOUNT, params, "");
 
-        assertEq(token.balanceOf(node), nodeBefore - DEFAULT_AMOUNT, "node balance");
+        assertEq(token.balanceOf(paymentRails), nodeBefore - DEFAULT_AMOUNT, "paymentRails balance");
         assertEq(token.balanceOf(recipient), recipientBefore + DEFAULT_AMOUNT, "recipient balance");
     }
 
     function test_WhenAllValidationsPass_ReturnsSuccessWithEmptyFailureReason() external whenAllValidationsPass {
         bytes memory params = _defaultParams();
 
-        vm.prank(node);
-        DataTypes.ExecutionResult memory result = module.execute(address(token), DEFAULT_AMOUNT, params);
+        vm.prank(paymentRails);
+        DataTypes.ExecutionResult memory result = module.execute(address(token), DEFAULT_AMOUNT, params, "");
 
         assertTrue(result.success, "success");
         assertEq(bytes(result.failureReason).length, 0, "failureReason should be empty");
@@ -103,8 +103,8 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
     function test_WhenAllValidationsPass_ReturnsAmountOutEqualToAmount() external whenAllValidationsPass {
         bytes memory params = _defaultParams();
 
-        vm.prank(node);
-        DataTypes.ExecutionResult memory result = module.execute(address(token), DEFAULT_AMOUNT, params);
+        vm.prank(paymentRails);
+        DataTypes.ExecutionResult memory result = module.execute(address(token), DEFAULT_AMOUNT, params, "");
 
         assertEq(result.amountOut, DEFAULT_AMOUNT, "amountOut");
     }
@@ -112,8 +112,8 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
     function test_WhenAllValidationsPass_ReturnsOutputTokenEqualToInputToken() external whenAllValidationsPass {
         bytes memory params = _defaultParams();
 
-        vm.prank(node);
-        DataTypes.ExecutionResult memory result = module.execute(address(token), DEFAULT_AMOUNT, params);
+        vm.prank(paymentRails);
+        DataTypes.ExecutionResult memory result = module.execute(address(token), DEFAULT_AMOUNT, params, "");
 
         assertEq(result.outputToken, address(token), "outputToken");
     }
@@ -121,8 +121,8 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
     function test_WhenAllValidationsPass_ReturnsEncodedRecipientInDataField() external whenAllValidationsPass {
         bytes memory params = _defaultParams();
 
-        vm.prank(node);
-        DataTypes.ExecutionResult memory result = module.execute(address(token), DEFAULT_AMOUNT, params);
+        vm.prank(paymentRails);
+        DataTypes.ExecutionResult memory result = module.execute(address(token), DEFAULT_AMOUNT, params, "");
 
         address decodedRecipient = abi.decode(result.data, (address));
         assertEq(decodedRecipient, recipient, "data recipient");
@@ -131,8 +131,8 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
     function test_WhenAmountEqualsMinimum_Succeeds() external whenAllValidationsPass {
         bytes memory params = _buildParams(recipient, false, DEFAULT_AMOUNT);
 
-        vm.prank(node);
-        DataTypes.ExecutionResult memory result = module.execute(address(token), DEFAULT_AMOUNT, params);
+        vm.prank(paymentRails);
+        DataTypes.ExecutionResult memory result = module.execute(address(token), DEFAULT_AMOUNT, params, "");
 
         assertTrue(result.success, "success");
         assertEq(result.amountOut, DEFAULT_AMOUNT, "amountOut");
@@ -142,10 +142,10 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
         bytes memory params = _buildParams(recipient, false, 0);
         uint256 tinyAmount = 1;
 
-        token.mint(node, tinyAmount);
+        token.mint(paymentRails, tinyAmount);
 
-        vm.prank(node);
-        DataTypes.ExecutionResult memory result = module.execute(address(token), tinyAmount, params);
+        vm.prank(paymentRails);
+        DataTypes.ExecutionResult memory result = module.execute(address(token), tinyAmount, params, "");
 
         assertTrue(result.success, "success");
         assertEq(result.amountOut, tinyAmount, "amountOut");
@@ -155,8 +155,8 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
         bytes memory params = _buildParams(recipient, false, 0);
         uint256 recipientBefore = feeToken.balanceOf(recipient);
 
-        vm.prank(node);
-        DataTypes.ExecutionResult memory result = module.execute(address(feeToken), DEFAULT_AMOUNT, params);
+        vm.prank(paymentRails);
+        DataTypes.ExecutionResult memory result = module.execute(address(feeToken), DEFAULT_AMOUNT, params, "");
 
         assertTrue(result.success, "success");
         assertEq(result.amountOut, DEFAULT_AMOUNT, "reported amountOut");
@@ -176,8 +176,8 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
         bytes memory params = _buildParams(recipient, false, minAmount);
         uint256 recipientBefore = token.balanceOf(recipient);
 
-        vm.prank(node);
-        DataTypes.ExecutionResult memory result = module.execute(address(token), amount, params);
+        vm.prank(paymentRails);
+        DataTypes.ExecutionResult memory result = module.execute(address(token), amount, params, "");
 
         assertTrue(result.success, "success");
         assertEq(result.amountOut, amount, "amountOut");

@@ -9,8 +9,8 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { MockERC20 } from "../../../shared/mocks/MockERC20.sol";
 import { MockCowSettlement } from "../../../shared/mocks/MockCowSettlement.sol";
 
-/// @dev Minimal Node proxy — holds sell tokens and delegates to module
-contract NodeProxy is Test {
+/// @dev Minimal PaymentRails proxy — holds sell tokens and delegates to module
+contract PaymentRailsProxy is Test {
     CowSwapModule public immutable module;
 
     constructor(address _module) {
@@ -26,7 +26,7 @@ contract NodeProxy is Test {
         returns (DataTypes.ExecutionResult memory)
     {
         IERC20(token).approve(address(module), amount);
-        return module.execute(token, amount, params);
+        return module.execute(token, amount, params, "");
     }
     // cancelOrder intentionally omitted: only the module owner may cancel
 }
@@ -62,7 +62,7 @@ contract CowSwapModuleHandler is Test {
     //////////////////////////////////////////////////////////////////////////*/
 
     CowSwapModule internal module;
-    NodeProxy internal node;
+    PaymentRailsProxy internal paymentRails;
     MockERC20 internal sellToken;
     MockERC20 internal buyToken;
     MockCowSettlement internal cowSettlement;
@@ -101,13 +101,13 @@ contract CowSwapModuleHandler is Test {
 
     constructor(
         CowSwapModule _module,
-        NodeProxy _node,
+        PaymentRailsProxy _node,
         MockERC20 _sellToken,
         MockERC20 _buyToken,
         MockCowSettlement _cowSettlement
     ) {
         module = _module;
-        node = _node;
+        paymentRails = _node;
         sellToken = _sellToken;
         buyToken = _buyToken;
         cowSettlement = _cowSettlement;
@@ -126,8 +126,8 @@ contract CowSwapModuleHandler is Test {
         // validityDuration: only lower bound (>0), NO upper bound
         vm.assume(validityDuration >= 1);
 
-        // Mint sell tokens to node
-        sellToken.mint(address(node), sellAmount);
+        // Mint sell tokens to paymentRails
+        sellToken.mint(address(paymentRails), sellAmount);
 
         DataTypes.CowSwapParams memory params = DataTypes.CowSwapParams({
             targetToken: address(buyToken),
@@ -137,7 +137,8 @@ contract CowSwapModuleHandler is Test {
         });
         bytes memory encodedParams = module.encodeParams(params);
 
-        DataTypes.ExecutionResult memory result = node.initiateSwap(address(sellToken), sellAmount, encodedParams);
+        DataTypes.ExecutionResult memory result =
+            paymentRails.initiateSwap(address(sellToken), sellAmount, encodedParams);
 
         if (result.success && result.data.length == 32) {
             bytes32 orderId = abi.decode(result.data, (bytes32));
@@ -158,8 +159,8 @@ contract CowSwapModuleHandler is Test {
     }
 
     /// @dev Simulates CowSwap solver filling the order — records in MockCowSettlement.
-    /// @dev Does NOT pull sell tokens and does NOT mint buy tokens to Node.
-    ///      Buy token handling is omitted from this handler (receiver=node means direct delivery
+    /// @dev Does NOT pull sell tokens and does NOT mint buy tokens to PaymentRails.
+    ///      Buy token handling is omitted from this handler (receiver=paymentRails means direct delivery
     ///      in reality; the simplified model focuses on sell token accounting invariants).
     function handler_simulateSettlement(uint256 orderIndex) external {
         uint256 len = ghost_allOrderIds.length;

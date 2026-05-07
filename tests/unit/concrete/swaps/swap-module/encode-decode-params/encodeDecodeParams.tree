@@ -1,8 +1,0 @@
-SwapModule_EncodeDecodeParams
-├── it should roundtrip core fields correctly
-├── it should roundtrip oracle fields correctly
-├── it should roundtrip non-empty swap path bytes
-├── it should roundtrip with max boundary values
-├── it should revert when encoded data is empty
-├── it should revert when encoded data is too short
-└── it should roundtrip any values [fuzz]

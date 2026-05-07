@@ -3,16 +3,15 @@ pragma solidity ^0.8.29;
 
 import { Test, Vm } from "forge-std/src/Test.sol";
 import { CowSwapModule } from "../../../../../src/modules/swaps/CowSwapModule.sol";
-import { Node } from "../../../../../src/core/Node.sol";
+import { PaymentRails } from "../../../../../src/core/PaymentRails.sol";
 import { DataTypes } from "../../../../../src/types/DataTypes.sol";
 import { Errors } from "../../../../../src/libraries/Errors.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { MockERC20 } from "../../../../shared/mocks/MockERC20.sol";
 import { FeeOnTransferERC20 } from "../../../../shared/mocks/FeeOnTransferERC20.sol";
 import { ReentrantSellToken } from "../../../../shared/mocks/ReentrantSellToken.sol";
 import { MockCowSettlement } from "../../../../shared/mocks/MockCowSettlement.sol";
-import { MockNode } from "../../../../shared/mocks/MockNode.sol";
+import { MockPaymentRails } from "../../../../shared/mocks/MockPaymentRails.sol";
 
 /*//////////////////////////////////////////////////////////////////////////
                     INTEGRATION TEST SUITE
@@ -20,7 +19,7 @@ import { MockNode } from "../../../../shared/mocks/MockNode.sol";
 
 /// @title CowSwapModuleIntegrationTest
 /// @notice Integration tests covering:
-///   - Real Node.sol integration (configure, executeAction, events)
+///   - Real PaymentRails.sol integration (configure, executeAction, events)
 ///   - Order ID collision (same params same block → orphaned sellToken)
 ///   - cancelOrder caps return at meta.sellAmount (two concurrent orders)
 ///   - Fee-on-transfer sell token limitations
@@ -34,7 +33,7 @@ contract CowSwapModuleIntegrationTest is Test {
 
     event OrderCreated(
         bytes32 indexed orderId,
-        address indexed node,
+        address indexed paymentRails,
         address sellToken,
         address buyToken,
         uint256 sellAmount,
@@ -42,7 +41,7 @@ contract CowSwapModuleIntegrationTest is Test {
         uint32 validTo,
         bytes32 appData
     );
-    event OrderCancelled(bytes32 indexed orderId, address indexed node, address token, uint256 amount);
+    event OrderCancelled(bytes32 indexed orderId, address indexed paymentRails, address token, uint256 amount);
     event ActionExecuted(
         address indexed token,
         string actionType,
@@ -63,7 +62,7 @@ contract CowSwapModuleIntegrationTest is Test {
     uint256 internal constant SELL_AMOUNT = 1000e18;
     uint256 internal constant MIN_BUY_AMOUNT = 950e18;
     uint32 internal constant VALIDITY_DURATION = 3600;
-    bytes32 internal constant APP_DATA = keccak256("receivables-node-v1");
+    bytes32 internal constant APP_DATA = keccak256("receivables-paymentRails-v1");
 
     /*//////////////////////////////////////////////////////////////////////////
                                 TEST CONTRACTS
@@ -71,8 +70,8 @@ contract CowSwapModuleIntegrationTest is Test {
 
     CowSwapModule internal module;
     MockCowSettlement internal cowSettlement;
-    MockNode internal mockNode;
-    Node internal realNode;
+    MockPaymentRails internal mockPaymentRails;
+    PaymentRails internal realPaymentRails;
     MockERC20 internal sellToken;
     MockERC20 internal buyToken;
 
@@ -91,101 +90,101 @@ contract CowSwapModuleIntegrationTest is Test {
 
         cowSettlement = new MockCowSettlement(DOMAIN_SEPARATOR, makeAddr("vaultRelayer"));
         module = new CowSwapModule(address(cowSettlement), address(this));
-        mockNode = new MockNode(address(module));
+        mockPaymentRails = new MockPaymentRails(address(module));
 
         vm.prank(owner);
-        realNode = new Node(owner);
+        realPaymentRails = new PaymentRails(owner);
 
         sellToken = new MockERC20("USDC", "USDC");
         buyToken = new MockERC20("WETH", "WETH");
 
-        sellToken.mint(address(mockNode), SELL_AMOUNT * 20);
-        sellToken.mint(address(realNode), SELL_AMOUNT * 10);
+        sellToken.mint(address(mockPaymentRails), SELL_AMOUNT * 20);
+        sellToken.mint(address(realPaymentRails), SELL_AMOUNT * 10);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
             GROUP 1: NODE.SOL INTEGRATION
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @dev Real Node.sol: configure → executeAction → tokens locked in module
-    function test_NodeIntegration_Configure_ExecuteAction_LocksTokensInModule() public {
+    /// @dev Real PaymentRails.sol: configure → executeAction → tokens locked in module
+    function test_PaymentRailsIntegration_Configure_ExecuteAction_LocksTokensInModule() public {
         bytes memory params = _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, APP_DATA);
 
         vm.prank(owner);
-        realNode.configureToken(address(sellToken), "COWSWAP", address(module), 0, params, true);
+        realPaymentRails.configureToken(address(sellToken), "COWSWAP", address(module), 0, params, true);
 
-        assertEq(realNode.getTokenConfig(address(sellToken)).actionModule, address(module));
+        assertEq(realPaymentRails.getTokenConfig(address(sellToken)).actionModule, address(module));
 
         vm.prank(keeper);
-        bool success = realNode.executeAction(address(sellToken), SELL_AMOUNT);
+        bool success = realPaymentRails.executeAction(address(sellToken), SELL_AMOUNT);
 
         assertTrue(success);
-        assertEq(sellToken.balanceOf(address(realNode)), SELL_AMOUNT * 10 - SELL_AMOUNT);
+        assertEq(sellToken.balanceOf(address(realPaymentRails)), SELL_AMOUNT * 10 - SELL_AMOUNT);
         assertEq(sellToken.balanceOf(address(module)), SELL_AMOUNT);
     }
 
-    /// @dev ActionExecuted event from Node reports amountOut=0 — the async pending signal.
+    /// @dev ActionExecuted event from PaymentRails reports amountOut=0 — the async pending signal.
     ///      This is expected: actual output is unknown until CowSwap settles.
-    function test_NodeIntegration_ActionExecuted_AmountOut_IsZero_AsyncPendingSignal() public {
+    function test_PaymentRailsIntegration_ActionExecuted_AmountOut_IsZero_AsyncPendingSignal() public {
         bytes memory params = _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, APP_DATA);
 
         vm.prank(owner);
-        realNode.configureToken(address(sellToken), "COWSWAP", address(module), 0, params, true);
+        realPaymentRails.configureToken(address(sellToken), "COWSWAP", address(module), 0, params, true);
 
         // ActionExecuted must emit with amountOut=0 (async signal — settlement not yet happened)
-        vm.expectEmit(true, true, false, true, address(realNode));
+        vm.expectEmit(true, true, false, true, address(realPaymentRails));
         emit ActionExecuted(address(sellToken), "COWSWAP", SELL_AMOUNT, 0, address(buyToken), keeper);
 
         vm.prank(keeper);
-        realNode.executeAction(address(sellToken), SELL_AMOUNT);
+        realPaymentRails.executeAction(address(sellToken), SELL_AMOUNT);
     }
 
     /// @dev previewExecution returns minBuyAmount as the safe lower-bound estimate.
-    function test_NodeIntegration_PreviewExecution_ReturnsMinBuyAmount() public {
+    function test_PaymentRailsIntegration_PreviewExecution_ReturnsMinBuyAmount() public {
         bytes memory params = _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, APP_DATA);
 
         vm.prank(owner);
-        realNode.configureToken(address(sellToken), "COWSWAP", address(module), 0, params, true);
+        realPaymentRails.configureToken(address(sellToken), "COWSWAP", address(module), 0, params, true);
 
-        (uint256 estimated, address outputToken) = realNode.previewExecution(address(sellToken));
+        (uint256 estimated, address outputToken) = realPaymentRails.previewExecution(address(sellToken));
 
         assertEq(estimated, MIN_BUY_AMOUNT);
         assertEq(outputToken, address(buyToken));
     }
 
     /// @dev orderId is only accessible via the module's OrderCreated event, not from executeAction().
-    function test_NodeIntegration_OrderId_AvailableOnly_FromOrderCreatedEvent() public {
+    function test_PaymentRailsIntegration_OrderId_AvailableOnly_FromOrderCreatedEvent() public {
         bytes memory params = _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, APP_DATA);
 
         vm.prank(owner);
-        realNode.configureToken(address(sellToken), "COWSWAP", address(module), 0, params, true);
+        realPaymentRails.configureToken(address(sellToken), "COWSWAP", address(module), 0, params, true);
 
         vm.recordLogs();
         vm.prank(keeper);
-        realNode.executeAction(address(sellToken), SELL_AMOUNT);
+        realPaymentRails.executeAction(address(sellToken), SELL_AMOUNT);
 
         bytes32 orderId = _parseOrderCreatedId(vm.getRecordedLogs());
         assertTrue(orderId != bytes32(0), "orderId must be non-zero");
 
         DataTypes.CowOrderMetadata memory meta = module.getOrder(orderId);
-        assertEq(meta.node, address(realNode));
+        assertEq(meta.paymentRails, address(realPaymentRails));
         assertEq(meta.sellToken, address(sellToken));
         assertEq(meta.buyToken, address(buyToken));
         assertFalse(meta.cancelled, "Order must not be cancelled");
     }
 
-    /// @dev Full lifecycle through real Node: configure → executeAction → solver fills →
-    ///      buyToken goes directly to Node via receiver=node. No further call needed.
-    function test_NodeIntegration_FullLifecycle_Execute_SolverFills_BuyTokenAtNode() public {
+    /// @dev Full lifecycle through real PaymentRails: configure → executeAction → solver fills →
+    ///      buyToken goes directly to PaymentRails via receiver=paymentRails. No further call needed.
+    function test_PaymentRailsIntegration_FullLifecycle_Execute_SolverFills_BuyTokenAtPaymentRails() public {
         bytes memory params = _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, APP_DATA);
 
         vm.prank(owner);
-        realNode.configureToken(address(sellToken), "COWSWAP", address(module), 0, params, true);
+        realPaymentRails.configureToken(address(sellToken), "COWSWAP", address(module), 0, params, true);
 
-        // Step 1: Keeper triggers execution via Node
+        // Step 1: Keeper triggers execution via PaymentRails
         vm.recordLogs();
         vm.prank(keeper);
-        realNode.executeAction(address(sellToken), SELL_AMOUNT);
+        realPaymentRails.executeAction(address(sellToken), SELL_AMOUNT);
         bytes32 orderId = _parseOrderCreatedId(vm.getRecordedLogs());
 
         // Step 2: EIP-1271 validates order
@@ -195,13 +194,13 @@ contract CowSwapModuleIntegrationTest is Test {
         //   a) Solver pulls sellToken from module via max approval
         vm.prank(module.vaultRelayer());
         sellToken.transferFrom(address(module), address(cowSettlement), SELL_AMOUNT);
-        //   b) buyToken goes DIRECTLY to realNode (receiver=node in GPv2Order) — no staging
-        buyToken.mint(address(realNode), MIN_BUY_AMOUNT + 10e18);
+        //   b) buyToken goes DIRECTLY to realPaymentRails (receiver=paymentRails in GPv2Order) — no staging
+        buyToken.mint(address(realPaymentRails), MIN_BUY_AMOUNT + 10e18);
         //   c) GPv2Settlement records the fill
         cowSettlement.setFilledAmount(orderId, SELL_AMOUNT);
 
-        // Step 4: Node already has buyToken — no further call needed
-        assertEq(buyToken.balanceOf(address(realNode)), MIN_BUY_AMOUNT + 10e18);
+        // Step 4: PaymentRails already has buyToken — no further call needed
+        assertEq(buyToken.balanceOf(address(realPaymentRails)), MIN_BUY_AMOUNT + 10e18);
         assertEq(buyToken.balanceOf(address(module)), 0, "buyToken never staged in module");
         assertEq(sellToken.balanceOf(address(module)), 0, "sellToken pulled by solver");
 
@@ -225,7 +224,7 @@ contract CowSwapModuleIntegrationTest is Test {
 
         // Same params, same block → same orderId → collision guard rejects
         bytes memory params = _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, APP_DATA);
-        DataTypes.ExecutionResult memory result = mockNode.initiateSwap(address(sellToken), SELL_AMOUNT, params);
+        DataTypes.ExecutionResult memory result = mockPaymentRails.initiateSwap(address(sellToken), SELL_AMOUNT, params);
 
         assertFalse(result.success, "second identical call is rejected");
         assertEq(result.failureReason, "Order ID collision: use unique appData");
@@ -241,7 +240,7 @@ contract CowSwapModuleIntegrationTest is Test {
 
         bytes memory params2 =
             _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, keccak256("different"));
-        DataTypes.ExecutionResult memory r2 = mockNode.initiateSwap(address(sellToken), SELL_AMOUNT, params2);
+        DataTypes.ExecutionResult memory r2 = mockPaymentRails.initiateSwap(address(sellToken), SELL_AMOUNT, params2);
         assertTrue(r2.success, "Different appData -> different orderId -> no collision");
         bytes32 orderId2 = abi.decode(r2.data, (bytes32));
 
@@ -261,7 +260,7 @@ contract CowSwapModuleIntegrationTest is Test {
         );
 
         bytes memory params2 = _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, keccak256("order-2"));
-        DataTypes.ExecutionResult memory r2 = mockNode.initiateSwap(address(sellToken), SELL_AMOUNT, params2);
+        DataTypes.ExecutionResult memory r2 = mockPaymentRails.initiateSwap(address(sellToken), SELL_AMOUNT, params2);
         assertTrue(r2.success);
 
         // Second execute: approval unchanged (already at max — condition skips forceApprove)
@@ -289,17 +288,17 @@ contract CowSwapModuleIntegrationTest is Test {
     ///      Cancelling the first order returns exactly SELL_AMOUNT (not 2x).
     ///      The second order's tokens remain available for its own cancel.
     function test_Fix_H3_TwoConcurrentOrders_SameSellToken_CancelIsIsolated() public {
-        MockNode node2 = new MockNode(address(module));
-        sellToken.mint(address(node2), SELL_AMOUNT);
+        MockPaymentRails paymentRails2 = new MockPaymentRails(address(module));
+        sellToken.mint(address(paymentRails2), SELL_AMOUNT);
 
         bytes memory params = _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, APP_DATA);
 
-        // Order A: from mockNode
+        // Order A: from mockPaymentRails
         bytes32 orderA = _initiateOrder();
 
-        // Order B: from node2 (different timestamp → different orderId)
+        // Order B: from paymentRails2 (different timestamp → different orderId)
         vm.warp(block.timestamp + 1);
-        DataTypes.ExecutionResult memory r2 = node2.initiateSwap(address(sellToken), SELL_AMOUNT, params);
+        DataTypes.ExecutionResult memory r2 = paymentRails2.initiateSwap(address(sellToken), SELL_AMOUNT, params);
         bytes32 orderB = abi.decode(r2.data, (bytes32));
 
         assertTrue(orderA != orderB, "Different timestamps -> different orderIds");
@@ -308,31 +307,31 @@ contract CowSwapModuleIntegrationTest is Test {
         assertEq(sellToken.balanceOf(address(module)), SELL_AMOUNT * 2);
 
         // Cancel order A — must return exactly 1x, leaving 1x for order B
-        uint256 node1Before = sellToken.balanceOf(address(mockNode));
+        uint256 node1Before = sellToken.balanceOf(address(mockPaymentRails));
         module.cancelOrder(orderA);
 
-        assertEq(sellToken.balanceOf(address(mockNode)), node1Before + SELL_AMOUNT, "A gets exactly 1x");
+        assertEq(sellToken.balanceOf(address(mockPaymentRails)), node1Before + SELL_AMOUNT, "A gets exactly 1x");
         assertEq(sellToken.balanceOf(address(module)), SELL_AMOUNT, "B's tokens intact");
 
-        // Cancel order B — returns exactly 1x to node2
-        uint256 node2Before = sellToken.balanceOf(address(node2));
+        // Cancel order B — returns exactly 1x to paymentRails2
+        uint256 paymentRails2Before = sellToken.balanceOf(address(paymentRails2));
         module.cancelOrder(orderB);
 
-        assertEq(sellToken.balanceOf(address(node2)), node2Before + SELL_AMOUNT, "B gets exactly 1x");
+        assertEq(sellToken.balanceOf(address(paymentRails2)), paymentRails2Before + SELL_AMOUNT, "B gets exactly 1x");
         assertEq(sellToken.balanceOf(address(module)), 0);
     }
 
     /// @dev If solver fills order A while order B is pending (same sellToken),
     ///      order B's tokens are protected — markFilled for A does not transfer sellToken.
     function test_Fix_H3_TwoConcurrentOrders_FillOneLeaveOtherIntact() public {
-        MockNode node2 = new MockNode(address(module));
-        sellToken.mint(address(node2), SELL_AMOUNT);
+        MockPaymentRails paymentRails2 = new MockPaymentRails(address(module));
+        sellToken.mint(address(paymentRails2), SELL_AMOUNT);
 
         bytes memory params = _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, APP_DATA);
 
         bytes32 orderA = _initiateOrder();
         vm.warp(block.timestamp + 1);
-        DataTypes.ExecutionResult memory r2 = node2.initiateSwap(address(sellToken), SELL_AMOUNT, params);
+        DataTypes.ExecutionResult memory r2 = paymentRails2.initiateSwap(address(sellToken), SELL_AMOUNT, params);
         bytes32 orderB = abi.decode(r2.data, (bytes32));
 
         // Module holds 2x
@@ -353,10 +352,10 @@ contract CowSwapModuleIntegrationTest is Test {
         assertFalse(module.getOrder(orderA).cancelled, "Order A settled, not cancelled");
 
         // Order B can still be cancelled — its tokens are untouched
-        uint256 node2Before = sellToken.balanceOf(address(node2));
+        uint256 paymentRails2Before = sellToken.balanceOf(address(paymentRails2));
         module.cancelOrder(orderB);
 
-        assertEq(sellToken.balanceOf(address(node2)), node2Before + SELL_AMOUNT);
+        assertEq(sellToken.balanceOf(address(paymentRails2)), paymentRails2Before + SELL_AMOUNT);
         assertEq(sellToken.balanceOf(address(module)), 0);
     }
 
@@ -366,14 +365,14 @@ contract CowSwapModuleIntegrationTest is Test {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @dev FOT LIMITATION: Module receives less than `amount` due to transfer fee.
-    ///      execute() still returns success — the balance check passes (node held enough).
+    ///      execute() still returns success — the balance check passes (paymentRails held enough).
     ///      But order metadata records the full (inflated) sellAmount.
     function test_FOT_SellToken_ModuleReceivesLessThanAmount_BalanceMismatch() public {
         FeeOnTransferERC20 fotToken = new FeeOnTransferERC20();
-        fotToken.mint(address(mockNode), SELL_AMOUNT * 2);
+        fotToken.mint(address(mockPaymentRails), SELL_AMOUNT * 2);
 
         bytes memory params = _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, APP_DATA);
-        DataTypes.ExecutionResult memory result = mockNode.initiateSwap(address(fotToken), SELL_AMOUNT, params);
+        DataTypes.ExecutionResult memory result = mockPaymentRails.initiateSwap(address(fotToken), SELL_AMOUNT, params);
 
         // execute() returns success (balance check passed before fee deduction)
         assertTrue(result.success);
@@ -399,10 +398,10 @@ contract CowSwapModuleIntegrationTest is Test {
     ///      a smaller fill — the order will be rejected or partially filled by CowSwap.
     function test_FOT_SellToken_Solver_CanOnlyPull_ActualBalance_NotFullSellAmount() public {
         FeeOnTransferERC20 fotToken = new FeeOnTransferERC20();
-        fotToken.mint(address(mockNode), SELL_AMOUNT * 2);
+        fotToken.mint(address(mockPaymentRails), SELL_AMOUNT * 2);
 
         bytes memory params = _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, APP_DATA);
-        mockNode.initiateSwap(address(fotToken), SELL_AMOUNT, params);
+        mockPaymentRails.initiateSwap(address(fotToken), SELL_AMOUNT, params);
 
         uint256 actualBalance = fotToken.balanceOf(address(module)); // SELL_AMOUNT - fee
 
@@ -425,28 +424,28 @@ contract CowSwapModuleIntegrationTest is Test {
 
     /// @dev CEI protection in cancelOrder: outer cancel succeeds, reentrant inner call
     ///      finds status=CANCELLED (set before transfer) and silently fails.
-    ///      Node receives tokens exactly once — no double-drain.
+    ///      PaymentRails receives tokens exactly once — no double-drain.
     function test_CEI_ReentrantSellToken_CancelOrder_DoesNotDoubleDrain() public {
         ReentrantSellToken reentrantToken = new ReentrantSellToken(address(module), address(this));
         sellToken.mint(address(this), SELL_AMOUNT); // unrelated — just for setUp
 
         // Set up an order with the reentrant sellToken
-        reentrantToken.mint(address(mockNode), SELL_AMOUNT);
+        reentrantToken.mint(address(mockPaymentRails), SELL_AMOUNT);
 
         bytes memory params = _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, APP_DATA);
 
-        // mockNode needs to approve the reentrant token
-        vm.prank(address(mockNode));
+        // mockPaymentRails needs to approve the reentrant token
+        vm.prank(address(mockPaymentRails));
         reentrantToken.approve(address(module), SELL_AMOUNT);
 
-        // Directly call execute from mockNode context
-        vm.prank(address(mockNode));
-        DataTypes.ExecutionResult memory result = module.execute(address(reentrantToken), SELL_AMOUNT, params);
+        // Directly call execute from mockPaymentRails context
+        vm.prank(address(mockPaymentRails));
+        DataTypes.ExecutionResult memory result = module.execute(address(reentrantToken), SELL_AMOUNT, params, "");
         bytes32 orderId = abi.decode(result.data, (bytes32));
 
         reentrantToken.setTargetOrder(orderId);
 
-        uint256 nodeBalBefore = reentrantToken.balanceOf(address(mockNode));
+        uint256 nodeBalBefore = reentrantToken.balanceOf(address(mockPaymentRails));
 
         // Outer cancelOrder succeeds (module owner = address(this))
         module.cancelOrder(orderId);
@@ -454,79 +453,85 @@ contract CowSwapModuleIntegrationTest is Test {
         // CEI protection: inner reentrant cancel FAILED (status=CANCELLED before transfer fired)
         assertFalse(reentrantToken.doubleClaimSucceeded(), "CEI: double-drain must not succeed");
 
-        // Node received tokens exactly once
-        assertEq(reentrantToken.balanceOf(address(mockNode)), nodeBalBefore + SELL_AMOUNT);
+        // PaymentRails received tokens exactly once
+        assertEq(reentrantToken.balanceOf(address(mockPaymentRails)), nodeBalBefore + SELL_AMOUNT);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
             GROUP 6: SECURITY — ACCESS CONTROL AND GRIEFING
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @dev Anyone can call module.execute() directly without going through Node.
-    ///      The caller becomes meta.node and owns the resulting order.
+    /// @dev Anyone can call module.execute() directly without going through PaymentRails.
+    ///      The caller becomes meta.paymentRails and owns the resulting order.
     function test_Security_DirectExecute_ByAnyone_CallerOwnsOrder() public {
         sellToken.mint(attacker, SELL_AMOUNT);
 
         vm.startPrank(attacker);
         sellToken.approve(address(module), SELL_AMOUNT);
         bytes memory params = _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, APP_DATA);
-        DataTypes.ExecutionResult memory result = module.execute(address(sellToken), SELL_AMOUNT, params);
+        DataTypes.ExecutionResult memory result = module.execute(address(sellToken), SELL_AMOUNT, params, "");
         vm.stopPrank();
 
         assertTrue(result.success);
         bytes32 orderId = abi.decode(result.data, (bytes32));
 
-        // Attacker is recorded as meta.node (token beneficiary for any future cancel)
-        assertEq(module.getOrder(orderId).node, attacker);
+        // Attacker is recorded as meta.paymentRails (token beneficiary for any future cancel)
+        assertEq(module.getOrder(orderId).paymentRails, attacker);
 
         // Attacker CANNOT cancel — only the module owner (address(this)) can cancel
         vm.prank(attacker);
         vm.expectRevert(abi.encodeWithSelector(Errors.CowSwapModule_NotOwner.selector, attacker, address(this)));
         module.cancelOrder(orderId);
 
-        // Module owner cancels — sell tokens return to meta.node (the attacker)
+        // Module owner cancels — sell tokens return to meta.paymentRails (the attacker)
         module.cancelOrder(orderId);
         assertEq(sellToken.balanceOf(attacker), SELL_AMOUNT);
     }
 
-    /// @dev SECURITY IMPROVEMENT: With receiver=node design, frontrunners cannot collide with
-    ///      legitimate orders. Each caller is recorded as receiver (meta.node) in the GPv2Order
-    ///      digest — so attacker's orderId differs from mockNode's orderId even with identical
+    /// @dev SECURITY IMPROVEMENT: With receiver=paymentRails design, frontrunners cannot collide with
+    ///      legitimate orders. Each caller is recorded as receiver (meta.paymentRails) in the GPv2Order
+    ///      digest — so attacker's orderId differs from mockPaymentRails's orderId even with identical
     ///      params in the same block. The collision only occurs when the SAME sender
     ///      calls execute() twice with the same params.
     function test_Security_Frontrunning_DifferentSenders_ProduceDifferentOrderIds_NoCollision() public {
         sellToken.mint(attacker, SELL_AMOUNT);
         bytes memory params = _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, APP_DATA);
 
-        // Attacker frontruns: calls execute() before mockNode in the same block
+        // Attacker frontruns: calls execute() before mockPaymentRails in the same block
         vm.startPrank(attacker);
         sellToken.approve(address(module), SELL_AMOUNT);
-        DataTypes.ExecutionResult memory attackResult = module.execute(address(sellToken), SELL_AMOUNT, params);
+        DataTypes.ExecutionResult memory attackResult = module.execute(address(sellToken), SELL_AMOUNT, params, "");
         vm.stopPrank();
         bytes32 attackerOrderId = abi.decode(attackResult.data, (bytes32));
 
-        // mockNode executes with same params in the same block
+        // mockPaymentRails executes with same params in the same block
         bytes32 nodeOrderId = _initiateOrder();
 
-        // SECURITY FIX: receiver=node means different senders produce different orderIds
-        // Attacker's order has receiver=attacker; mockNode's order has receiver=mockNode
+        // SECURITY FIX: receiver=paymentRails means different senders produce different orderIds
+        // Attacker's order has receiver=attacker; mockPaymentRails's order has receiver=mockPaymentRails
         assertTrue(attackerOrderId != nodeOrderId, "Different senders -> different receiver -> different orderId");
 
         // Both orders are independent — no collision, no metadata overwrite
-        assertEq(module.getOrder(attackerOrderId).node, attacker, "Attacker owns their order");
-        assertEq(module.getOrder(nodeOrderId).node, address(mockNode), "mockNode owns their order");
+        assertEq(module.getOrder(attackerOrderId).paymentRails, attacker, "Attacker owns their order");
+        assertEq(
+            module.getOrder(nodeOrderId).paymentRails, address(mockPaymentRails), "mockPaymentRails owns their order"
+        );
 
         // Both are pending and each can be cancelled independently
         assertFalse(module.getOrder(attackerOrderId).cancelled, "Attacker order not cancelled");
-        assertFalse(module.getOrder(nodeOrderId).cancelled, "Node order not cancelled");
+        assertFalse(module.getOrder(nodeOrderId).cancelled, "PaymentRails order not cancelled");
 
         // Module holds 2x but they are properly attributed to separate orders
         assertEq(sellToken.balanceOf(address(module)), SELL_AMOUNT * 2);
 
         // Owner can cancel both orders independently (each returns exactly 1x)
-        uint256 nodeBalBefore = sellToken.balanceOf(address(mockNode));
+        uint256 nodeBalBefore = sellToken.balanceOf(address(mockPaymentRails));
         module.cancelOrder(nodeOrderId);
-        assertEq(sellToken.balanceOf(address(mockNode)), nodeBalBefore + SELL_AMOUNT, "mockNode gets exactly 1x");
+        assertEq(
+            sellToken.balanceOf(address(mockPaymentRails)),
+            nodeBalBefore + SELL_AMOUNT,
+            "mockPaymentRails gets exactly 1x"
+        );
         assertEq(sellToken.balanceOf(address(module)), SELL_AMOUNT, "Attacker's order untouched");
 
         uint256 attackerBalBefore = sellToken.balanceOf(attacker);
@@ -553,7 +558,7 @@ contract CowSwapModuleIntegrationTest is Test {
     /// @dev Two orders with different sell tokens produce distinct orderIds.
     function test_EdgeCase_DifferentSellTokens_DistinctOrderIds() public {
         MockERC20 daiToken = new MockERC20("DAI", "DAI");
-        daiToken.mint(address(mockNode), SELL_AMOUNT);
+        daiToken.mint(address(mockPaymentRails), SELL_AMOUNT);
 
         bytes32 orderA = _initiateOrder(); // USDC → WETH
         bytes32 orderB = _initiateOrderWith(address(daiToken), address(buyToken), SELL_AMOUNT, MIN_BUY_AMOUNT);
@@ -578,7 +583,7 @@ contract CowSwapModuleIntegrationTest is Test {
         bytes memory params = _buildParams(address(buyToken), MIN_BUY_AMOUNT, type(uint32).max, APP_DATA);
 
         // execute() rejects overflow validity before any transfer
-        DataTypes.ExecutionResult memory result = mockNode.initiateSwap(address(sellToken), SELL_AMOUNT, params);
+        DataTypes.ExecutionResult memory result = mockPaymentRails.initiateSwap(address(sellToken), SELL_AMOUNT, params);
         assertFalse(result.success, "overflow validity is rejected");
         assertEq(result.failureReason, "Validity duration overflow");
 
@@ -647,7 +652,7 @@ contract CowSwapModuleIntegrationTest is Test {
 
     function _initiateOrder() internal returns (bytes32 orderId) {
         bytes memory params = _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, APP_DATA);
-        DataTypes.ExecutionResult memory result = mockNode.initiateSwap(address(sellToken), SELL_AMOUNT, params);
+        DataTypes.ExecutionResult memory result = mockPaymentRails.initiateSwap(address(sellToken), SELL_AMOUNT, params);
         return abi.decode(result.data, (bytes32));
     }
 
@@ -661,7 +666,7 @@ contract CowSwapModuleIntegrationTest is Test {
         returns (bytes32 orderId)
     {
         bytes memory params = _buildParams(_buyToken, _minBuyAmount, VALIDITY_DURATION, APP_DATA);
-        DataTypes.ExecutionResult memory result = mockNode.initiateSwap(_sellToken, _sellAmount, params);
+        DataTypes.ExecutionResult memory result = mockPaymentRails.initiateSwap(_sellToken, _sellAmount, params);
         return abi.decode(result.data, (bytes32));
     }
 
