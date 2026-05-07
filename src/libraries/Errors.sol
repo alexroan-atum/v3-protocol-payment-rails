@@ -156,4 +156,38 @@ library Errors {
     /// @notice Thrown when attempting to remove a domain config that does not exist.
     /// @param destinationDomain The CCTP domain ID that is not configured.
     error CCTPBridgeModule_DomainNotConfigured(uint32 destinationDomain);
+
+    /*//////////////////////////////////////////////////////////////////////////
+                        ATUM PAYMENT MODULE ERRORS
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @notice Thrown when the Permit2 address is the zero address in the constructor.
+    error AtumModule_ZeroPermit2();
+
+    /// @notice Thrown when the immutable Node address is the zero address in the constructor.
+    error AtumModule_ZeroNode();
+
+    /// @notice Thrown when a caller is not the immutable Node.
+    /// @param caller Unauthorized caller.
+    /// @param node Immutable Node authorized to call.
+    error AtumModule_NotNode(address caller, address node);
+
+    /// @notice Thrown when the keeper address is the zero address.
+    error AtumModule_ZeroKeeper();
+
+    /// @notice Thrown when a caller is not the current keeper.
+    /// @param caller Unauthorized caller.
+    /// @param keeper Current keeper authorized to call.
+    error AtumModule_NotKeeper(address caller, address keeper);
+
+    /// @notice Thrown when a token address is zero.
+    error AtumModule_ZeroToken();
+
+    /// @notice Thrown when attempting to invalidate the zero digest.
+    error AtumModule_ZeroDigest();
+
+    /// @notice Thrown when the module receives less or more than the exact amount requested.
+    /// @param expected Amount requested from the Node.
+    /// @param actual Balance delta observed by the module.
+    error AtumModule_UnsupportedTokenReceivedAmount(uint256 expected, uint256 actual);
 }

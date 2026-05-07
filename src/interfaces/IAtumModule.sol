@@ -1,0 +1,92 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.29;
+
+import { IActionModule } from "./IActionModule.sol";
+import { DataTypes } from "../types/DataTypes.sol";
+import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
+
+/// @title IAtumModule
+/// @notice Minimal Node-bound Atum payment contract and ERC-1271 Permit2 owner.
+/// @dev One module deployment is bound to one immutable Node. The Node funds the
+///      contract through `execute`; the module emits the current available source
+///      balance and destination details for an offchain keeper, and validates raw
+///      Permit2 digests by keeper signature.
+///
+///      The module does not compute request ids, source assets, fulfillment amounts,
+///      or fees. The keeper derives source details from the log context and prepares
+///      Atum payment requests from the module's available token balance offchain.
+///
+///      Failed deposits, refunds, and unused source balances remain in the module. The
+///      keeper should watch {AtumIntentCreated}, Atum Escrow refund events, and module
+///      token balances to initiate new payment requests from the available balance.
+interface IAtumModule is IActionModule, IERC1271 {
+    /// @notice Emitted when the module approves Permit2 for a source token.
+    event Permit2ApprovalSet(address indexed token, address indexed permit2, uint256 amount);
+
+    /// @notice Emitted when the owner rotates the keeper.
+    event KeeperSet(address indexed oldKeeper, address indexed newKeeper);
+
+    /// @notice Emitted when the keeper permanently rejects a Permit2 digest.
+    event PermitDigestInvalidated(bytes32 indexed digest);
+
+    /// @notice Emitted when the owner returns a module-held token balance to the immutable Node.
+    event TokenBalanceReturned(address indexed token, address indexed node, uint256 amount);
+
+    /// @notice Emitted when source funds are available for an Atum payment request.
+    /// @param token Source token available in the module.
+    /// @param availableSourceAmount Current module token balance the keeper should use for the payment request.
+    /// @param destinationChain CAIP-2 destination chain identifier.
+    /// @param destinationAccount Destination account identifier for the Atum payment request.
+    /// @param destinationAsset CAIP-19 destination asset identifier for the Atum payment request.
+    event AtumIntentCreated(
+        address indexed token,
+        uint256 availableSourceAmount,
+        string destinationChain,
+        string destinationAccount,
+        string destinationAsset
+    );
+
+    /// @notice Permit2 contract used by Atum Escrow on this source chain.
+    function permit2() external view returns (address);
+
+    /// @notice Permit2 domain separator captured at deployment.
+    function permit2DomainSeparator() external view returns (bytes32);
+
+    /// @notice Immutable Node allowed to call `execute` and receive fail-safe recovery returns.
+    function node() external view returns (address);
+
+    /// @notice Keeper that signs Permit2 digests and invalidates abandoned digests.
+    function keeper() external view returns (address);
+
+    /// @notice Returns whether a Permit2 digest has been permanently invalidated.
+    function isPermitDigestInvalidated(bytes32 digest) external view returns (bool);
+
+    /// @notice Owner-only keeper rotation.
+    function setKeeper(address newKeeper) external;
+
+    /// @notice Owner-only pause.
+    /// @dev While paused, `execute` is blocked, `validate` fails, ERC-1271 validation rejects
+    ///      all signatures, and return-to-Node recovery is enabled.
+    function pause() external;
+
+    /// @notice Owner-only unpause after abandoned floating Permit2 digests have been invalidated or expired.
+    function unpause() external;
+
+    /// @notice Keeper-only permanent invalidation of an abandoned Permit2 digest.
+    function invalidateDigest(bytes32 digest) external;
+
+    /// @notice Keeper-only permanent invalidation of multiple abandoned Permit2 digests.
+    function invalidateDigests(bytes32[] calldata digests) external;
+
+    /// @notice Owner-only paused recovery that returns the full current token balance to the immutable Node.
+    function returnTokenBalance(address token) external returns (uint256 amountReturned);
+
+    /// @notice Owner-only paused recovery that returns full current balances for multiple tokens to the immutable Node.
+    function returnTokenBalances(address[] calldata tokens) external;
+
+    /// @notice ABI-encodes Atum payment params for `Node.configureToken`.
+    function encodeParams(DataTypes.AtumPaymentParams calldata params) external pure returns (bytes memory encoded);
+
+    /// @notice Decodes Atum payment params from `Node.configureToken`.
+    function decodeParams(bytes calldata encoded) external pure returns (DataTypes.AtumPaymentParams memory params);
+}

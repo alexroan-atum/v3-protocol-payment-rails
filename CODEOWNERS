@@ -9,6 +9,7 @@
 /src/modules/forwards/ @credit-cooperative/core-team
 /src/modules/swaps/    @credit-cooperative/core-team
 /src/modules/bridges/  @credit-cooperative/core-team
+/src/modules/payments/ @atum-team @credit-cooperative/core-team
 
 # Contrib modules — CC core review required to merge; per-module
 # overrides added below as contrib modules land.
