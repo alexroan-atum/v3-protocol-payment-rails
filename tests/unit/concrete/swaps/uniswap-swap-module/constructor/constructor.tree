@@ -1,0 +1,5 @@
+UniswapSwapModule_Constructor
+├── when owner is zero address
+│   └── it should revert with OwnableInvalidOwner
+└── when owner is valid
+    └── it should set owner correctly

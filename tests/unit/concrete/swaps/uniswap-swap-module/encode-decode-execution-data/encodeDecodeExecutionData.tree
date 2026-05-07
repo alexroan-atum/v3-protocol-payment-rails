@@ -1,0 +1,13 @@
+UniswapSwapModule_EncodeDecodeExecutionData
+├── given valid execution data
+│   └── it should round-trip all fields correctly
+├── given empty router calldata
+│   └── it should round-trip correctly
+├── given large router calldata
+│   └── it should round-trip correctly
+├── given zero values
+│   └── it should round-trip correctly
+├── given max values
+│   └── it should round-trip correctly
+└── fuzz
+    └── it should round-trip any valid execution data correctly
