@@ -4,7 +4,7 @@ pragma solidity ^0.8.29;
 import { Test } from "forge-std/src/Test.sol";
 import { CowSwapModule } from "../../../../../src/modules/swaps/CowSwapModule.sol";
 import { IGPv2Settlement } from "../../../../../src/interfaces/IGPv2Settlement.sol";
-import { Node } from "../../../../../src/core/Node.sol";
+import { PaymentRails } from "../../../../../src/core/PaymentRails.sol";
 import { DataTypes } from "../../../../../src/types/DataTypes.sol";
 import { Errors } from "../../../../../src/libraries/Errors.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -15,8 +15,8 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 ///      Uses `deal` to provide real ERC20 balances without needing a whale account.
 ///
 ///      FORK vs UNIT vs INTEGRATION — scope boundaries:
-///        - Unit tests:        MockCowSettlement, MockERC20, MockNode — logic in isolation.
-///        - Integration tests: Real Node + real module, but mocked external deps.
+///        - Unit tests:        MockCowSettlement, MockERC20, MockPaymentRails — logic in isolation.
+///        - Integration tests: Real PaymentRails + real module, but mocked external deps.
 ///        - Fork tests (here): Real GPv2Settlement, real ERC20 tokens (USDC/DAI/WETH),
 ///                             real domain separator, real filledAmount storage reads.
 ///
@@ -24,7 +24,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 ///        1. ABI compatibility — our IGPv2Settlement interface matches the deployed bytecode.
 ///        2. EIP-712 digest parity — orderId matches what the real settlement would compute.
 ///        3. Real token behavior — USDC (6 decimals), DAI (18 decimals), approval semantics.
-///        4. Full lifecycle through Node — configure → execute → fill/cancel → verify balances.
+///        4. Full lifecycle through PaymentRails — configure → execute → fill/cancel → verify balances.
 abstract contract CowSwapModuleForkBase is Test {
     /*//////////////////////////////////////////////////////////////////////////
                                     EVENTS
@@ -32,7 +32,7 @@ abstract contract CowSwapModuleForkBase is Test {
 
     event OrderCreated(
         bytes32 indexed orderId,
-        address indexed node,
+        address indexed paymentRails,
         address sellToken,
         address buyToken,
         uint256 sellAmount,
@@ -40,7 +40,7 @@ abstract contract CowSwapModuleForkBase is Test {
         uint32 validTo,
         bytes32 appData
     );
-    event OrderCancelled(bytes32 indexed orderId, address indexed node, address token, uint256 amount);
+    event OrderCancelled(bytes32 indexed orderId, address indexed paymentRails, address token, uint256 amount);
     event TokenConfigured(address indexed token, string actionType, address indexed actionModule);
     event ActionExecuted(
         address indexed token,
@@ -76,14 +76,14 @@ abstract contract CowSwapModuleForkBase is Test {
     uint256 internal constant MIN_WETH_BUY = 3e18; // ~3 WETH floor
     uint256 internal constant MIN_USDC_BUY = 9500e6; // 9,500 USDC floor
     uint32 internal constant DEFAULT_VALIDITY = 3600; // 1 hour
-    bytes32 internal constant DEFAULT_APP_DATA = keccak256("receivables-node-v1");
+    bytes32 internal constant DEFAULT_APP_DATA = keccak256("receivables-paymentRails-v1");
 
     /*//////////////////////////////////////////////////////////////////////////
                                 TEST CONTRACTS
     //////////////////////////////////////////////////////////////////////////*/
 
     CowSwapModule internal module;
-    Node internal node;
+    PaymentRails internal paymentRails;
     address internal owner;
     address internal attacker;
 
@@ -117,21 +117,21 @@ abstract contract CowSwapModuleForkBase is Test {
         // Deploy module with real GPv2Settlement
         vm.startPrank(owner);
         module = new CowSwapModule(GPV2_SETTLEMENT, owner);
-        node = new Node(owner);
+        paymentRails = new PaymentRails(owner);
         vm.stopPrank();
 
-        // Fund the node with sell tokens via deal.
+        // Fund the paymentRails with sell tokens via deal.
         // Note: only deal tokens that will be SOLD. buyToken (WETH) is delivered by the solver
-        // to the node directly — no upfront balance needed.
-        deal(USDC, address(node), USDC_SELL_AMOUNT * 10);
-        deal(DAI, address(node), DAI_SELL_AMOUNT * 10);
+        // to the paymentRails directly — no upfront balance needed.
+        deal(USDC, address(paymentRails), USDC_SELL_AMOUNT * 10);
+        deal(DAI, address(paymentRails), DAI_SELL_AMOUNT * 10);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
                                 LIFECYCLE MODIFIERS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @dev Creates a default PENDING USDC→WETH order via the module directly (node as caller).
+    /// @dev Creates a default PENDING USDC→WETH order via the module directly (paymentRails as caller).
     modifier givenPendingUsdcOrder() {
         _orderId = _initiateOrder(USDC, USDC_SELL_AMOUNT, WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
         _;
@@ -169,7 +169,7 @@ abstract contract CowSwapModuleForkBase is Test {
         );
     }
 
-    /// @dev Initiates an order by pranking as the node, approving the module, and calling execute.
+    /// @dev Initiates an order by pranking as the paymentRails, approving the module, and calling execute.
     function _initiateOrder(
         address sellToken,
         uint256 sellAmount,
@@ -183,17 +183,17 @@ abstract contract CowSwapModuleForkBase is Test {
     {
         bytes memory params = _buildParams(buyToken, minBuyAmount, validityDuration, appData);
 
-        vm.startPrank(address(node));
+        vm.startPrank(address(paymentRails));
         IERC20(sellToken).approve(address(module), sellAmount);
-        DataTypes.ExecutionResult memory result = module.execute(sellToken, sellAmount, params);
+        DataTypes.ExecutionResult memory result = module.execute(sellToken, sellAmount, params, "");
         vm.stopPrank();
 
         assertTrue(result.success, "Order initiation should succeed");
         return abi.decode(result.data, (bytes32));
     }
 
-    /// @dev Initiates an order through the Node contract (configureToken + executeAction).
-    function _initiateOrderViaNode(
+    /// @dev Initiates an order through the PaymentRails contract (configureToken + executeAction).
+    function _initiateOrderViaPaymentRails(
         address sellToken,
         uint256 sellAmount,
         address buyToken,
@@ -207,13 +207,15 @@ abstract contract CowSwapModuleForkBase is Test {
         bytes memory params = _buildParams(buyToken, minBuyAmount, validityDuration, appData);
 
         vm.prank(owner);
-        node.configureToken(sellToken, "COWSWAP", address(module), sellAmount, params, true);
+        paymentRails.configureToken(sellToken, "COWSWAP", address(module), sellAmount, params, true);
 
-        node.executeAction(sellToken, sellAmount);
+        paymentRails.executeAction(sellToken, sellAmount);
 
         // Compute the expected orderId
         uint32 validTo = uint32(block.timestamp + validityDuration);
-        return _computeExpectedOrderId(sellToken, buyToken, address(node), sellAmount, minBuyAmount, validTo, appData);
+        return _computeExpectedOrderId(
+            sellToken, buyToken, address(paymentRails), sellAmount, minBuyAmount, validTo, appData
+        );
     }
 
     /// @dev Mocks the real GPv2Settlement.filledAmount(orderUid) to return `amount`.
@@ -299,13 +301,13 @@ contract CowSwapModuleForkConstructorTest is CowSwapModuleForkBase {
 
 contract CowSwapModuleForkExecuteTest is CowSwapModuleForkBase {
     /// @dev USDC → WETH order: verifies token transfer, approval, metadata, event, and result.
-    function test_Execute_UsdcToWeth_TransfersSellTokenFromNodeToModule() external {
-        uint256 nodeBefore = IERC20(USDC).balanceOf(address(node));
+    function test_Execute_UsdcToWeth_TransfersSellTokenFromPaymentRailsToModule() external {
+        uint256 nodeBefore = IERC20(USDC).balanceOf(address(paymentRails));
         uint256 moduleBefore = IERC20(USDC).balanceOf(address(module));
 
         _orderId = _initiateOrder(USDC, USDC_SELL_AMOUNT, WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
-        assertEq(IERC20(USDC).balanceOf(address(node)), nodeBefore - USDC_SELL_AMOUNT);
+        assertEq(IERC20(USDC).balanceOf(address(paymentRails)), nodeBefore - USDC_SELL_AMOUNT);
         assertEq(IERC20(USDC).balanceOf(address(module)), moduleBefore + USDC_SELL_AMOUNT);
     }
 
@@ -320,7 +322,7 @@ contract CowSwapModuleForkExecuteTest is CowSwapModuleForkBase {
         _orderId = _initiateOrder(USDC, USDC_SELL_AMOUNT, WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
         DataTypes.CowOrderMetadata memory meta = module.getOrder(_orderId);
-        assertEq(meta.node, address(node));
+        assertEq(meta.paymentRails, address(paymentRails));
         assertEq(meta.sellToken, USDC);
         assertEq(meta.buyToken, WETH);
         assertEq(meta.sellAmount, USDC_SELL_AMOUNT);
@@ -332,16 +334,16 @@ contract CowSwapModuleForkExecuteTest is CowSwapModuleForkBase {
         bytes memory params = _buildParams(WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
         uint32 expectedValidTo = uint32(block.timestamp + DEFAULT_VALIDITY);
         bytes32 expectedOrderId = _computeExpectedOrderId(
-            USDC, WETH, address(node), USDC_SELL_AMOUNT, MIN_WETH_BUY, expectedValidTo, DEFAULT_APP_DATA
+            USDC, WETH, address(paymentRails), USDC_SELL_AMOUNT, MIN_WETH_BUY, expectedValidTo, DEFAULT_APP_DATA
         );
 
-        vm.startPrank(address(node));
+        vm.startPrank(address(paymentRails));
         IERC20(USDC).approve(address(module), USDC_SELL_AMOUNT);
 
         vm.expectEmit(true, true, true, true, address(module));
         emit OrderCreated(
             expectedOrderId,
-            address(node),
+            address(paymentRails),
             USDC,
             WETH,
             USDC_SELL_AMOUNT,
@@ -350,16 +352,16 @@ contract CowSwapModuleForkExecuteTest is CowSwapModuleForkBase {
             DEFAULT_APP_DATA
         );
 
-        module.execute(USDC, USDC_SELL_AMOUNT, params);
+        module.execute(USDC, USDC_SELL_AMOUNT, params, "");
         vm.stopPrank();
     }
 
     function test_Execute_UsdcToWeth_ReturnsSuccessWithAmountOutZero() external {
         bytes memory params = _buildParams(WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
-        vm.startPrank(address(node));
+        vm.startPrank(address(paymentRails));
         IERC20(USDC).approve(address(module), USDC_SELL_AMOUNT);
-        DataTypes.ExecutionResult memory result = module.execute(USDC, USDC_SELL_AMOUNT, params);
+        DataTypes.ExecutionResult memory result = module.execute(USDC, USDC_SELL_AMOUNT, params, "");
         vm.stopPrank();
 
         assertTrue(result.success);
@@ -372,12 +374,12 @@ contract CowSwapModuleForkExecuteTest is CowSwapModuleForkBase {
         bytes memory params = _buildParams(WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
         uint32 expectedValidTo = uint32(block.timestamp + DEFAULT_VALIDITY);
         bytes32 expectedOrderId = _computeExpectedOrderId(
-            USDC, WETH, address(node), USDC_SELL_AMOUNT, MIN_WETH_BUY, expectedValidTo, DEFAULT_APP_DATA
+            USDC, WETH, address(paymentRails), USDC_SELL_AMOUNT, MIN_WETH_BUY, expectedValidTo, DEFAULT_APP_DATA
         );
 
-        vm.startPrank(address(node));
+        vm.startPrank(address(paymentRails));
         IERC20(USDC).approve(address(module), USDC_SELL_AMOUNT);
-        DataTypes.ExecutionResult memory result = module.execute(USDC, USDC_SELL_AMOUNT, params);
+        DataTypes.ExecutionResult memory result = module.execute(USDC, USDC_SELL_AMOUNT, params, "");
         vm.stopPrank();
 
         bytes32 returnedOrderId = abi.decode(result.data, (bytes32));
@@ -385,12 +387,12 @@ contract CowSwapModuleForkExecuteTest is CowSwapModuleForkBase {
     }
 
     /// @dev DAI → USDC order: ensures module works with 18-decimal tokens.
-    function test_Execute_DaiToUsdc_TransfersDaiFromNodeToModule() external {
-        uint256 nodeBefore = IERC20(DAI).balanceOf(address(node));
+    function test_Execute_DaiToUsdc_TransfersDaiFromPaymentRailsToModule() external {
+        uint256 nodeBefore = IERC20(DAI).balanceOf(address(paymentRails));
 
         _orderId = _initiateOrder(DAI, DAI_SELL_AMOUNT, USDC, MIN_USDC_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
-        assertEq(IERC20(DAI).balanceOf(address(node)), nodeBefore - DAI_SELL_AMOUNT);
+        assertEq(IERC20(DAI).balanceOf(address(paymentRails)), nodeBefore - DAI_SELL_AMOUNT);
         assertEq(IERC20(DAI).balanceOf(address(module)), DAI_SELL_AMOUNT);
     }
 
@@ -398,7 +400,7 @@ contract CowSwapModuleForkExecuteTest is CowSwapModuleForkBase {
         _orderId = _initiateOrder(DAI, DAI_SELL_AMOUNT, USDC, MIN_USDC_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
         DataTypes.CowOrderMetadata memory meta = module.getOrder(_orderId);
-        assertEq(meta.node, address(node));
+        assertEq(meta.paymentRails, address(paymentRails));
         assertEq(meta.sellToken, DAI);
         assertEq(meta.buyToken, USDC);
         assertEq(meta.sellAmount, DAI_SELL_AMOUNT);
@@ -434,12 +436,12 @@ contract CowSwapModuleForkExecuteTest is CowSwapModuleForkBase {
 
 contract CowSwapModuleForkValidateTest is CowSwapModuleForkBase {
     /// @dev validate() calls _hasSufficientBalance(token, amount) which checks
-    ///      msg.sender's balance. We prank as the node (which holds USDC from setUp).
+    ///      msg.sender's balance. We prank as the paymentRails (which holds USDC from setUp).
     function test_Validate_ValidParams_ReturnsTrue() external {
         bytes memory params = _buildParams(WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
-        vm.prank(address(node));
-        (bool isValid, string memory reason) = module.validate(USDC, USDC_SELL_AMOUNT, params);
+        vm.prank(address(paymentRails));
+        (bool isValid, string memory reason) = module.validate(USDC, USDC_SELL_AMOUNT, params, "");
 
         assertTrue(isValid);
         assertEq(bytes(reason).length, 0);
@@ -448,7 +450,7 @@ contract CowSwapModuleForkValidateTest is CowSwapModuleForkBase {
     function test_Validate_ZeroSellAmount_ReturnsFalse() external view {
         bytes memory params = _buildParams(WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
-        (bool isValid, string memory reason) = module.validate(USDC, 0, params);
+        (bool isValid, string memory reason) = module.validate(USDC, 0, params, "");
 
         assertFalse(isValid);
         assertEq(reason, "Zero sell amount");
@@ -457,7 +459,7 @@ contract CowSwapModuleForkValidateTest is CowSwapModuleForkBase {
     function test_Validate_ZeroTargetToken_ReturnsFalse() external view {
         bytes memory params = _buildParams(address(0), MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
-        (bool isValid, string memory reason) = module.validate(USDC, USDC_SELL_AMOUNT, params);
+        (bool isValid, string memory reason) = module.validate(USDC, USDC_SELL_AMOUNT, params, "");
 
         assertFalse(isValid);
         assertEq(reason, "Zero target token");
@@ -466,7 +468,7 @@ contract CowSwapModuleForkValidateTest is CowSwapModuleForkBase {
     function test_Validate_SameSellAndBuyToken_ReturnsFalse() external view {
         bytes memory params = _buildParams(USDC, MIN_USDC_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
-        (bool isValid, string memory reason) = module.validate(USDC, USDC_SELL_AMOUNT, params);
+        (bool isValid, string memory reason) = module.validate(USDC, USDC_SELL_AMOUNT, params, "");
 
         assertFalse(isValid);
         assertEq(reason, "Same sell and buy token");
@@ -475,7 +477,7 @@ contract CowSwapModuleForkValidateTest is CowSwapModuleForkBase {
     function test_Validate_ZeroValidityDuration_ReturnsFalse() external view {
         bytes memory params = _buildParams(WETH, MIN_WETH_BUY, 0, DEFAULT_APP_DATA);
 
-        (bool isValid, string memory reason) = module.validate(USDC, USDC_SELL_AMOUNT, params);
+        (bool isValid, string memory reason) = module.validate(USDC, USDC_SELL_AMOUNT, params, "");
 
         assertFalse(isValid);
         assertEq(reason, "Zero validity duration");
@@ -551,14 +553,14 @@ contract CowSwapModuleForkIsValidSignatureTest is CowSwapModuleForkBase {
 //////////////////////////////////////////////////////////////////////////*/
 
 contract CowSwapModuleForkCancelOrderTest is CowSwapModuleForkBase {
-    function test_CancelOrder_PendingOrder_ReturnsSellTokensToNode() external givenPendingUsdcOrder {
-        uint256 nodeBefore = IERC20(USDC).balanceOf(address(node));
+    function test_CancelOrder_PendingOrder_ReturnsSellTokensToPaymentRails() external givenPendingUsdcOrder {
+        uint256 nodeBefore = IERC20(USDC).balanceOf(address(paymentRails));
         uint256 moduleBefore = IERC20(USDC).balanceOf(address(module));
 
         vm.prank(owner);
         module.cancelOrder(_orderId);
 
-        assertEq(IERC20(USDC).balanceOf(address(node)), nodeBefore + USDC_SELL_AMOUNT);
+        assertEq(IERC20(USDC).balanceOf(address(paymentRails)), nodeBefore + USDC_SELL_AMOUNT);
         assertEq(IERC20(USDC).balanceOf(address(module)), moduleBefore - USDC_SELL_AMOUNT);
     }
 
@@ -572,7 +574,7 @@ contract CowSwapModuleForkCancelOrderTest is CowSwapModuleForkBase {
 
     function test_CancelOrder_PendingOrder_EmitsOrderCancelledEvent() external givenPendingUsdcOrder {
         vm.expectEmit(true, true, true, true, address(module));
-        emit OrderCancelled(_orderId, address(node), USDC, USDC_SELL_AMOUNT);
+        emit OrderCancelled(_orderId, address(paymentRails), USDC, USDC_SELL_AMOUNT);
 
         vm.prank(owner);
         module.cancelOrder(_orderId);
@@ -669,7 +671,7 @@ contract CowSwapModuleForkOrderDigestTest is CowSwapModuleForkBase {
     function test_OrderDigest_MatchesGPv2Eip712Digest() external {
         uint32 expectedValidTo = uint32(block.timestamp + DEFAULT_VALIDITY);
         bytes32 expectedOrderId = _computeExpectedOrderId(
-            USDC, WETH, address(node), USDC_SELL_AMOUNT, MIN_WETH_BUY, expectedValidTo, DEFAULT_APP_DATA
+            USDC, WETH, address(paymentRails), USDC_SELL_AMOUNT, MIN_WETH_BUY, expectedValidTo, DEFAULT_APP_DATA
         );
 
         bytes32 actualOrderId =
@@ -719,7 +721,7 @@ contract CowSwapModuleForkCowSwapCompatibilityTest is CowSwapModuleForkBase {
         uint32 validTo = uint32(block.timestamp + DEFAULT_VALIDITY);
 
         bytes32 canonicalDigest = _computeExpectedOrderId(
-            USDC, WETH, address(node), USDC_SELL_AMOUNT, MIN_WETH_BUY, validTo, DEFAULT_APP_DATA
+            USDC, WETH, address(paymentRails), USDC_SELL_AMOUNT, MIN_WETH_BUY, validTo, DEFAULT_APP_DATA
         );
 
         bytes32 moduleDigest =
@@ -856,31 +858,31 @@ contract CowSwapModuleForkOwnershipTransferTest is CowSwapModuleForkBase {
 //////////////////////////////////////////////////////////////////////////*/
 
 contract CowSwapModuleForkLifecycleHappyPathTest is CowSwapModuleForkBase {
-    /// @dev Full happy-path lifecycle through Node:
+    /// @dev Full happy-path lifecycle through PaymentRails:
     ///      configure → executeAction → isValidSignature=MAGIC → solver fills → isValidSignature=FAILURE
     ///      This is the EXACT flow that happens in production.
     function test_Lifecycle_HappyPath_UsdcToWeth_FullFlow() external {
-        // --- Step 1: Node owner configures USDC with CowSwapModule ---
+        // --- Step 1: PaymentRails owner configures USDC with CowSwapModule ---
         bytes memory params = _buildParams(WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
         vm.prank(owner);
-        node.configureToken(USDC, "COWSWAP", address(module), USDC_SELL_AMOUNT, params, true);
+        paymentRails.configureToken(USDC, "COWSWAP", address(module), USDC_SELL_AMOUNT, params, true);
 
-        // --- Step 2: Anyone executes the action through Node ---
-        uint256 nodeUsdcBefore = IERC20(USDC).balanceOf(address(node));
-        uint256 nodeWethBefore = IERC20(WETH).balanceOf(address(node));
+        // --- Step 2: Anyone executes the action through PaymentRails ---
+        uint256 nodeUsdcBefore = IERC20(USDC).balanceOf(address(paymentRails));
+        uint256 nodeWethBefore = IERC20(WETH).balanceOf(address(paymentRails));
 
-        bool success = node.executeAction(USDC, USDC_SELL_AMOUNT);
-        assertTrue(success, "Node executeAction should succeed");
+        bool success = paymentRails.executeAction(USDC, USDC_SELL_AMOUNT);
+        assertTrue(success, "PaymentRails executeAction should succeed");
 
         // Module now holds the sell tokens
         assertEq(IERC20(USDC).balanceOf(address(module)), USDC_SELL_AMOUNT);
-        assertEq(IERC20(USDC).balanceOf(address(node)), nodeUsdcBefore - USDC_SELL_AMOUNT);
+        assertEq(IERC20(USDC).balanceOf(address(paymentRails)), nodeUsdcBefore - USDC_SELL_AMOUNT);
 
         // --- Step 3: isValidSignature returns MAGIC (CowSwap solver can fill) ---
         uint32 validTo = uint32(block.timestamp + DEFAULT_VALIDITY);
         bytes32 orderId = _computeExpectedOrderId(
-            USDC, WETH, address(node), USDC_SELL_AMOUNT, MIN_WETH_BUY, validTo, DEFAULT_APP_DATA
+            USDC, WETH, address(paymentRails), USDC_SELL_AMOUNT, MIN_WETH_BUY, validTo, DEFAULT_APP_DATA
         );
 
         bytes4 sigResult = module.isValidSignature(orderId, abi.encode(orderId));
@@ -892,11 +894,11 @@ contract CowSwapModuleForkLifecycleHappyPathTest is CowSwapModuleForkBase {
 
         assertEq(IERC20(USDC).balanceOf(address(module)), 0, "Module should hold zero USDC after solver pull");
 
-        // --- Step 5: Simulate solver delivering buyToken directly to node ---
+        // --- Step 5: Simulate solver delivering buyToken directly to paymentRails ---
         uint256 wethDelivered = 4e18; // ~4 WETH (better than minimum)
-        deal(WETH, address(node), nodeWethBefore + wethDelivered);
+        deal(WETH, address(paymentRails), nodeWethBefore + wethDelivered);
 
-        assertEq(IERC20(WETH).balanceOf(address(node)), nodeWethBefore + wethDelivered);
+        assertEq(IERC20(WETH).balanceOf(address(paymentRails)), nodeWethBefore + wethDelivered);
         assertEq(IERC20(WETH).balanceOf(address(module)), 0, "Module should never hold buyToken");
 
         // --- Step 6: Mock filledAmount to report full fill ---
@@ -917,19 +919,20 @@ contract CowSwapModuleForkLifecycleHappyPathTest is CowSwapModuleForkBase {
         bytes memory params = _buildParams(USDC, MIN_USDC_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
         vm.prank(owner);
-        node.configureToken(DAI, "COWSWAP", address(module), DAI_SELL_AMOUNT, params, true);
+        paymentRails.configureToken(DAI, "COWSWAP", address(module), DAI_SELL_AMOUNT, params, true);
 
-        uint256 nodeDaiBefore = IERC20(DAI).balanceOf(address(node));
+        uint256 nodeDaiBefore = IERC20(DAI).balanceOf(address(paymentRails));
 
-        bool success = node.executeAction(DAI, DAI_SELL_AMOUNT);
+        bool success = paymentRails.executeAction(DAI, DAI_SELL_AMOUNT);
         assertTrue(success);
 
         assertEq(IERC20(DAI).balanceOf(address(module)), DAI_SELL_AMOUNT);
-        assertEq(IERC20(DAI).balanceOf(address(node)), nodeDaiBefore - DAI_SELL_AMOUNT);
+        assertEq(IERC20(DAI).balanceOf(address(paymentRails)), nodeDaiBefore - DAI_SELL_AMOUNT);
 
         uint32 validTo = uint32(block.timestamp + DEFAULT_VALIDITY);
-        bytes32 orderId =
-            _computeExpectedOrderId(DAI, USDC, address(node), DAI_SELL_AMOUNT, MIN_USDC_BUY, validTo, DEFAULT_APP_DATA);
+        bytes32 orderId = _computeExpectedOrderId(
+            DAI, USDC, address(paymentRails), DAI_SELL_AMOUNT, MIN_USDC_BUY, validTo, DEFAULT_APP_DATA
+        );
 
         // isValidSignature should be valid
         assertEq(module.isValidSignature(orderId, abi.encode(orderId)), EIP1271_MAGIC);
@@ -950,18 +953,19 @@ contract CowSwapModuleForkLifecycleHappyPathTest is CowSwapModuleForkBase {
 //////////////////////////////////////////////////////////////////////////*/
 
 contract CowSwapModuleForkLifecycleCancelPathTest is CowSwapModuleForkBase {
-    /// @dev Full cancel lifecycle: Node executes → owner cancels → tokens return to Node.
-    function test_Lifecycle_CancelPath_ReturnsSellTokensToNode() external {
-        bytes32 orderId =
-            _initiateOrderViaNode(USDC, USDC_SELL_AMOUNT, WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+    /// @dev Full cancel lifecycle: PaymentRails executes → owner cancels → tokens return to PaymentRails.
+    function test_Lifecycle_CancelPath_ReturnsSellTokensToPaymentRails() external {
+        bytes32 orderId = _initiateOrderViaPaymentRails(
+            USDC, USDC_SELL_AMOUNT, WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA
+        );
 
-        uint256 nodeUsdcBefore = IERC20(USDC).balanceOf(address(node));
+        uint256 nodeUsdcBefore = IERC20(USDC).balanceOf(address(paymentRails));
 
         vm.prank(owner);
         module.cancelOrder(orderId);
 
-        // All sell tokens returned to node
-        assertEq(IERC20(USDC).balanceOf(address(node)), nodeUsdcBefore + USDC_SELL_AMOUNT);
+        // All sell tokens returned to paymentRails
+        assertEq(IERC20(USDC).balanceOf(address(paymentRails)), nodeUsdcBefore + USDC_SELL_AMOUNT);
         assertEq(IERC20(USDC).balanceOf(address(module)), 0, "Module should hold zero after cancel");
 
         // isValidSignature should return failure
@@ -971,8 +975,9 @@ contract CowSwapModuleForkLifecycleCancelPathTest is CowSwapModuleForkBase {
     /// @dev Cancel then re-execute with new appData: verifies clean state recovery.
     function test_Lifecycle_CancelPath_ReExecuteAfterCancel() external {
         // First order
-        bytes32 orderId1 =
-            _initiateOrderViaNode(USDC, USDC_SELL_AMOUNT, WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        bytes32 orderId1 = _initiateOrderViaPaymentRails(
+            USDC, USDC_SELL_AMOUNT, WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA
+        );
 
         // Cancel it
         vm.prank(owner);
@@ -983,15 +988,16 @@ contract CowSwapModuleForkLifecycleCancelPathTest is CowSwapModuleForkBase {
         bytes memory newParams = _buildParams(WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, newAppData);
 
         vm.prank(owner);
-        node.configureToken(USDC, "COWSWAP", address(module), USDC_SELL_AMOUNT, newParams, true);
+        paymentRails.configureToken(USDC, "COWSWAP", address(module), USDC_SELL_AMOUNT, newParams, true);
 
-        bool success = node.executeAction(USDC, USDC_SELL_AMOUNT);
+        bool success = paymentRails.executeAction(USDC, USDC_SELL_AMOUNT);
         assertTrue(success, "Re-execution after cancel should succeed");
 
         // Compute new orderId
         uint32 validTo = uint32(block.timestamp + DEFAULT_VALIDITY);
-        bytes32 orderId2 =
-            _computeExpectedOrderId(USDC, WETH, address(node), USDC_SELL_AMOUNT, MIN_WETH_BUY, validTo, newAppData);
+        bytes32 orderId2 = _computeExpectedOrderId(
+            USDC, WETH, address(paymentRails), USDC_SELL_AMOUNT, MIN_WETH_BUY, validTo, newAppData
+        );
 
         // New orderId should differ
         assertTrue(orderId1 != orderId2, "Re-executed order should have different orderId");
@@ -1024,13 +1030,13 @@ contract CowSwapModuleForkLifecycleExpiryPathTest is CowSwapModuleForkBase {
             "Expired order should return FAILURE from isValidSignature"
         );
 
-        uint256 nodeUsdcBefore = IERC20(USDC).balanceOf(address(node));
+        uint256 nodeUsdcBefore = IERC20(USDC).balanceOf(address(paymentRails));
 
         // Owner should still be able to cancel and recover sell tokens
         vm.prank(owner);
         module.cancelOrder(_orderId);
 
-        assertEq(IERC20(USDC).balanceOf(address(node)), nodeUsdcBefore + USDC_SELL_AMOUNT);
+        assertEq(IERC20(USDC).balanceOf(address(paymentRails)), nodeUsdcBefore + USDC_SELL_AMOUNT);
         assertEq(IERC20(USDC).balanceOf(address(module)), 0);
     }
 
@@ -1050,9 +1056,10 @@ contract CowSwapModuleForkLifecycleExpiryPathTest is CowSwapModuleForkBase {
 
     /// @dev Validates the full expiry → cancel → re-execute path.
     function test_Lifecycle_ExpiryPath_FullRecoveryFlow() external {
-        // Step 1: Create order via Node
-        bytes32 orderId1 =
-            _initiateOrderViaNode(USDC, USDC_SELL_AMOUNT, WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        // Step 1: Create order via PaymentRails
+        bytes32 orderId1 = _initiateOrderViaPaymentRails(
+            USDC, USDC_SELL_AMOUNT, WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA
+        );
 
         // Step 2: Time passes, order expires
         vm.warp(block.timestamp + DEFAULT_VALIDITY + 1);
@@ -1068,15 +1075,16 @@ contract CowSwapModuleForkLifecycleExpiryPathTest is CowSwapModuleForkBase {
         bytes memory newParams = _buildParams(WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, newAppData);
 
         vm.prank(owner);
-        node.configureToken(USDC, "COWSWAP", address(module), USDC_SELL_AMOUNT, newParams, true);
+        paymentRails.configureToken(USDC, "COWSWAP", address(module), USDC_SELL_AMOUNT, newParams, true);
 
-        bool success = node.executeAction(USDC, USDC_SELL_AMOUNT);
+        bool success = paymentRails.executeAction(USDC, USDC_SELL_AMOUNT);
         assertTrue(success, "Re-execution after expiry+cancel should succeed");
 
         // New order is valid
         uint32 newValidTo = uint32(block.timestamp + DEFAULT_VALIDITY);
-        bytes32 orderId2 =
-            _computeExpectedOrderId(USDC, WETH, address(node), USDC_SELL_AMOUNT, MIN_WETH_BUY, newValidTo, newAppData);
+        bytes32 orderId2 = _computeExpectedOrderId(
+            USDC, WETH, address(paymentRails), USDC_SELL_AMOUNT, MIN_WETH_BUY, newValidTo, newAppData
+        );
         assertEq(module.isValidSignature(orderId2, abi.encode(orderId2)), EIP1271_MAGIC);
     }
 }
@@ -1091,16 +1099,16 @@ contract CowSwapModuleForkLifecycleConcurrentMultiTokenTest is CowSwapModuleFork
         // Configure USDC→WETH
         bytes memory usdcParams = _buildParams(WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
         vm.prank(owner);
-        node.configureToken(USDC, "COWSWAP", address(module), USDC_SELL_AMOUNT, usdcParams, true);
+        paymentRails.configureToken(USDC, "COWSWAP", address(module), USDC_SELL_AMOUNT, usdcParams, true);
 
         // Configure DAI→USDC
         bytes memory daiParams = _buildParams(USDC, MIN_USDC_BUY, DEFAULT_VALIDITY, keccak256("dai-order"));
         vm.prank(owner);
-        node.configureToken(DAI, "COWSWAP", address(module), DAI_SELL_AMOUNT, daiParams, true);
+        paymentRails.configureToken(DAI, "COWSWAP", address(module), DAI_SELL_AMOUNT, daiParams, true);
 
         // Execute both
-        assertTrue(node.executeAction(USDC, USDC_SELL_AMOUNT));
-        assertTrue(node.executeAction(DAI, DAI_SELL_AMOUNT));
+        assertTrue(paymentRails.executeAction(USDC, USDC_SELL_AMOUNT));
+        assertTrue(paymentRails.executeAction(DAI, DAI_SELL_AMOUNT));
 
         // Both orders should be independently pending
         assertEq(IERC20(USDC).balanceOf(address(module)), USDC_SELL_AMOUNT);
@@ -1108,10 +1116,10 @@ contract CowSwapModuleForkLifecycleConcurrentMultiTokenTest is CowSwapModuleFork
 
         uint32 validTo = uint32(block.timestamp + DEFAULT_VALIDITY);
         bytes32 usdcOrderId = _computeExpectedOrderId(
-            USDC, WETH, address(node), USDC_SELL_AMOUNT, MIN_WETH_BUY, validTo, DEFAULT_APP_DATA
+            USDC, WETH, address(paymentRails), USDC_SELL_AMOUNT, MIN_WETH_BUY, validTo, DEFAULT_APP_DATA
         );
         bytes32 daiOrderId = _computeExpectedOrderId(
-            DAI, USDC, address(node), DAI_SELL_AMOUNT, MIN_USDC_BUY, validTo, keccak256("dai-order")
+            DAI, USDC, address(paymentRails), DAI_SELL_AMOUNT, MIN_USDC_BUY, validTo, keccak256("dai-order")
         );
 
         assertEq(module.isValidSignature(usdcOrderId, abi.encode(usdcOrderId)), EIP1271_MAGIC);
@@ -1184,78 +1192,78 @@ contract CowSwapModuleForkLifecycleConcurrentMultiTokenTest is CowSwapModuleFork
                     END-TO-END NODE INTEGRATION TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-contract CowSwapModuleForkNodeIntegrationTest is CowSwapModuleForkBase {
-    function test_NodeIntegration_ConfiguresModuleSuccessfully() external {
+contract CowSwapModuleForkPaymentRailsIntegrationTest is CowSwapModuleForkBase {
+    function test_PaymentRailsIntegration_ConfiguresModuleSuccessfully() external {
         bytes memory params = _buildParams(WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
         vm.prank(owner);
-        node.configureToken(USDC, "COWSWAP", address(module), USDC_SELL_AMOUNT, params, true);
+        paymentRails.configureToken(USDC, "COWSWAP", address(module), USDC_SELL_AMOUNT, params, true);
 
-        DataTypes.TokenConfig memory config = node.getTokenConfig(USDC);
+        DataTypes.TokenConfig memory config = paymentRails.getTokenConfig(USDC);
         assertEq(config.actionType, "COWSWAP");
         assertEq(config.actionModule, address(module));
         assertTrue(config.enabled);
         assertEq(config.minBalance, USDC_SELL_AMOUNT);
     }
 
-    function test_NodeIntegration_ExecuteActionCreatesOrder() external {
+    function test_PaymentRailsIntegration_ExecuteActionCreatesOrder() external {
         bytes memory params = _buildParams(WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
         vm.prank(owner);
-        node.configureToken(USDC, "COWSWAP", address(module), USDC_SELL_AMOUNT, params, true);
+        paymentRails.configureToken(USDC, "COWSWAP", address(module), USDC_SELL_AMOUNT, params, true);
 
-        uint256 nodeBefore = IERC20(USDC).balanceOf(address(node));
+        uint256 nodeBefore = IERC20(USDC).balanceOf(address(paymentRails));
 
-        bool success = node.executeAction(USDC, USDC_SELL_AMOUNT);
+        bool success = paymentRails.executeAction(USDC, USDC_SELL_AMOUNT);
 
         assertTrue(success);
-        assertEq(IERC20(USDC).balanceOf(address(node)), nodeBefore - USDC_SELL_AMOUNT);
+        assertEq(IERC20(USDC).balanceOf(address(paymentRails)), nodeBefore - USDC_SELL_AMOUNT);
         assertEq(IERC20(USDC).balanceOf(address(module)), USDC_SELL_AMOUNT);
     }
 
-    function test_NodeIntegration_ExecuteActionEmitsActionExecutedEvent() external {
+    function test_PaymentRailsIntegration_ExecuteActionEmitsActionExecutedEvent() external {
         bytes memory params = _buildParams(WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
         vm.prank(owner);
-        node.configureToken(USDC, "COWSWAP", address(module), USDC_SELL_AMOUNT, params, true);
+        paymentRails.configureToken(USDC, "COWSWAP", address(module), USDC_SELL_AMOUNT, params, true);
 
-        vm.expectEmit(true, true, true, true, address(node));
+        vm.expectEmit(true, true, true, true, address(paymentRails));
         emit ActionExecuted(USDC, "COWSWAP", USDC_SELL_AMOUNT, 0, WETH, address(this));
 
-        node.executeAction(USDC, USDC_SELL_AMOUNT);
+        paymentRails.executeAction(USDC, USDC_SELL_AMOUNT);
     }
 
-    function test_NodeIntegration_CancelAfterNodeExecution_ReturnsSellTokensToNode() external {
+    function test_PaymentRailsIntegration_CancelAfterPaymentRailsExecution_ReturnsSellTokensToPaymentRails() external {
         bytes memory params = _buildParams(WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
         vm.prank(owner);
-        node.configureToken(USDC, "COWSWAP", address(module), USDC_SELL_AMOUNT, params, true);
+        paymentRails.configureToken(USDC, "COWSWAP", address(module), USDC_SELL_AMOUNT, params, true);
 
-        uint256 nodeBalanceBefore = IERC20(USDC).balanceOf(address(node));
+        uint256 paymentRailsBalanceBefore = IERC20(USDC).balanceOf(address(paymentRails));
 
-        node.executeAction(USDC, USDC_SELL_AMOUNT);
+        paymentRails.executeAction(USDC, USDC_SELL_AMOUNT);
 
         // Find the orderId from module state — get it by computing the expected digest
         uint32 validTo = uint32(block.timestamp + DEFAULT_VALIDITY);
         bytes32 orderId = _computeExpectedOrderId(
-            USDC, WETH, address(node), USDC_SELL_AMOUNT, MIN_WETH_BUY, validTo, DEFAULT_APP_DATA
+            USDC, WETH, address(paymentRails), USDC_SELL_AMOUNT, MIN_WETH_BUY, validTo, DEFAULT_APP_DATA
         );
 
         vm.prank(owner);
         module.cancelOrder(orderId);
 
-        assertEq(IERC20(USDC).balanceOf(address(node)), nodeBalanceBefore);
+        assertEq(IERC20(USDC).balanceOf(address(paymentRails)), paymentRailsBalanceBefore);
         assertEq(IERC20(USDC).balanceOf(address(module)), 0);
     }
 
-    /// @dev Verifies Node.previewExecution works with the real CowSwapModule on fork.
-    function test_NodeIntegration_PreviewExecution_ReturnsMinBuyAmount() external {
+    /// @dev Verifies PaymentRails.previewExecution works with the real CowSwapModule on fork.
+    function test_PaymentRailsIntegration_PreviewExecution_ReturnsMinBuyAmount() external {
         bytes memory params = _buildParams(WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
         vm.prank(owner);
-        node.configureToken(USDC, "COWSWAP", address(module), USDC_SELL_AMOUNT, params, true);
+        paymentRails.configureToken(USDC, "COWSWAP", address(module), USDC_SELL_AMOUNT, params, true);
 
-        (uint256 estimatedOutput, address outputToken) = node.previewExecution(USDC);
+        (uint256 estimatedOutput, address outputToken) = paymentRails.previewExecution(USDC);
 
         assertEq(estimatedOutput, MIN_WETH_BUY);
         assertEq(outputToken, WETH);
@@ -1308,19 +1316,19 @@ contract CowSwapModuleForkSimulatedSettlementTest is CowSwapModuleForkBase {
         assertEq(IERC20(USDC).balanceOf(address(module)), 0);
     }
 
-    /// @dev Verifies the direct-receiver design: buyToken goes to node, never to module.
-    ///      Uses DAI as buyToken stand-in (since solver delivers buyToken to node address directly).
-    function test_SimulatedSettlement_BuyTokenDeliveredDirectlyToNode() external {
+    /// @dev Verifies the direct-receiver design: buyToken goes to paymentRails, never to module.
+    ///      Uses DAI as buyToken stand-in (since solver delivers buyToken to paymentRails address directly).
+    function test_SimulatedSettlement_BuyTokenDeliveredDirectlyToPaymentRails() external {
         // Create a USDC→DAI order so we can deal DAI (which works on this RPC)
         _initiateOrder(USDC, USDC_SELL_AMOUNT, DAI, 9500e18, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
-        uint256 nodeDaiBefore = IERC20(DAI).balanceOf(address(node));
+        uint256 nodeDaiBefore = IERC20(DAI).balanceOf(address(paymentRails));
         uint256 buyAmount = 10_000e18;
 
-        // Simulate: solver sends buyToken (DAI) directly to node (receiver=node in GPv2Order)
-        deal(DAI, address(node), nodeDaiBefore + buyAmount);
+        // Simulate: solver sends buyToken (DAI) directly to paymentRails (receiver=paymentRails in GPv2Order)
+        deal(DAI, address(paymentRails), nodeDaiBefore + buyAmount);
 
-        assertEq(IERC20(DAI).balanceOf(address(node)), nodeDaiBefore + buyAmount);
+        assertEq(IERC20(DAI).balanceOf(address(paymentRails)), nodeDaiBefore + buyAmount);
         // Module never holds buyToken
         assertEq(IERC20(DAI).balanceOf(address(module)), 0);
     }
@@ -1382,13 +1390,13 @@ contract CowSwapModuleForkSecurityTest is CowSwapModuleForkBase {
         // Give module extra USDC beyond what this order deposited
         deal(USDC, address(module), USDC_SELL_AMOUNT * 3);
 
-        uint256 nodeBefore = IERC20(USDC).balanceOf(address(node));
+        uint256 nodeBefore = IERC20(USDC).balanceOf(address(paymentRails));
 
         vm.prank(owner);
         module.cancelOrder(_orderId);
 
         // Should return exactly USDC_SELL_AMOUNT, not the full 3x balance
-        uint256 returned = IERC20(USDC).balanceOf(address(node)) - nodeBefore;
+        uint256 returned = IERC20(USDC).balanceOf(address(paymentRails)) - nodeBefore;
         assertEq(returned, USDC_SELL_AMOUNT);
     }
 
@@ -1398,9 +1406,9 @@ contract CowSwapModuleForkSecurityTest is CowSwapModuleForkBase {
 
         bytes memory params = _buildParams(WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
-        vm.startPrank(address(node));
+        vm.startPrank(address(paymentRails));
         IERC20(USDC).approve(address(module), USDC_SELL_AMOUNT);
-        DataTypes.ExecutionResult memory result = module.execute(USDC, USDC_SELL_AMOUNT, params);
+        DataTypes.ExecutionResult memory result = module.execute(USDC, USDC_SELL_AMOUNT, params, "");
         vm.stopPrank();
 
         assertFalse(result.success);
@@ -1430,32 +1438,32 @@ contract CowSwapModuleForkSecurityTest is CowSwapModuleForkBase {
         assertEq(module.isValidSignature(_orderId, abi.encode(_orderId)), EIP1271_MAGIC);
     }
 
-    /// @dev Verifies that an order created by one node cannot be confused with another node's order.
+    /// @dev Verifies that an order created by one paymentRails cannot be confused with another paymentRails's order.
     ///      Different callers (nodes) produce different orderIds even with identical params,
     ///      because receiver=msg.sender is baked into the EIP-712 digest.
-    function test_Security_DifferentNodes_ProduceDifferentOrderIds() external {
-        // Deploy a second Node
+    function test_Security_DifferentPaymentRails_ProduceDifferentOrderIds() external {
+        // Deploy a second PaymentRails
         vm.prank(owner);
-        Node node2 = new Node(owner);
-        deal(USDC, address(node2), USDC_SELL_AMOUNT * 10);
+        PaymentRails paymentRails2 = new PaymentRails(owner);
+        deal(USDC, address(paymentRails2), USDC_SELL_AMOUNT * 10);
 
         // Create orders from both nodes with identical params
         bytes memory params = _buildParams(WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
-        vm.startPrank(address(node));
+        vm.startPrank(address(paymentRails));
         IERC20(USDC).approve(address(module), USDC_SELL_AMOUNT);
-        DataTypes.ExecutionResult memory result1 = module.execute(USDC, USDC_SELL_AMOUNT, params);
+        DataTypes.ExecutionResult memory result1 = module.execute(USDC, USDC_SELL_AMOUNT, params, "");
         vm.stopPrank();
 
-        vm.startPrank(address(node2));
+        vm.startPrank(address(paymentRails2));
         IERC20(USDC).approve(address(module), USDC_SELL_AMOUNT);
-        DataTypes.ExecutionResult memory result2 = module.execute(USDC, USDC_SELL_AMOUNT, params);
+        DataTypes.ExecutionResult memory result2 = module.execute(USDC, USDC_SELL_AMOUNT, params, "");
         vm.stopPrank();
 
         bytes32 orderId1 = abi.decode(result1.data, (bytes32));
         bytes32 orderId2 = abi.decode(result2.data, (bytes32));
 
-        // OrderIds differ because receiver (node address) differs
+        // OrderIds differ because receiver (paymentRails address) differs
         assertTrue(orderId1 != orderId2, "Orders from different nodes must have different orderIds");
 
         // Both should be independently valid

@@ -2,15 +2,15 @@
 pragma solidity ^0.8.29;
 
 /// @title DataTypes
-/// @notice Centralized type definitions for the Receivables Node system
-/// @dev This library contains all struct definitions used across Node, modules, and interfaces
+/// @notice Centralized type definitions for the Receivables PaymentRails system
+/// @dev This library contains all struct definitions used across PaymentRails, modules, and interfaces
 library DataTypes {
     /*//////////////////////////////////////////////////////////////////////////
                                     NODE TYPES
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Configuration for a token's action in the Node
-    /// @dev Stored per token address in the node's configuration mapping
+    /// @notice Configuration for a token's action in the PaymentRails
+    /// @dev Stored per token address in the paymentRails's configuration mapping
     /// @param actionType String identifier for the action (e.g., "FORWARD", "SWAP", "BRIDGE")
     /// @param actionModule Address of the action module contract that will handle execution
     /// @param enabled Master switch to enable/disable this token's action
@@ -59,30 +59,41 @@ library DataTypes {
     }
 
     /*//////////////////////////////////////////////////////////////////////////
-                            SWAP MODULE TYPES
+                        DEX AGGREGATOR MODULE TYPES
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Swap configuration parameters
-    /// @dev Used by SwapModule to configure DEX swaps with oracle validation
-    /// @param targetToken Token to swap into
-    /// @param dexRouter DEX router address (Uniswap, Sushiswap, etc.)
-    /// @param path Swap path encoded for the specific DEX
-    /// @param poolFee Pool fee tier for Uniswap V3 (in hundredths of bips)
-    /// @param slippageBps Slippage tolerance in basis points (e.g., 50 = 0.5%)
-    /// @param priceOracle Price oracle address for validation (e.g., Chainlink)
-    /// @param maxPriceDeviationBps Maximum allowed deviation from oracle price (e.g., 500 = 5%)
-    /// @param useTwap Whether to use time-weighted average price for validation
-    /// @param twapPeriod TWAP period in seconds (only used if useTwap = true)
-    struct SwapParams {
+    /// @notice Static configuration for DEX aggregator swaps (stored in PaymentRails.moduleParams).
+    /// @dev Defines the constraints that every execution must satisfy. The module validates
+    ///      per-execution data ({DexExecutionData}) against these constraints.
+    /// @param targetToken Required output token — module rejects any swap producing a different token.
+    /// @param slippageBps Maximum slippage tolerance in basis points (e.g., 100 = 1%).
+    ///        Used as a hard ceiling when validating `minAmountOut` against oracle price.
+    ///        Set to 0 to rely solely on the caller-supplied `minAmountOut`.
+    /// @param priceOracle Optional Chainlink-compatible oracle for price validation.
+    ///        Set to `address(0)` to skip oracle checks (rely on caller-supplied `minAmountOut` only).
+    /// @param maxPriceDeviationBps Maximum allowed deviation from oracle price in basis points
+    ///        (e.g., 500 = 5%). Only used when `priceOracle != address(0)`.
+    struct DexAggregatorParams {
         address targetToken;
-        address dexRouter;
-        bytes path;
-        uint24 poolFee;
         uint256 slippageBps;
         address priceOracle;
         uint256 maxPriceDeviationBps;
-        bool useTwap;
-        uint32 twapPeriod;
+    }
+
+    /// @notice Per-execution data for DEX aggregator swaps (passed as `executionData`).
+    /// @dev Constructed off-chain by the keeper/bot from a DEX aggregator quote (1inch, 0x,
+    ///      Paraswap, or a direct Uniswap router call). The module validates every field
+    ///      against the static {DexAggregatorParams} constraints before executing.
+    /// @param router DEX router contract to call. Must be whitelisted in the module.
+    /// @param minAmountOut Minimum acceptable output (slippage-adjusted amount from the quote).
+    /// @param deadline Transaction deadline — reverts if `block.timestamp > deadline`.
+    /// @param routerCalldata ABI-encoded call to the router. Must route output tokens
+    ///        directly to the PaymentRails (msg.sender in the module's execute context).
+    struct DexExecutionData {
+        address router;
+        uint256 minAmountOut;
+        uint256 deadline;
+        bytes routerCalldata;
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -90,13 +101,13 @@ library DataTypes {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Parameters for configuring a CowSwap order-book swap
-    /// @dev Stored in Node's moduleParams and decoded by CowSwapModule
+    /// @dev Stored in PaymentRails's moduleParams and decoded by CowSwapModule
     /// @param targetToken Token to receive (buy token)
     /// @param minBuyAmount Absolute floor on output — order rejected if CowSwap cannot
     ///        meet this. Not a per-execution slippage; set conservatively.
     /// @param validityDuration Seconds from block.timestamp the order remains valid.
     ///        CowSwap solvers will not settle an expired order. Typical: 1800–3600.
-    /// @param appData CowSwap app data hash. Use keccak256("receivables-node-v1")
+    /// @param appData CowSwap app data hash. Use keccak256("receivables-paymentRails-v1")
     ///        or a custom hash registered via the CowSwap AppData API.
     struct CowSwapParams {
         address targetToken;
@@ -107,16 +118,16 @@ library DataTypes {
 
     /// @notice On-chain metadata stored per CowSwap order
     /// @dev Keyed by orderId (= GPv2Order digest) in CowSwapModule._orders
-    /// @param node         Node contract that initiated the order via execute()
+    /// @param paymentRails         PaymentRails contract that initiated the order via execute()
     /// @param sellToken    Token sold (input token); returned on cancel
-    /// @param buyToken     Token bought (output token); goes directly to Node via receiver=node
+    /// @param buyToken     Token bought (output token); goes directly to PaymentRails via receiver=paymentRails
     /// @param sellAmount   Exact sell amount locked in the module; used to cap cancelOrder return
     /// @param validTo      Unix timestamp after which the order has expired (stored directly to
     ///                     avoid uint32 recomputation overflow)
     /// @param cancelled    True if the owner explicitly cancelled this order via cancelOrder().
     ///                     SETTLED state is derived live from GPv2Settlement.filledAmounts().
     struct CowOrderMetadata {
-        address node;
+        address paymentRails;
         address sellToken;
         address buyToken;
         uint256 sellAmount;
@@ -128,7 +139,7 @@ library DataTypes {
                         CCTP BRIDGE MODULE TYPES
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Parameters stored in Node's moduleParams for a CCTP bridge action.
+    /// @notice Parameters stored in PaymentRails's moduleParams for a CCTP bridge action.
     /// @dev Intentionally minimal — just a domain pointer. All routing details live in the
     ///      module's per-domain config ({CCTPDomainConfig}).
     /// @param destinationDomain CCTP domain ID of the destination chain (NOT an EVM chain ID).
@@ -139,11 +150,11 @@ library DataTypes {
 
     /// @notice Per-domain routing configuration stored in the CCTPBridgeModule.
     /// @dev Set by the module owner via `setDomainConfig()`. Looked up during `execute()` using the
-    ///      `destinationDomain` decoded from the Node's moduleParams.
+    ///      `destinationDomain` decoded from the PaymentRails's moduleParams.
     /// @param isValid        Whether this domain config is active. Set to true by `setDomainConfig()`,
     ///                       cleared by `removeDomainConfig()`.
     /// @param mintRecipient  Recipient address on the destination chain, left-padded to bytes32.
-    ///                       For EVM chains: `bytes32(uint256(uint160(addr)))`. Typically another Node.
+    ///                       For EVM chains: `bytes32(uint256(uint160(addr)))`. Typically another PaymentRails.
     /// @param destinationCaller Who may call `receiveMessage` on the destination chain.
     ///                          `bytes32(0)` = anyone can relay (recommended).
     /// @param maxFee         Maximum USDC fee the module is willing to pay per transfer.
@@ -165,7 +176,7 @@ library DataTypes {
                         ATUM PAYMENT MODULE TYPES
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Parameters stored in Node's moduleParams for an Atum payment action.
+    /// @notice Parameters stored in PaymentRails's moduleParams for an Atum payment action.
     /// @dev These fields are emitted for the off-chain Atum keeper. The module does
     ///      not interpret Atum Escrow routes or witness formats.
     /// @param destinationChain CAIP-2 destination chain identifier, e.g. `eip155:8453`.

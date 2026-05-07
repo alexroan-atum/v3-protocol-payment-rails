@@ -1,8 +1,8 @@
 CowSwapModule_GetOrder
 ├── when order id is unknown
-│   └── it should return empty metadata with zero node address
+│   └── it should return empty metadata with zero paymentRails address
 └── given an existing order
-    ├── it should return correct node address
+    ├── it should return correct paymentRails address
     ├── it should return correct sell token
     ├── it should return correct buy token
     ├── it should return correct sell amount

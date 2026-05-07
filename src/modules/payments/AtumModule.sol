@@ -14,11 +14,11 @@ import { Ownable2Step, Ownable } from "@openzeppelin/contracts/access/Ownable2St
 import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 
 /// @title AtumModule
-/// @notice Minimal Node-bound Atum payment contract and ERC-1271 Permit2 owner.
-/// @dev Each module deployment is permanently bound to one immutable Node. The module
-///      is funded by that Node through `execute`, emits the current available source
-///      balance and destination details for an offchain Atum keeper, and validates
-///      generic Permit2 digests by keeper signature.
+/// @notice Minimal PaymentRails-bound Atum payment contract and ERC-1271 Permit2 owner.
+/// @dev Each module deployment is permanently bound to one immutable PaymentRails. The
+///      module is funded by that PaymentRails through `execute`, emits the current
+///      available source balance and destination details for an offchain Atum keeper,
+///      and validates generic Permit2 digests by keeper signature.
 ///
 ///      The module does not call Atum Escrow, compute request ids, compute fulfillment
 ///      amounts, decode Atum witness data, inspect Escrow state, classify payment
@@ -26,11 +26,11 @@ import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 ///      The keeper derives source chain/source asset/request id and selects fulfillment
 ///      terms offchain.
 ///
-///      `execute` is a Node funding action and payment availability signal, not a
-///      complete Atum payment order. It moves additional source tokens into the module
+///      `execute` is a PaymentRails funding action and payment availability signal, not
+///      a complete Atum payment order. It moves additional source tokens into the module
 ///      and emits the module's full current balance for that token. The keeper should
 ///      create Atum payment requests from the available source balance, not merely from
-///      the amount pulled by one Node action. Failed deposits, Escrow refunds, and
+///      the amount pulled by one PaymentRails action. Failed deposits, Escrow refunds, and
 ///      unused source balances remain in the module and can be picked up by a later
 ///      keeper request.
 ///
@@ -42,9 +42,9 @@ import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 ///      - Invalidate abandoned floating Permit2 digests before signing replacement
 ///        requests when those stale digests must not remain usable.
 ///
-///      Pause is a rare fail-safe control for return-to-Node recovery. It blocks
+///      Pause is a rare fail-safe control for return-to-PaymentRails recovery. It blocks
 ///      new `execute` calls and ERC-1271 validation, makes `validate` fail, and enables
-///      return-to-Node recovery. It does not revoke Permit2 approvals, invalidate
+///      return-to-PaymentRails recovery. It does not revoke Permit2 approvals, invalidate
 ///      digests permanently, block inbound refunds or direct transfers, prove refund
 ///      attribution, or undo already consumed Permit2 nonces.
 contract AtumModule is IAtumModule, ActionModuleBase, Ownable2Step, Pausable {
@@ -72,7 +72,7 @@ contract AtumModule is IAtumModule, ActionModuleBase, Ownable2Step, Pausable {
     bytes32 public immutable override permit2DomainSeparator;
 
     /// @inheritdoc IAtumModule
-    address public immutable override node;
+    address public immutable override paymentRails;
 
     /*//////////////////////////////////////////////////////////////////////////
                                 MUTABLE STATE
@@ -89,16 +89,16 @@ contract AtumModule is IAtumModule, ActionModuleBase, Ownable2Step, Pausable {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @param _permit2 Permit2 contract used by Atum Escrow on this source chain.
-    /// @param _node Immutable Node allowed to call `execute`.
+    /// @param _paymentRails Immutable PaymentRails allowed to call `execute`.
     /// @param _owner Module owner authorized to manage operations and keeper rotation.
     /// @param _keeper Keeper whose signatures validate Atum Permit2 digests.
-    constructor(address _permit2, address _node, address _owner, address _keeper) Ownable(_owner) {
+    constructor(address _permit2, address _paymentRails, address _owner, address _keeper) Ownable(_owner) {
         if (_permit2 == address(0)) revert Errors.AtumModule_ZeroPermit2();
-        if (_node == address(0)) revert Errors.AtumModule_ZeroNode();
+        if (_paymentRails == address(0)) revert Errors.AtumModule_ZeroPaymentRails();
         if (_keeper == address(0)) revert Errors.AtumModule_ZeroKeeper();
 
         permit2 = _permit2;
-        node = _node;
+        paymentRails = _paymentRails;
         keeper = _keeper;
         permit2DomainSeparator = IPermit2(_permit2).DOMAIN_SEPARATOR();
     }
@@ -111,15 +111,16 @@ contract AtumModule is IAtumModule, ActionModuleBase, Ownable2Step, Pausable {
     function execute(
         address token,
         uint256 amount,
-        bytes calldata params
+        bytes calldata params,
+        bytes calldata /* executionData */
     )
         external
         override(ActionModuleBase, IActionModule)
         whenNotPaused
         returns (DataTypes.ExecutionResult memory result)
     {
-        if (msg.sender != node) {
-            revert Errors.AtumModule_NotNode(msg.sender, node);
+        if (msg.sender != paymentRails) {
+            revert Errors.AtumModule_NotPaymentRails(msg.sender, paymentRails);
         }
 
         (bool valid, string memory reason, DataTypes.AtumPaymentParams memory paymentParams) =
@@ -220,7 +221,8 @@ contract AtumModule is IAtumModule, ActionModuleBase, Ownable2Step, Pausable {
     function validate(
         address token,
         uint256 amount,
-        bytes calldata params
+        bytes calldata params,
+        bytes calldata /* executionData */
     )
         external
         view
@@ -364,9 +366,9 @@ contract AtumModule is IAtumModule, ActionModuleBase, Ownable2Step, Pausable {
         if (token == address(0)) revert Errors.AtumModule_ZeroToken();
 
         amountReturned = IERC20(token).balanceOf(address(this));
-        IERC20(token).safeTransfer(node, amountReturned);
+        IERC20(token).safeTransfer(paymentRails, amountReturned);
 
-        emit TokenBalanceReturned(token, node, amountReturned);
+        emit TokenBalanceReturned(token, paymentRails, amountReturned);
     }
 
     function _hasChainPrefix(string memory asset, string memory chain) private pure returns (bool) {

@@ -6,11 +6,11 @@ import { DataTypes } from "../types/DataTypes.sol";
 import { IERC1271 } from "@openzeppelin/contracts/interfaces/IERC1271.sol";
 
 /// @title IAtumModule
-/// @notice Minimal Node-bound Atum payment contract and ERC-1271 Permit2 owner.
-/// @dev One module deployment is bound to one immutable Node. The Node funds the
-///      contract through `execute`; the module emits the current available source
-///      balance and destination details for an offchain keeper, and validates raw
-///      Permit2 digests by keeper signature.
+/// @notice Minimal PaymentRails-bound Atum payment contract and ERC-1271 Permit2 owner.
+/// @dev One module deployment is bound to one immutable PaymentRails. The PaymentRails
+///      funds the contract through `execute`; the module emits the current available
+///      source balance and destination details for an offchain keeper, and validates
+///      raw Permit2 digests by keeper signature.
 ///
 ///      The module does not compute request ids, source assets, fulfillment amounts,
 ///      or fees. The keeper derives source details from the log context and prepares
@@ -29,8 +29,8 @@ interface IAtumModule is IActionModule, IERC1271 {
     /// @notice Emitted when the keeper permanently rejects a Permit2 digest.
     event PermitDigestInvalidated(bytes32 indexed digest);
 
-    /// @notice Emitted when the owner returns a module-held token balance to the immutable Node.
-    event TokenBalanceReturned(address indexed token, address indexed node, uint256 amount);
+    /// @notice Emitted when the owner returns a module-held token balance to the immutable PaymentRails.
+    event TokenBalanceReturned(address indexed token, address indexed paymentRails, uint256 amount);
 
     /// @notice Emitted when source funds are available for an Atum payment request.
     /// @param token Source token available in the module.
@@ -52,8 +52,8 @@ interface IAtumModule is IActionModule, IERC1271 {
     /// @notice Permit2 domain separator captured at deployment.
     function permit2DomainSeparator() external view returns (bytes32);
 
-    /// @notice Immutable Node allowed to call `execute` and receive fail-safe recovery returns.
-    function node() external view returns (address);
+    /// @notice Immutable PaymentRails allowed to call `execute` and receive fail-safe recovery returns.
+    function paymentRails() external view returns (address);
 
     /// @notice Keeper that signs Permit2 digests and invalidates abandoned digests.
     function keeper() external view returns (address);
@@ -66,7 +66,7 @@ interface IAtumModule is IActionModule, IERC1271 {
 
     /// @notice Owner-only pause.
     /// @dev While paused, `execute` is blocked, `validate` fails, ERC-1271 validation rejects
-    ///      all signatures, and return-to-Node recovery is enabled.
+    ///      all signatures, and return-to-PaymentRails recovery is enabled.
     function pause() external;
 
     /// @notice Owner-only unpause after abandoned floating Permit2 digests have been invalidated or expired.
@@ -78,15 +78,16 @@ interface IAtumModule is IActionModule, IERC1271 {
     /// @notice Keeper-only permanent invalidation of multiple abandoned Permit2 digests.
     function invalidateDigests(bytes32[] calldata digests) external;
 
-    /// @notice Owner-only paused recovery that returns the full current token balance to the immutable Node.
+    /// @notice Owner-only paused recovery that returns the full current token balance to the immutable PaymentRails.
     function returnTokenBalance(address token) external returns (uint256 amountReturned);
 
-    /// @notice Owner-only paused recovery that returns full current balances for multiple tokens to the immutable Node.
+    /// @notice Owner-only paused recovery that returns full current balances for multiple tokens to the immutable
+    /// PaymentRails.
     function returnTokenBalances(address[] calldata tokens) external;
 
-    /// @notice ABI-encodes Atum payment params for `Node.configureToken`.
+    /// @notice ABI-encodes Atum payment params for `PaymentRails.configureToken`.
     function encodeParams(DataTypes.AtumPaymentParams calldata params) external pure returns (bytes memory encoded);
 
-    /// @notice Decodes Atum payment params from `Node.configureToken`.
+    /// @notice Decodes Atum payment params from `PaymentRails.configureToken`.
     function decodeParams(bytes calldata encoded) external pure returns (DataTypes.AtumPaymentParams memory params);
 }

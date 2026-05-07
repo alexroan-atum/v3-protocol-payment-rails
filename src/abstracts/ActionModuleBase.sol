@@ -3,7 +3,6 @@ pragma solidity ^0.8.29;
 
 import { IActionModule } from "../interfaces/IActionModule.sol";
 import { DataTypes } from "../types/DataTypes.sol";
-import { Errors } from "../libraries/Errors.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -100,7 +99,8 @@ abstract contract ActionModuleBase is IActionModule {
     function execute(
         address token,
         uint256 amount,
-        bytes calldata params
+        bytes calldata params,
+        bytes calldata executionData
     )
         external
         virtual
@@ -111,7 +111,8 @@ abstract contract ActionModuleBase is IActionModule {
     function validate(
         address token,
         uint256 amount,
-        bytes calldata params
+        bytes calldata params,
+        bytes calldata executionData
     )
         external
         view

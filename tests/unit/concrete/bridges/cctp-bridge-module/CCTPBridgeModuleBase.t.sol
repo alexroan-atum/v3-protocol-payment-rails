@@ -3,10 +3,8 @@ pragma solidity ^0.8.29;
 
 import { Test } from "forge-std/src/Test.sol";
 import { CCTPBridgeModule } from "../../../../../src/modules/bridges/CCTPBridgeModule.sol";
-import { DataTypes } from "../../../../../src/types/DataTypes.sol";
-import { Errors } from "../../../../../src/libraries/Errors.sol";
 import { MockERC20 } from "../../../../shared/mocks/MockERC20.sol";
-import { MockBridgeNode } from "../../../../shared/mocks/MockBridgeNode.sol";
+import { MockBridgePaymentRails } from "../../../../shared/mocks/MockBridgePaymentRails.sol";
 import { MockTokenMessengerV2 } from "../../../../shared/mocks/MockTokenMessengerV2.sol";
 import { FailingTransferERC20 } from "../../../../shared/mocks/FailingTransferERC20.sol";
 
@@ -18,7 +16,7 @@ abstract contract CCTPBridgeModuleBase is Test {
     //////////////////////////////////////////////////////////////////////////*/
 
     event BridgeInitiated(
-        address indexed node,
+        address indexed paymentRails,
         uint256 amount,
         uint32 indexed destinationDomain,
         bytes32 mintRecipient,
@@ -61,7 +59,7 @@ abstract contract CCTPBridgeModuleBase is Test {
 
     CCTPBridgeModule internal module;
     MockTokenMessengerV2 internal tokenMessenger;
-    MockBridgeNode internal node;
+    MockBridgePaymentRails internal paymentRails;
     MockERC20 internal usdc;
     MockERC20 internal otherToken;
     FailingTransferERC20 internal failToken;
@@ -83,11 +81,11 @@ abstract contract CCTPBridgeModuleBase is Test {
         failToken = new FailingTransferERC20();
 
         module = new CCTPBridgeModule(address(tokenMessenger), address(usdc), owner);
-        node = new MockBridgeNode(address(module));
+        paymentRails = new MockBridgePaymentRails(address(module));
 
-        usdc.mint(address(node), DEFAULT_BRIDGE_AMOUNT * 10);
-        otherToken.mint(address(node), DEFAULT_BRIDGE_AMOUNT * 10);
-        failToken.mint(address(node), DEFAULT_BRIDGE_AMOUNT * 10);
+        usdc.mint(address(paymentRails), DEFAULT_BRIDGE_AMOUNT * 10);
+        otherToken.mint(address(paymentRails), DEFAULT_BRIDGE_AMOUNT * 10);
+        failToken.mint(address(paymentRails), DEFAULT_BRIDGE_AMOUNT * 10);
     }
 
     /*//////////////////////////////////////////////////////////////////////////

@@ -11,7 +11,7 @@ import { DataTypes } from "../types/DataTypes.sol";
 /// # Overview
 /// IForwardModule extends IActionModule with forward-specific functionality for encoding
 /// and decoding ForwardParams. This interface is implemented by ForwardModule, which
-/// performs direct ERC20 token transfers from Node to a configured recipient.
+/// performs direct ERC20 token transfers from PaymentRails to a configured recipient.
 ///
 /// # Use Cases
 /// - Treasury sweeps (forwarding revenue to multisig)
@@ -27,7 +27,7 @@ import { DataTypes } from "../types/DataTypes.sol";
 ///
 /// # Encoding/Decoding
 /// This interface provides helpers for working with ForwardParams:
-/// - encodeParams(): Convert ForwardParams struct to bytes for Node.configureToken()
+/// - encodeParams(): Convert ForwardParams struct to bytes for PaymentRails.configureToken()
 /// - decodeParams(): Convert bytes back to ForwardParams for module logic
 ///
 /// These functions ensure consistent serialization across integrations.
@@ -36,7 +36,7 @@ interface IForwardModule is IActionModule {
     /// @dev Helper function for constructing moduleParams when configuring tokens
     ///
     /// # Usage
-    /// Call this when configuring a token in Node:
+    /// Call this when configuring a token in PaymentRails:
     /// ```solidity
     /// ForwardParams memory params = ForwardParams({
     ///     recipient: treasuryAddress,
@@ -44,7 +44,7 @@ interface IForwardModule is IActionModule {
     ///     minAmount: 100e18
     /// });
     /// bytes memory encoded = forwardModule.encodeParams(params);
-    /// node.configureToken(
+    /// paymentRails.configureToken(
     ///     tokenAddress,
     ///     "FORWARD",
     ///     address(forwardModule),

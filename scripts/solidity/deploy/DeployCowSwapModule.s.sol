@@ -8,7 +8,7 @@ import { BaseScript } from "../Base.s.sol";
 
 /// @title DeployCowSwapModule
 /// @author Credit Cooperative
-/// @notice Deploys a CowSwapModule instance. Each Node needs its own private module.
+/// @notice Deploys a CowSwapModule instance. Each PaymentRails needs its own private module.
 ///
 ///      Usage:
 ///        source .env && forge script scripts/solidity/deploy/DeployCowSwapModule.s.sol \
@@ -32,8 +32,8 @@ contract DeployCowSwapModule is BaseScript {
         console2.log("Save to .env:");
         console2.log("  MODULE_ADDRESS=%s", vm.toString(address(module)));
         console2.log("");
-        console2.log("Then configure on your Node:");
-        console2.log("  cast send $NODE_ADDRESS 'configureToken(...)' ...");
+        console2.log("Then configure on your PaymentRails:");
+        console2.log("  cast send $PAYMENT_RAILS_ADDRESS 'configureToken(...)' ...");
         console2.log("=============================================================");
     }
 }

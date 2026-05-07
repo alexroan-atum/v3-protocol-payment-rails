@@ -5,8 +5,6 @@ import { IForwardModule } from "../../interfaces/IForwardModule.sol";
 import { IActionModule } from "../../interfaces/IActionModule.sol";
 import { ActionModuleBase } from "../../abstracts/ActionModuleBase.sol";
 import { DataTypes } from "../../types/DataTypes.sol";
-import { Errors } from "../../libraries/Errors.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @title ForwardModule
 /// @author Credit Cooperative
@@ -14,8 +12,8 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 /// @dev Implements simple token transfer functionality using ActionModuleBase
 ///
 /// # Overview
-/// The ForwardModule is the simplest action module in the Receivables Node system. It performs
-/// direct ERC20 token transfers from the Node contract to a specified recipient address.
+/// The ForwardModule is the simplest action module in the Receivables PaymentRails system. It performs
+/// direct ERC20 token transfers from the PaymentRails contract to a specified recipient address.
 ///
 /// # Use Cases
 /// - Forwarding collected receivables to a treasury or multisig
@@ -37,7 +35,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 /// # Security Model
 /// - Validates recipient is not zero address
 /// - Validates amount meets minimum threshold
-/// - Validates Node has sufficient token balance
+/// - Validates PaymentRails has sufficient token balance
 /// - Uses safe transfer pattern from ActionModuleBase
 /// - Returns structured results (never reverts) for graceful error handling
 ///
@@ -52,19 +50,19 @@ contract ForwardModule is IForwardModule, ActionModuleBase {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc ActionModuleBase
-    /// @notice Executes a token forward operation from the Node to a recipient
+    /// @notice Executes a token forward operation from the PaymentRails to a recipient
     /// @dev This function performs validation and transfers tokens in a single atomic operation
     ///
     /// # Execution Flow
     /// 1. Decode forward parameters
     /// 2. Validate recipient address (must not be zero)
     /// 3. Validate amount meets minimum threshold
-    /// 4. Validate Node has sufficient balance
-    /// 5. Transfer tokens from Node (msg.sender) to recipient
+    /// 4. Validate PaymentRails has sufficient balance
+    /// 5. Transfer tokens from PaymentRails (msg.sender) to recipient
     /// 6. Return structured result (success or failure with reason)
     ///
     /// # Security Notes
-    /// - Only callable by Node contract (msg.sender is checked via _safeTransferFrom)
+    /// - Only callable by PaymentRails contract (msg.sender is checked via _safeTransferFrom)
     /// - Does NOT revert on failure - returns ExecutionResult with success=false
     /// - Validates all inputs before state changes
     /// - Uses SafeERC20 pattern via ActionModuleBase helpers
@@ -79,7 +77,7 @@ contract ForwardModule is IForwardModule, ActionModuleBase {
     /// Requirements:
     /// - `token` must be a valid ERC20 contract
     /// - `amount` must be >= minAmount from params
-    /// - Node (msg.sender) must have >= amount balance
+    /// - PaymentRails (msg.sender) must have >= amount balance
     /// - `params.recipient` must not be address(0)
     ///
     /// @param token The ERC20 token address to forward
@@ -89,7 +87,8 @@ contract ForwardModule is IForwardModule, ActionModuleBase {
     function execute(
         address token,
         uint256 amount,
-        bytes calldata params
+        bytes calldata params,
+        bytes calldata /* executionData */
     )
         external
         override(ActionModuleBase, IActionModule)
@@ -113,22 +112,22 @@ contract ForwardModule is IForwardModule, ActionModuleBase {
             return _failedResult(token, "Amount below minimum");
         }
 
-        // Step 4: Verify Node has sufficient token balance
+        // Step 4: Verify PaymentRails has sufficient token balance
         // Prevents attempting transfer that would fail on-chain
-        // Note: msg.sender is the Node contract in this context
+        // Note: msg.sender is the PaymentRails contract in this context
         if (!_hasSufficientBalance(token, amount)) {
             return _failedResult(token, "Insufficient balance");
         }
 
         // Step 5: Execute token transfer
-        // Transfer from Node (msg.sender) to configured recipient
+        // Transfer from PaymentRails (msg.sender) to configured recipient
         // Uses SafeERC20 pattern via ActionModuleBase helper
         // Returns false on failure instead of reverting
         bool transferSuccess = _safeTransferFrom(token, msg.sender, forwardParams.recipient, amount);
 
         // Step 6: Handle transfer failure
         // If transfer failed, return structured error result
-        // Node will handle this gracefully (no revert)
+        // PaymentRails will handle this gracefully (no revert)
         if (!transferSuccess) {
             return _failedResult(token, "Transfer failed");
         }
@@ -151,10 +150,10 @@ contract ForwardModule is IForwardModule, ActionModuleBase {
     /// # Validation Checks
     /// 1. Recipient address is not zero
     /// 2. Amount meets minimum threshold (params.minAmount)
-    /// 3. Node has sufficient token balance
+    /// 3. PaymentRails has sufficient token balance
     ///
     /// # Usage Context
-    /// - Called by Node.previewExecution() to validate before execution
+    /// - Called by PaymentRails.previewExecution() to validate before execution
     /// - Called internally during execute() flow
     /// - Can be called off-chain via eth_call for pre-flight checks
     ///
@@ -166,7 +165,7 @@ contract ForwardModule is IForwardModule, ActionModuleBase {
     /// Notes:
     /// - Pure view function (no state changes)
     /// - Same validation logic as execute()
-    /// - Does NOT validate token contract exists (Node's responsibility)
+    /// - Does NOT validate token contract exists (PaymentRails's responsibility)
     ///
     /// @param token The ERC20 token address to validate
     /// @param amount The amount to validate
@@ -176,7 +175,8 @@ contract ForwardModule is IForwardModule, ActionModuleBase {
     function validate(
         address token,
         uint256 amount,
-        bytes calldata params
+        bytes calldata params,
+        bytes calldata /* executionData */
     )
         external
         view
@@ -198,9 +198,9 @@ contract ForwardModule is IForwardModule, ActionModuleBase {
             return (false, "Amount below minimum");
         }
 
-        // Step 4: Check Node has sufficient balance
+        // Step 4: Check PaymentRails has sufficient balance
         // Same validation as execute() for consistency
-        // Note: This checks msg.sender's balance, which is Node when called from previewExecution
+        // Note: This checks msg.sender's balance, which is PaymentRails when called from previewExecution
         if (!_hasSufficientBalance(token, amount)) {
             return (false, "Insufficient balance");
         }
@@ -219,7 +219,7 @@ contract ForwardModule is IForwardModule, ActionModuleBase {
     /// - outputToken = token (same token)
     ///
     /// # Usage Context
-    /// - Called by Node.previewExecution() to show expected output
+    /// - Called by PaymentRails.previewExecution() to show expected output
     /// - Used by frontends to display transfer amounts
     /// - Used by keeper bots to calculate profitability
     ///
@@ -252,15 +252,15 @@ contract ForwardModule is IForwardModule, ActionModuleBase {
     ///
     /// # Module Type System
     /// The module type string serves multiple purposes:
-    /// - Identifies the module in Node configuration
+    /// - Identifies the module in PaymentRails configuration
     /// - Used in ActionExecuted events for tracking
     /// - Validates module implements required interface
     /// - Enables dynamic module discovery
     ///
     /// Notes:
-    /// - Must return non-empty string (validated by Node.configureToken)
+    /// - Must return non-empty string (validated by PaymentRails.configureToken)
     /// - Convention: Use UPPERCASE for module types
-    /// - Must match actionType parameter in Node.configureToken()
+    /// - Must match actionType parameter in PaymentRails.configureToken()
     ///
     /// @return The module type string "FORWARD"
     function moduleType() external pure override(ActionModuleBase, IActionModule) returns (string memory) {
@@ -282,7 +282,7 @@ contract ForwardModule is IForwardModule, ActionModuleBase {
     /// - minAmount: Minimum amount required to execute
     ///
     /// # Usage Context
-    /// Called when configuring a token in Node:
+    /// Called when configuring a token in PaymentRails:
     /// ```solidity
     /// ForwardParams memory params = ForwardParams({
     ///     recipient: treasuryAddress,
@@ -290,7 +290,7 @@ contract ForwardModule is IForwardModule, ActionModuleBase {
     ///     minAmount: 100 * 10**18
     /// });
     /// bytes memory encodedParams = forwardModule.encodeParams(params);
-    /// node.configureToken(token, "FORWARD", address(forwardModule), ..., encodedParams, true);
+    /// paymentRails.configureToken(token, "FORWARD", address(forwardModule), ..., encodedParams, true);
     /// ```
     ///
     /// Notes:

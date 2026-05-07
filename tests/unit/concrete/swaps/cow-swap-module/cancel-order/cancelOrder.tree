@@ -1,7 +1,7 @@
 CowSwapModule_CancelOrder
 ├── when order is unknown
 │   └── it should revert with UnknownOrder
-├── when caller is not the order node
+├── when caller is not the order paymentRails
 │   └── it should revert with NotOrderOwner
 ├── given order status is settled
 │   └── it should revert with OrderNotPending
@@ -15,5 +15,5 @@ CowSwapModule_CancelOrder
     └── given sell token is still in module
         ├── it should set order status to cancelled
         ├── it should revoke sell token approval to cow settlement
-        ├── it should transfer sell tokens back to node
+        ├── it should transfer sell tokens back to paymentRails
         └── it should emit OrderCancelled event

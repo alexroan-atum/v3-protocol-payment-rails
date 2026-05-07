@@ -15,7 +15,7 @@ import { Ownable2Step, Ownable } from "@openzeppelin/contracts/access/Ownable2St
 /// @author Credit Cooperative
 /// @notice Async action module that submits sell orders to the CowSwap order-book protocol.
 /// @dev See {ICowSwapModule} for the full lifecycle, deployment model, and security model.
-/// Each Node must deploy its own private instance — do NOT share across Nodes.
+/// Each PaymentRails must deploy its own private instance — do NOT share across PaymentRails.
 contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
     using SafeERC20 for IERC20;
 
@@ -87,25 +87,30 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
     function execute(
         address token,
         uint256 amount,
-        bytes calldata params
+        bytes calldata params,
+        bytes calldata /* executionData */
     )
         external
         override(ActionModuleBase, IActionModule)
         returns (DataTypes.ExecutionResult memory result)
     {
-        (bool valid, string memory reason, DataTypes.CowSwapParams memory swapParams, uint32 validTo) =
-            _validateSwapParams(token, amount, params);
-        if (!valid) {
-            return _failedResult(token, reason);
+        DataTypes.CowSwapParams memory swapParams;
+        uint32 validTo;
+
+        {
+            bool valid;
+            string memory reason;
+            (valid, reason, swapParams, validTo) = _validateSwapParams(token, amount, params);
+            if (!valid) {
+                return _failedResult(token, reason);
+            }
         }
 
         bytes32 orderId = _computeOrderDigest(
             token, swapParams.targetToken, msg.sender, amount, swapParams.minBuyAmount, validTo, swapParams.appData
         );
 
-        // Reject duplicate digests — without this guard a second call with identical params in the
-        // same block would silently overwrite metadata while depositing a second sellAmount.
-        if (_orders[orderId].node != address(0)) {
+        if (_orders[orderId].paymentRails != address(0)) {
             return _failedResult(token, "Order ID collision: use unique appData");
         }
 
@@ -120,7 +125,6 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
             return _failedResult(token, "Token transfer failed");
         }
 
-        // Approve GPv2VaultRelayer once per token (max approval; balance is the hard ceiling).
         if (IERC20(token).allowance(address(this), vaultRelayer) < type(uint256).max) {
             IERC20(token).forceApprove(vaultRelayer, type(uint256).max);
         }
@@ -128,7 +132,7 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
         // --- Effects ---
 
         _orders[orderId] = DataTypes.CowOrderMetadata({
-            node: msg.sender,
+            paymentRails: msg.sender,
             sellToken: token,
             buyToken: swapParams.targetToken,
             sellAmount: amount,
@@ -154,7 +158,7 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
     function cancelOrder(bytes32 orderId) external {
         DataTypes.CowOrderMetadata storage meta = _orders[orderId];
 
-        if (meta.node == address(0)) {
+        if (meta.paymentRails == address(0)) {
             revert Errors.CowSwapModule_UnknownOrder(orderId);
         }
         if (msg.sender != owner()) {
@@ -168,7 +172,7 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
         }
 
         address sellToken = meta.sellToken;
-        address node = meta.node;
+        address paymentRails = meta.paymentRails;
         uint256 sellAmount = meta.sellAmount;
 
         meta.cancelled = true;
@@ -177,10 +181,10 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
         uint256 sellBalance = IERC20(sellToken).balanceOf(address(this));
         uint256 returnAmount = sellBalance < sellAmount ? sellBalance : sellAmount;
         if (returnAmount > 0) {
-            IERC20(sellToken).safeTransfer(node, returnAmount);
+            IERC20(sellToken).safeTransfer(paymentRails, returnAmount);
         }
 
-        emit OrderCancelled(orderId, node, sellToken, returnAmount);
+        emit OrderCancelled(orderId, paymentRails, sellToken, returnAmount);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -191,7 +195,8 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
     function validate(
         address token,
         uint256 amount,
-        bytes calldata params
+        bytes calldata params,
+        bytes calldata /* executionData */
     )
         external
         view
@@ -227,7 +232,7 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
 
         DataTypes.CowOrderMetadata storage meta = _orders[orderId];
 
-        if (meta.node == address(0)) {
+        if (meta.paymentRails == address(0)) {
             return EIP1271_FAILURE_VALUE;
         }
         if (meta.cancelled) {
@@ -322,12 +327,12 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
     }
 
     /// @dev Computes the EIP-712 GPv2Order digest used as orderId throughout this module.
-    /// Fixed fields: receiver=node, feeAmount=0, kind=SELL, partiallyFillable=false,
+    /// Fixed fields: receiver=paymentRails, feeAmount=0, kind=SELL, partiallyFillable=false,
     /// sellTokenBalance=erc20, buyTokenBalance=erc20.
     function _computeOrderDigest(
         address sellToken,
         address buyToken,
-        address node,
+        address paymentRails,
         uint256 sellAmount,
         uint256 buyAmount,
         uint32 validTo,
@@ -342,7 +347,7 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
                 ORDER_TYPE_HASH,
                 sellToken,
                 buyToken,
-                node,
+                paymentRails,
                 sellAmount,
                 buyAmount,
                 validTo,
@@ -359,7 +364,7 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
     }
 
     /// @dev Constructs the 56-byte GPv2 order UID: digest (32) ++ owner (20) ++ validTo (4).
-    /// The "owner" is this module (the EIP-1271 signer), NOT the Node.
+    /// The "owner" is this module (the EIP-1271 signer), NOT the PaymentRails.
     function _orderUid(bytes32 orderId, uint32 validTo) internal view returns (bytes memory uid) {
         return abi.encodePacked(orderId, address(this), validTo);
     }

@@ -9,7 +9,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { MockERC20 } from "../../../shared/mocks/MockERC20.sol";
 import { MockTokenMessengerV2 } from "../../../shared/mocks/MockTokenMessengerV2.sol";
 
-contract BridgeNodeProxy is Test {
+contract BridgePaymentRailsProxy is Test {
     CCTPBridgeModule public immutable module;
 
     constructor(address _module) {
@@ -25,13 +25,13 @@ contract BridgeNodeProxy is Test {
         returns (DataTypes.ExecutionResult memory)
     {
         IERC20(token).approve(address(module), amount);
-        return module.execute(token, amount, params);
+        return module.execute(token, amount, params, "");
     }
 }
 
 contract CCTPBridgeModuleHandler is Test {
     CCTPBridgeModule internal module;
-    BridgeNodeProxy internal node;
+    BridgePaymentRailsProxy internal paymentRails;
     MockERC20 internal usdc;
     MockERC20 internal otherToken;
     MockTokenMessengerV2 internal tokenMessenger;
@@ -44,7 +44,7 @@ contract CCTPBridgeModuleHandler is Test {
     address public ghost_currentOwner;
     address public ghost_pendingOwner;
 
-    uint256 public ghost_totalMintedToNode;
+    uint256 public ghost_totalMintedToPaymentRails;
 
     uint32 internal constant MAX_DOMAIN = 10;
 
@@ -52,14 +52,14 @@ contract CCTPBridgeModuleHandler is Test {
 
     constructor(
         CCTPBridgeModule _module,
-        BridgeNodeProxy _node,
+        BridgePaymentRailsProxy _node,
         MockERC20 _usdc,
         MockERC20 _otherToken,
         MockTokenMessengerV2 _tokenMessenger,
         address _initialOwner
     ) {
         module = _module;
-        node = _node;
+        paymentRails = _node;
         usdc = _usdc;
         otherToken = _otherToken;
         tokenMessenger = _tokenMessenger;
@@ -116,22 +116,22 @@ contract CCTPBridgeModuleHandler is Test {
 
         amount = bound(amount, 1, 100_000e6);
 
-        usdc.mint(address(node), amount);
-        ghost_totalMintedToNode += amount;
+        usdc.mint(address(paymentRails), amount);
+        ghost_totalMintedToPaymentRails += amount;
 
         bytes memory params = abi.encode(domain);
-        node.initiateBridge(address(usdc), amount, params);
+        paymentRails.initiateBridge(address(usdc), amount, params);
     }
 
     function handler_executeUnconfiguredDomain(uint256 amount) external {
         amount = bound(amount, 1, 100_000e6);
         uint32 unconfiguredDomain = MAX_DOMAIN + 1;
 
-        usdc.mint(address(node), amount);
-        ghost_totalMintedToNode += amount;
+        usdc.mint(address(paymentRails), amount);
+        ghost_totalMintedToPaymentRails += amount;
 
         bytes memory params = abi.encode(unconfiguredDomain);
-        DataTypes.ExecutionResult memory result = node.initiateBridge(address(usdc), amount, params);
+        DataTypes.ExecutionResult memory result = paymentRails.initiateBridge(address(usdc), amount, params);
 
         assertFalse(result.success);
     }
@@ -149,11 +149,11 @@ contract CCTPBridgeModuleHandler is Test {
 
         uint256 amount = maxFee;
 
-        usdc.mint(address(node), amount);
-        ghost_totalMintedToNode += amount;
+        usdc.mint(address(paymentRails), amount);
+        ghost_totalMintedToPaymentRails += amount;
 
         bytes memory params = abi.encode(domain);
-        DataTypes.ExecutionResult memory result = node.initiateBridge(address(usdc), amount, params);
+        DataTypes.ExecutionResult memory result = paymentRails.initiateBridge(address(usdc), amount, params);
 
         assertFalse(result.success);
         assertEq(result.failureReason, "Max fee exceeds amount");
@@ -166,15 +166,15 @@ contract CCTPBridgeModuleHandler is Test {
         uint32 domain = ghost_configuredDomains[domainIndex];
 
         amount = bound(amount, 1, 100_000e6);
-        otherToken.mint(address(node), amount);
+        otherToken.mint(address(paymentRails), amount);
 
         bytes memory params = abi.encode(domain);
 
-        vm.prank(address(node));
+        vm.prank(address(paymentRails));
         IERC20(address(otherToken)).approve(address(module), amount);
 
-        vm.prank(address(node));
-        DataTypes.ExecutionResult memory result = module.execute(address(otherToken), amount, params);
+        vm.prank(address(paymentRails));
+        DataTypes.ExecutionResult memory result = module.execute(address(otherToken), amount, params, "");
 
         assertFalse(result.success);
         assertEq(result.failureReason, "Only USDC supported");

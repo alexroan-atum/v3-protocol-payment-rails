@@ -2,7 +2,7 @@
 pragma solidity ^0.8.29;
 
 import { Test } from "forge-std/src/Test.sol";
-import { Node } from "../../../../../src/core/Node.sol";
+import { PaymentRails } from "../../../../../src/core/PaymentRails.sol";
 import { AtumModule } from "../../../../../src/modules/payments/AtumModule.sol";
 import { DataTypes } from "../../../../../src/types/DataTypes.sol";
 import { Errors } from "../../../../../src/libraries/Errors.sol";
@@ -29,7 +29,7 @@ contract AtumModuleIntegrationTest is Test {
 
     event PermitDigestInvalidated(bytes32 indexed digest);
 
-    event TokenBalanceReturned(address indexed token, address indexed node, uint256 amount);
+    event TokenBalanceReturned(address indexed token, address indexed paymentRails, uint256 amount);
 
     event AtumIntentCreated(
         address indexed token,
@@ -63,14 +63,14 @@ contract AtumModuleIntegrationTest is Test {
                                 TEST CONTRACTS
     //////////////////////////////////////////////////////////////////////////*/
 
-    Node internal nodeContract;
+    PaymentRails internal paymentRailsContract;
     AtumModule internal module;
     MockPermit2 internal permit2;
     MockERC20 internal sourceToken;
     MockERC20 internal secondToken;
     FeeOnTransferERC20 internal feeToken;
 
-    address internal nodeOwner;
+    address internal paymentRailsOwner;
     address internal moduleOwner;
     address internal keeper;
     address internal newKeeper;
@@ -82,7 +82,7 @@ contract AtumModuleIntegrationTest is Test {
     //////////////////////////////////////////////////////////////////////////*/
 
     function setUp() public {
-        nodeOwner = makeAddr("nodeOwner");
+        paymentRailsOwner = makeAddr("paymentRailsOwner");
         moduleOwner = vm.addr(MODULE_OWNER_PK);
         keeper = vm.addr(KEEPER_PK);
         newKeeper = vm.addr(NEW_KEEPER_PK);
@@ -90,21 +90,21 @@ contract AtumModuleIntegrationTest is Test {
         escrow = makeAddr("escrow");
 
         permit2 = new MockPermit2(PERMIT2_DOMAIN_SEPARATOR);
-        nodeContract = new Node(nodeOwner);
-        module = new AtumModule(address(permit2), address(nodeContract), moduleOwner, keeper);
+        paymentRailsContract = new PaymentRails(paymentRailsOwner);
+        module = new AtumModule(address(permit2), address(paymentRailsContract), moduleOwner, keeper);
 
         sourceToken = new MockERC20("Source Token", "SRC");
         secondToken = new MockERC20("Second Token", "TWO");
         feeToken = new FeeOnTransferERC20();
 
         bytes memory moduleParams = _defaultEncodedParams();
-        vm.prank(nodeOwner);
-        nodeContract.configureToken(
+        vm.prank(paymentRailsOwner);
+        paymentRailsContract.configureToken(
             address(sourceToken), "ATUM_PAYMENT", address(module), MIN_BALANCE, moduleParams, true
         );
 
-        sourceToken.mint(address(nodeContract), PAYMENT_AMOUNT * 4);
-        feeToken.mint(address(nodeContract), PAYMENT_AMOUNT);
+        sourceToken.mint(address(paymentRailsContract), PAYMENT_AMOUNT * 4);
+        feeToken.mint(address(paymentRailsContract), PAYMENT_AMOUNT);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -114,7 +114,7 @@ contract AtumModuleIntegrationTest is Test {
     function test_Constructor_StoresImmutableState() external view {
         assertEq(module.permit2(), address(permit2));
         assertEq(module.permit2DomainSeparator(), PERMIT2_DOMAIN_SEPARATOR);
-        assertEq(module.node(), address(nodeContract));
+        assertEq(module.paymentRails(), address(paymentRailsContract));
         assertEq(module.owner(), moduleOwner);
         assertEq(module.keeper(), keeper);
         assertFalse(module.paused());
@@ -122,22 +122,22 @@ contract AtumModuleIntegrationTest is Test {
 
     function test_Constructor_RevertsWhenPermit2IsZero() external {
         vm.expectRevert(Errors.AtumModule_ZeroPermit2.selector);
-        new AtumModule(address(0), address(nodeContract), moduleOwner, keeper);
+        new AtumModule(address(0), address(paymentRailsContract), moduleOwner, keeper);
     }
 
-    function test_Constructor_RevertsWhenNodeIsZero() external {
-        vm.expectRevert(Errors.AtumModule_ZeroNode.selector);
+    function test_Constructor_RevertsWhenPaymentRailsIsZero() external {
+        vm.expectRevert(Errors.AtumModule_ZeroPaymentRails.selector);
         new AtumModule(address(permit2), address(0), moduleOwner, keeper);
     }
 
     function test_Constructor_RevertsWhenKeeperIsZero() external {
         vm.expectRevert(Errors.AtumModule_ZeroKeeper.selector);
-        new AtumModule(address(permit2), address(nodeContract), moduleOwner, address(0));
+        new AtumModule(address(permit2), address(paymentRailsContract), moduleOwner, address(0));
     }
 
     function test_Constructor_RevertsWhenOwnerIsZero() external {
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableInvalidOwner.selector, address(0)));
-        new AtumModule(address(permit2), address(nodeContract), address(0), keeper);
+        new AtumModule(address(permit2), address(paymentRailsContract), address(0), keeper);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -168,7 +168,7 @@ contract AtumModuleIntegrationTest is Test {
         );
 
         vm.prank(executor);
-        bool success = nodeContract.executeAction(address(sourceToken), PAYMENT_AMOUNT);
+        bool success = paymentRailsContract.executeAction(address(sourceToken), PAYMENT_AMOUNT);
 
         assertTrue(success);
         assertEq(sourceToken.balanceOf(address(module)), PAYMENT_AMOUNT);
@@ -177,12 +177,12 @@ contract AtumModuleIntegrationTest is Test {
 
     function test_ExecuteAction_ReusesExistingPermit2ApprovalOnSubsequentFunding() external {
         vm.prank(executor);
-        assertTrue(nodeContract.executeAction(address(sourceToken), PAYMENT_AMOUNT));
+        assertTrue(paymentRailsContract.executeAction(address(sourceToken), PAYMENT_AMOUNT));
 
         assertEq(sourceToken.allowance(address(module), address(permit2)), type(uint256).max);
 
         vm.prank(executor);
-        assertTrue(nodeContract.executeAction(address(sourceToken), PAYMENT_AMOUNT));
+        assertTrue(paymentRailsContract.executeAction(address(sourceToken), PAYMENT_AMOUNT));
 
         assertEq(sourceToken.balanceOf(address(module)), PAYMENT_AMOUNT * 2);
         assertEq(sourceToken.allowance(address(module), address(permit2)), type(uint256).max);
@@ -202,52 +202,56 @@ contract AtumModuleIntegrationTest is Test {
         );
 
         vm.prank(executor);
-        bool success = nodeContract.executeAction(address(sourceToken), PAYMENT_AMOUNT);
+        bool success = paymentRailsContract.executeAction(address(sourceToken), PAYMENT_AMOUNT);
 
         assertTrue(success);
         assertEq(sourceToken.balanceOf(address(module)), existingBalance + PAYMENT_AMOUNT);
     }
 
-    function test_NodeEmitsActionExecutedWithAsyncPendingAmountOut() external {
+    function test_PaymentRailsEmitsActionExecutedWithAsyncPendingAmountOut() external {
         vm.expectEmit(true, false, false, true);
         emit ActionExecuted(address(sourceToken), "ATUM_PAYMENT", PAYMENT_AMOUNT, 0, address(sourceToken), executor);
 
         vm.prank(executor);
-        nodeContract.executeAction(address(sourceToken), PAYMENT_AMOUNT);
+        paymentRailsContract.executeAction(address(sourceToken), PAYMENT_AMOUNT);
     }
 
-    function test_PermissionlessNodeExecution_AnyCallerCanCreateIntent() external {
+    function test_PermissionlessPaymentRailsExecution_AnyCallerCanCreateIntent() external {
         address randomExecutor = makeAddr("randomExecutor");
 
         vm.prank(randomExecutor);
-        bool success = nodeContract.executeAction(address(sourceToken), PAYMENT_AMOUNT);
+        bool success = paymentRailsContract.executeAction(address(sourceToken), PAYMENT_AMOUNT);
 
         assertTrue(success);
         assertEq(sourceToken.balanceOf(address(module)), PAYMENT_AMOUNT);
     }
 
-    function test_Execute_RevertsWhenCallerIsNotImmutableNode() external {
+    function test_Execute_RevertsWhenCallerIsNotImmutablePaymentRails() external {
         bytes memory moduleParams = _defaultEncodedParams();
 
-        vm.expectRevert(abi.encodeWithSelector(Errors.AtumModule_NotNode.selector, executor, address(nodeContract)));
+        vm.expectRevert(
+            abi.encodeWithSelector(Errors.AtumModule_NotPaymentRails.selector, executor, address(paymentRailsContract))
+        );
 
         vm.prank(executor);
-        module.execute(address(sourceToken), PAYMENT_AMOUNT, moduleParams);
+        module.execute(address(sourceToken), PAYMENT_AMOUNT, moduleParams, "");
     }
 
-    function test_WhenSharedWithDifferentNode_ExecutionReturnsFalse() external {
-        Node otherNode = new Node(nodeOwner);
-        sourceToken.mint(address(otherNode), PAYMENT_AMOUNT);
+    function test_WhenSharedWithDifferentPaymentRails_ExecutionReturnsFalse() external {
+        PaymentRails otherPaymentRails = new PaymentRails(paymentRailsOwner);
+        sourceToken.mint(address(otherPaymentRails), PAYMENT_AMOUNT);
 
         bytes memory moduleParams = _defaultEncodedParams();
-        vm.prank(nodeOwner);
-        otherNode.configureToken(address(sourceToken), "ATUM_PAYMENT", address(module), MIN_BALANCE, moduleParams, true);
+        vm.prank(paymentRailsOwner);
+        otherPaymentRails.configureToken(
+            address(sourceToken), "ATUM_PAYMENT", address(module), MIN_BALANCE, moduleParams, true
+        );
 
         vm.prank(executor);
-        bool success = otherNode.executeAction(address(sourceToken), PAYMENT_AMOUNT);
+        bool success = otherPaymentRails.executeAction(address(sourceToken), PAYMENT_AMOUNT);
 
         assertFalse(success);
-        assertEq(sourceToken.balanceOf(address(otherNode)), PAYMENT_AMOUNT);
+        assertEq(sourceToken.balanceOf(address(otherPaymentRails)), PAYMENT_AMOUNT);
         assertEq(sourceToken.balanceOf(address(module)), 0);
     }
 
@@ -256,23 +260,23 @@ contract AtumModuleIntegrationTest is Test {
         module.pause();
 
         vm.prank(executor);
-        bool success = nodeContract.executeAction(address(sourceToken), PAYMENT_AMOUNT);
+        bool success = paymentRailsContract.executeAction(address(sourceToken), PAYMENT_AMOUNT);
 
         assertFalse(success);
-        assertEq(sourceToken.balanceOf(address(nodeContract)), PAYMENT_AMOUNT * 4);
+        assertEq(sourceToken.balanceOf(address(paymentRailsContract)), PAYMENT_AMOUNT * 4);
         assertEq(sourceToken.balanceOf(address(module)), 0);
     }
 
-    function test_Execute_ReturnsFailedResultWhenImmutableNodeHasInsufficientBalance() external {
+    function test_Execute_ReturnsFailedResultWhenImmutablePaymentRailsHasInsufficientBalance() external {
         DataTypes.ExecutionResult memory result =
-            _executeFromNode(address(sourceToken), PAYMENT_AMOUNT * 10, _defaultEncodedParams());
+            _executeFromPaymentRails(address(sourceToken), PAYMENT_AMOUNT * 10, _defaultEncodedParams());
 
         _assertFailedResult(result, address(sourceToken), "Insufficient balance");
         assertEq(sourceToken.balanceOf(address(module)), 0);
     }
 
     function test_PreviewExecution_UsesSourceTokenAndAsyncPendingAmountOut() external view {
-        (uint256 estimatedOutput, address outputToken) = nodeContract.previewExecution(address(sourceToken));
+        (uint256 estimatedOutput, address outputToken) = paymentRailsContract.previewExecution(address(sourceToken));
 
         assertEq(estimatedOutput, 0);
         assertEq(outputToken, address(sourceToken));
@@ -320,14 +324,16 @@ contract AtumModuleIntegrationTest is Test {
 
     function test_WhenFeeOnTransferToken_ExecutionReturnsFalseAndStoresNoFunds() external {
         bytes memory moduleParams = _defaultEncodedParams();
-        vm.prank(nodeOwner);
-        nodeContract.configureToken(address(feeToken), "ATUM_PAYMENT", address(module), MIN_BALANCE, moduleParams, true);
+        vm.prank(paymentRailsOwner);
+        paymentRailsContract.configureToken(
+            address(feeToken), "ATUM_PAYMENT", address(module), MIN_BALANCE, moduleParams, true
+        );
 
         vm.prank(executor);
-        bool success = nodeContract.executeAction(address(feeToken), PAYMENT_AMOUNT);
+        bool success = paymentRailsContract.executeAction(address(feeToken), PAYMENT_AMOUNT);
 
         assertFalse(success);
-        assertEq(feeToken.balanceOf(address(nodeContract)), PAYMENT_AMOUNT);
+        assertEq(feeToken.balanceOf(address(paymentRailsContract)), PAYMENT_AMOUNT);
         assertEq(feeToken.balanceOf(address(module)), 0);
     }
 
@@ -336,16 +342,16 @@ contract AtumModuleIntegrationTest is Test {
         params.destinationChain = "eip155:1";
         bytes memory moduleParams = module.encodeParams(params);
 
-        vm.prank(nodeOwner);
-        nodeContract.configureToken(
+        vm.prank(paymentRailsOwner);
+        paymentRailsContract.configureToken(
             address(sourceToken), "ATUM_PAYMENT", address(module), MIN_BALANCE, moduleParams, true
         );
 
         vm.prank(executor);
-        bool success = nodeContract.executeAction(address(sourceToken), PAYMENT_AMOUNT);
+        bool success = paymentRailsContract.executeAction(address(sourceToken), PAYMENT_AMOUNT);
 
         assertFalse(success);
-        assertEq(sourceToken.balanceOf(address(nodeContract)), PAYMENT_AMOUNT * 4);
+        assertEq(sourceToken.balanceOf(address(paymentRailsContract)), PAYMENT_AMOUNT * 4);
         assertEq(sourceToken.balanceOf(address(module)), 0);
     }
 
@@ -360,7 +366,7 @@ contract AtumModuleIntegrationTest is Test {
         _assertValidate(address(sourceToken), PAYMENT_AMOUNT, _defaultEncodedParams(), false, "Module paused");
     }
 
-    function test_Validate_WhenNodeHasInsufficientBalance_ReturnsInsufficientBalance() external {
+    function test_Validate_WhenPaymentRailsHasInsufficientBalance_ReturnsInsufficientBalance() external {
         _assertValidate(
             address(sourceToken), PAYMENT_AMOUNT * 10, _defaultEncodedParams(), false, "Insufficient balance"
         );
@@ -476,7 +482,7 @@ contract AtumModuleIntegrationTest is Test {
         assertEq(module.isValidSignature(digest, signature), EIP1271_MAGIC);
 
         vm.prank(executor);
-        assertTrue(nodeContract.executeAction(address(sourceToken), PAYMENT_AMOUNT));
+        assertTrue(paymentRailsContract.executeAction(address(sourceToken), PAYMENT_AMOUNT));
     }
 
     function test_InvalidateDigest_MakesPreviouslyValidSignatureFail() external {
@@ -547,25 +553,28 @@ contract AtumModuleIntegrationTest is Test {
                               FAIL-SAFE RECOVERY
     //////////////////////////////////////////////////////////////////////////*/
 
-    function test_ReturnTokenBalance_ReturnsFullBalanceToImmutableNodeOnly() external givenFundedModule {
+    function test_ReturnTokenBalance_ReturnsFullBalanceToImmutablePaymentRailsOnly() external givenFundedModule {
         uint256 unusedBalance = 17e6;
         sourceToken.mint(address(module), unusedBalance);
 
         vm.prank(moduleOwner);
         module.pause();
 
-        uint256 nodeBalanceBefore = sourceToken.balanceOf(address(nodeContract));
+        uint256 paymentRailsBalanceBefore = sourceToken.balanceOf(address(paymentRailsContract));
         uint256 ownerBalanceBefore = sourceToken.balanceOf(moduleOwner);
 
         vm.expectEmit(true, true, false, true);
-        emit TokenBalanceReturned(address(sourceToken), address(nodeContract), PAYMENT_AMOUNT + unusedBalance);
+        emit TokenBalanceReturned(address(sourceToken), address(paymentRailsContract), PAYMENT_AMOUNT + unusedBalance);
 
         vm.prank(moduleOwner);
         uint256 amountReturned = module.returnTokenBalance(address(sourceToken));
 
         assertEq(amountReturned, PAYMENT_AMOUNT + unusedBalance);
         assertEq(sourceToken.balanceOf(address(module)), 0);
-        assertEq(sourceToken.balanceOf(address(nodeContract)), nodeBalanceBefore + PAYMENT_AMOUNT + unusedBalance);
+        assertEq(
+            sourceToken.balanceOf(address(paymentRailsContract)),
+            paymentRailsBalanceBefore + PAYMENT_AMOUNT + unusedBalance
+        );
         assertEq(sourceToken.balanceOf(moduleOwner), ownerBalanceBefore);
     }
 
@@ -586,7 +595,7 @@ contract AtumModuleIntegrationTest is Test {
 
         assertEq(amountReturned, PAYMENT_AMOUNT);
         assertEq(sourceToken.balanceOf(address(module)), 0);
-        assertEq(sourceToken.balanceOf(address(nodeContract)), PAYMENT_AMOUNT * 4);
+        assertEq(sourceToken.balanceOf(address(paymentRailsContract)), PAYMENT_AMOUNT * 4);
         assertEq(sourceToken.balanceOf(escrow), 0);
     }
 
@@ -606,8 +615,8 @@ contract AtumModuleIntegrationTest is Test {
 
         assertEq(sourceToken.balanceOf(address(module)), 0);
         assertEq(secondToken.balanceOf(address(module)), 0);
-        assertEq(sourceToken.balanceOf(address(nodeContract)), PAYMENT_AMOUNT * 4);
-        assertEq(secondToken.balanceOf(address(nodeContract)), secondAmount);
+        assertEq(sourceToken.balanceOf(address(paymentRailsContract)), PAYMENT_AMOUNT * 4);
+        assertEq(secondToken.balanceOf(address(paymentRailsContract)), secondAmount);
     }
 
     function test_ReturnTokenBalances_WhenBatchIsEmpty_DoesNothing() external givenFundedModule {
@@ -620,7 +629,7 @@ contract AtumModuleIntegrationTest is Test {
         module.returnTokenBalances(tokens);
 
         assertEq(sourceToken.balanceOf(address(module)), PAYMENT_AMOUNT);
-        assertEq(sourceToken.balanceOf(address(nodeContract)), PAYMENT_AMOUNT * 3);
+        assertEq(sourceToken.balanceOf(address(paymentRailsContract)), PAYMENT_AMOUNT * 3);
     }
 
     function test_ReturnTokenBalance_RevertsWhenTokenIsZero() external {
@@ -660,7 +669,7 @@ contract AtumModuleIntegrationTest is Test {
 
     modifier givenFundedModule() {
         vm.prank(executor);
-        assertTrue(nodeContract.executeAction(address(sourceToken), PAYMENT_AMOUNT));
+        assertTrue(paymentRailsContract.executeAction(address(sourceToken), PAYMENT_AMOUNT));
         _;
     }
 
@@ -688,7 +697,7 @@ contract AtumModuleIntegrationTest is Test {
         return abi.encode(uint256(96), uint256(128), uint256(160));
     }
 
-    function _executeFromNode(
+    function _executeFromPaymentRails(
         address token,
         uint256 amount,
         bytes memory params
@@ -696,8 +705,8 @@ contract AtumModuleIntegrationTest is Test {
         internal
         returns (DataTypes.ExecutionResult memory result)
     {
-        vm.prank(address(nodeContract));
-        result = module.execute(token, amount, params);
+        vm.prank(address(paymentRailsContract));
+        result = module.execute(token, amount, params, "");
     }
 
     function _assertFailedResult(
@@ -724,8 +733,8 @@ contract AtumModuleIntegrationTest is Test {
     )
         internal
     {
-        vm.prank(address(nodeContract));
-        (bool isValid, string memory reason) = module.validate(token, amount, params);
+        vm.prank(address(paymentRailsContract));
+        (bool isValid, string memory reason) = module.validate(token, amount, params, "");
 
         assertEq(isValid, expectedValid);
         assertEq(reason, expectedReason);

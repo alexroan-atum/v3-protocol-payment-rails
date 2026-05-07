@@ -1,13 +1,13 @@
 CCTPBridgeModuleIntegration
 ├── full lifecycle
-│   ├── it should bridge USDC end-to-end via Node → Module → TokenMessenger
-│   ├── it should emit ActionExecuted from Node
+│   ├── it should bridge USDC end-to-end via PaymentRails → Module → TokenMessenger
+│   ├── it should emit ActionExecuted from PaymentRails
 │   ├── it should emit BridgeInitiated from Module
-│   ├── it should consume all approvals (node→module, module→messenger)
+│   ├── it should consume all approvals (paymentRails→module, module→messenger)
 │   └── it should allow any address to execute (permissionless)
 ├── tokenMessenger revert
-│   ├── it should return false from Node.executeAction
-│   └── it should revoke Node→Module approval
+│   ├── it should return false from PaymentRails.executeAction
+│   └── it should revoke PaymentRails→Module approval
 ├── validation failures
 │   ├── it should revert when amount is below minBalance
 │   ├── it should revert when amount exceeds balance
@@ -17,23 +17,23 @@ CCTPBridgeModuleIntegration
 ├── domain removal
 │   └── it should return false (graceful failure)
 ├── consecutive executions
-│   └── it should succeed on both and drain the node
+│   └── it should succeed on both and drain the paymentRails
 ├── preview execution
 │   └── it should return (amount - maxFee, usdc)
 ├── hook data
 │   └── it should call depositForBurnWithHook with hookData
-├── multi-node — shared module
+├── multi-paymentRails — shared module
 │   ├── it should bridge from two nodes sharing one module
-│   ├── it should route to different domains per node
+│   ├── it should route to different domains per paymentRails
 │   ├── it should fail both nodes when domain is removed
 │   └── it should handle interleaved executions from multiple nodes
-├── multi-domain — node reconfiguration
+├── multi-domain — paymentRails reconfiguration
 │   └── it should bridge to domain A then reconfigure and bridge to domain B
 ├── module ownership — integration
 │   ├── it should allow new owner to reconfigure after transfer
 │   ├── it should block old owner after transfer
 │   ├── it should keep existing domains working after renounce
 │   └── it should block new domain config after renounce
-└── node reconfiguration
+└── paymentRails reconfiguration
     ├── it should work after disable then re-enable
     └── it should work after swapping to a new module

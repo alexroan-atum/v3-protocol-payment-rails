@@ -1,0 +1,6 @@
+{
+  "rules": {
+    "gas-custom-errors": "off",
+    "no-console": "off"
+  }
+}

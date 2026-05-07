@@ -1,5 +1,0 @@
-Node_GetTokenBalance
-├── when node holds zero balance
-│   └── it should return zero
-└── when node holds positive balance
-    └── it should return the correct balance

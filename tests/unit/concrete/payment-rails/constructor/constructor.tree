@@ -1,0 +1,5 @@
+PaymentRails_Constructor
+├── when initialOwner is zero address
+│   └── it should revert with OwnableInvalidOwner
+└── when initialOwner is valid address
+    └── it should set the owner

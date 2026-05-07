@@ -9,7 +9,7 @@ CCTPBridgeModuleFork
 │   ├── it should call depositForBurn on real TokenMessengerV2 successfully
 │   └── it should call depositForBurnWithHook on real TokenMessengerV2 successfully
 ├── execute
-│   ├── it should decrease node USDC balance by bridge amount
+│   ├── it should decrease paymentRails USDC balance by bridge amount
 │   ├── it should leave module with zero USDC after burn
 │   ├── it should revoke module approval to TokenMessengerV2 after burn
 │   ├── it should emit BridgeInitiated event
@@ -36,11 +36,11 @@ CCTPBridgeModuleFork
 │   ├── it should emit DomainConfigSet event
 │   ├── it should clear domain on removal
 │   └── it should return failure when executing after domain removal
-├── node integration lifecycle
-│   ├── it should bridge successfully via Node.executeAction end-to-end
-│   ├── it should emit ActionExecuted from Node
+├── paymentRails integration lifecycle
+│   ├── it should bridge successfully via PaymentRails.executeAction end-to-end
+│   ├── it should emit ActionExecuted from PaymentRails
 │   ├── it should return correct previewExecution values
-│   ├── it should succeed on consecutive executions draining the node
+│   ├── it should succeed on consecutive executions draining the paymentRails
 │   └── it should bridge from two nodes sharing one module
 ├── ownership
 │   ├── it should complete full Ownable2Step transfer flow
@@ -54,4 +54,4 @@ CCTPBridgeModuleFork
     ├── it should block non-owner from setting domain config
     ├── it should confirm real USDC has 6 decimals
     ├── it should confirm real USDC burn reduces total supply
-    └── it should consume node-to-module approval after execute
+    └── it should consume paymentRails-to-module approval after execute

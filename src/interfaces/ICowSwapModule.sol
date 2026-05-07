@@ -8,26 +8,26 @@ import { DataTypes } from "../types/DataTypes.sol";
 /// @author Credit Cooperative
 /// @notice Interface for the async CowSwap order-book swap module.
 /// @dev Extends {IActionModule} with CoW Protocol (GPv2) integration using a direct-receiver design:
-/// the Node is set as the GPv2Order receiver so buyToken flows directly to it after settlement — this
+/// the PaymentRails is set as the GPv2Order receiver so buyToken flows directly to it after settlement — this
 /// module never holds or stages the buyToken.
 ///
 /// Lifecycle:
 ///
-///   1. `execute()`          — Pulls sellToken from Node, stores order metadata, and emits
+///   1. `execute()`          — Pulls sellToken from PaymentRails, stores order metadata, and emits
 ///                             {OrderCreated}. Returns `amountOut = 0` (async pending signal).
 ///   2. Off-chain keeper     — Reads {OrderCreated}, reconstructs the GPv2Order, and submits it to
 ///                             the CowSwap API with `signingScheme = "eip1271"` and
 ///                             `signature = abi.encode(orderId)`.
 ///   3. `isValidSignature()` — Called by CowSwap (EIP-1271) before including the order in a batch.
 ///   4. CowSwap solver       — Pulls sellToken via GPv2VaultRelayer and transfers buyToken directly
-///                             to the Node. No further on-chain call required.
-///   5. `cancelOrder()`      — Owner-only recovery: returns locked sellToken to the Node.
+///                             to the PaymentRails. No further on-chain call required.
+///   5. `cancelOrder()`      — Owner-only recovery: returns locked sellToken to the PaymentRails.
 ///
-/// Deployment model: each Node MUST deploy its own private instance. Do NOT share across Nodes.
+/// Deployment model: each PaymentRails MUST deploy its own private instance. Do NOT share across PaymentRails.
 ///
 /// Order parameters (fixed by this module):
 ///   - kind:              SELL (exact sell amount, minimum buy amount)
-///   - receiver:          Node address
+///   - receiver:          PaymentRails address
 ///   - partiallyFillable: false
 ///   - feeAmount:         0 (CowSwap takes fees from surplus)
 ///   - EIP-1271 signature: `abi.encode(orderId)` (32 bytes)
@@ -47,16 +47,16 @@ interface ICowSwapModule is IActionModule {
 
     /// @notice Emitted when a new CowSwap order is created via `execute()`.
     /// @param orderId      EIP-712 GPv2Order digest (used as orderId and EIP-1271 hash).
-    /// @param node         Node that initiated the order; also the GPv2Order receiver.
+    /// @param paymentRails         PaymentRails that initiated the order; also the GPv2Order receiver.
     /// @param sellToken    Token being sold.
-    /// @param buyToken     Token to receive (sent directly to `node` by solver).
+    /// @param buyToken     Token to receive (sent directly to `paymentRails` by solver).
     /// @param sellAmount   Exact amount being sold (locked in this module).
     /// @param minBuyAmount Minimum acceptable buy amount.
     /// @param validTo      Unix timestamp after which the order expires.
     /// @param appData      CowSwap app-data hash.
     event OrderCreated(
         bytes32 indexed orderId,
-        address indexed node,
+        address indexed paymentRails,
         address sellToken,
         address buyToken,
         uint256 sellAmount,
@@ -67,16 +67,16 @@ interface ICowSwapModule is IActionModule {
 
     /// @notice Emitted when an order is cancelled via `cancelOrder()`.
     /// @param orderId GPv2Order digest of the cancelled order.
-    /// @param node    Node that received the returned sellToken.
+    /// @param paymentRails    PaymentRails that received the returned sellToken.
     /// @param token   The sellToken returned.
     /// @param amount  Amount returned (capped at `meta.sellAmount`).
-    event OrderCancelled(bytes32 indexed orderId, address indexed node, address token, uint256 amount);
+    event OrderCancelled(bytes32 indexed orderId, address indexed paymentRails, address token, uint256 amount);
 
     /*//////////////////////////////////////////////////////////////////////////
                             NON-CONSTANT FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Cancels a pending order and returns the locked sellToken to the Node.
+    /// @notice Cancels a pending order and returns the locked sellToken to the PaymentRails.
     /// @dev Restricted to the module owner (Ownable2Step). Blocked if the order is already filled
     /// (verified via `GPv2Settlement.filledAmount`). Returns at most `meta.sellAmount` to prevent
     /// draining tokens from concurrent orders sharing the same sellToken.
@@ -86,7 +86,7 @@ interface ICowSwapModule is IActionModule {
     /// holds zero sellToken (the solver already pulled it), so the cancel is a harmless no-op.
     ///
     /// Requirements:
-    /// - `orderId` must exist (`node != address(0)`).
+    /// - `orderId` must exist (`paymentRails != address(0)`).
     /// - Caller must be the module owner.
     /// - Order must not already be cancelled.
     /// - `filledAmount(orderId) < meta.sellAmount`.
@@ -124,7 +124,7 @@ interface ICowSwapModule is IActionModule {
     /// @notice EIP-712 domain separator of the CowSwap settlement contract (cached at construction).
     function cowDomainSeparator() external view returns (bytes32);
 
-    /// @notice ABI-encodes a {CowSwapParams} struct into bytes for `Node.configureToken()`.
+    /// @notice ABI-encodes a {CowSwapParams} struct into bytes for `PaymentRails.configureToken()`.
     /// @param params   Typed struct.
     /// @return encoded ABI-encoded bytes.
     function encodeParams(DataTypes.CowSwapParams calldata params) external pure returns (bytes memory encoded);

@@ -18,11 +18,11 @@ abstract contract ForwardModuleBase is Test {
     RevertingTransferERC20 internal revertingToken;
     FeeOnTransferERC20 internal feeToken;
 
-    address internal node;
+    address internal paymentRails;
     address internal recipient;
 
     function setUp() public virtual {
-        node = makeAddr("node");
+        paymentRails = makeAddr("paymentRails");
         recipient = makeAddr("recipient");
 
         module = new ForwardModule();
@@ -31,12 +31,12 @@ abstract contract ForwardModuleBase is Test {
         revertingToken = new RevertingTransferERC20();
         feeToken = new FeeOnTransferERC20();
 
-        token.mint(node, DEFAULT_AMOUNT * 100);
-        failingToken.mint(node, DEFAULT_AMOUNT * 100);
-        revertingToken.mint(node, DEFAULT_AMOUNT * 100);
-        feeToken.mint(node, DEFAULT_AMOUNT * 100);
+        token.mint(paymentRails, DEFAULT_AMOUNT * 100);
+        failingToken.mint(paymentRails, DEFAULT_AMOUNT * 100);
+        revertingToken.mint(paymentRails, DEFAULT_AMOUNT * 100);
+        feeToken.mint(paymentRails, DEFAULT_AMOUNT * 100);
 
-        vm.startPrank(node);
+        vm.startPrank(paymentRails);
         token.approve(address(module), type(uint256).max);
         failingToken.approve(address(module), type(uint256).max);
         revertingToken.approve(address(module), type(uint256).max);
