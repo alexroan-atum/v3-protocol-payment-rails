@@ -1,0 +1,43 @@
+UniswapSwapModuleIntegration
+├── full lifecycle
+│   ├── it should swap tokens end-to-end via PaymentRails → Module → Router
+│   ├── it should emit ActionExecuted from PaymentRails with correct amountOut
+│   ├── it should emit SwapExecuted from Module
+│   ├── it should revoke module approval after successful swap
+│   └── it should allow any address to execute (permissionless)
+├── router revert
+│   ├── it should return false from PaymentRails.executeAction
+│   ├── it should revoke PaymentRails→Module approval
+│   └── it should preserve paymentRails token balance
+├── slippage revert
+│   ├── it should return false from PaymentRails.executeAction (caught by try-catch)
+│   ├── it should revoke PaymentRails→Module approval
+│   └── it should preserve paymentRails token balance (atomic rollback)
+├── validation failures at PaymentRails level
+│   ├── it should revert when amount is below minBalance
+│   ├── it should revert when amount exceeds balance
+│   ├── it should revert when token is not enabled
+│   └── it should revert when amount is zero
+├── validation failures at module level
+│   ├── it should return false when router is not whitelisted
+│   └── it should return false when target token equals sell token
+├── consecutive executions
+│   └── it should succeed on multiple swaps draining the paymentRails
+├── preview execution
+│   └── it should return (0, targetToken) since atomic swaps cannot pre-estimate
+├── executeAction with executionData overload
+│   └── it should forward executionData to module and execute swap
+├── multi-paymentRails — shared module
+│   ├── it should swap from two paymentRails sharing one module
+│   ├── it should handle interleaved executions from multiple paymentRails
+│   └── it should fail both paymentRails when router is removed
+├── router whitelist changes
+│   ├── it should use newly added router on next execution
+│   └── it should fail execution when router is removed between configure and execute
+├── module ownership — integration
+│   ├── it should allow new owner to manage routers after transfer
+│   ├── it should block old owner after transfer
+│   └── it should keep existing router whitelist after ownership transfer
+└── paymentRails reconfiguration
+    ├── it should work after disable then re-enable
+    └── it should work after swapping to a new module
