@@ -38,7 +38,10 @@ contract DeploySepoliaTestSetup is Script {
     address internal constant FORWARD_TOKEN = 0xbF99CC41233D6420426D3d464c77585B216D51D7;
     address internal constant FORWARD_RECIPIENT = 0x97fCbc96ed23e4E9F0714008C8f137D57B4d6C97;
 
-    function run() public returns (PaymentRails paymentRails, ForwardModule forwardModule, CCTPBridgeModule bridgeModule) {
+    function run()
+        public
+        returns (PaymentRails paymentRails, ForwardModule forwardModule, CCTPBridgeModule bridgeModule)
+    {
         uint256 usdcMinBalance = vm.envOr("USDC_MIN_BALANCE", uint256(1_000_000));
         uint256 forwardMinBalance = vm.envOr("FORWARD_MIN_BALANCE", uint256(0));
         uint256 cctpMaxFee = vm.envOr("CCTP_MAX_FEE", uint256(0));
@@ -80,9 +83,7 @@ contract DeploySepoliaTestSetup is Script {
 
         bytes memory forwardParams = abi.encode(
             DataTypes.ForwardParams({
-                recipient: FORWARD_RECIPIENT,
-                requireSuccessfulReceipt: false,
-                minAmount: forwardMinBalance
+                recipient: FORWARD_RECIPIENT, requireSuccessfulReceipt: false, minAmount: forwardMinBalance
             })
         );
         paymentRails.configureToken({
