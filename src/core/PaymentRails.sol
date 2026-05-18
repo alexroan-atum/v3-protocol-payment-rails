@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.29;
+pragma solidity 0.8.29;
 
 import { IPaymentRails } from "../interfaces/IPaymentRails.sol";
 import { IActionModule } from "../interfaces/IActionModule.sol";
@@ -13,30 +13,7 @@ import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
 /// @title PaymentRails
 /// @author Credit Cooperative
-/// @notice Core router contract for automated cross-chain token actions
-/// @dev This contract maintains token configurations and delegates execution to pluggable action modules.
-///
-/// # Architecture
-/// - Inherits from PaymentRailsState for state management abstraction
-/// - Inherits from Ownable for access control (only owner can configure)
-/// - Inherits from ReentrancyGuard for reentrancy protection on executeAction
-/// - Uses SafeERC20 for safe token transfers
-///
-/// # Key Features
-/// - **Modular Design**: Delegates actions to separate module contracts (ForwardModule, DexSwapModule,
-/// CowSwapModule, CCTPBridgeModule)
-/// - **Permissionless Execution**: Anyone can trigger pre-configured actions via executeAction()
-/// - **Owner-Only Configuration**: Only owner can call configureToken() to set destinations and parameters
-/// - **String-Based Action Types**: Supports unlimited module types without interface changes
-/// - **Cooldown Mechanism**: Prevents spam and encourages batching with per-token cooldown periods
-/// - **Minimum Balance Thresholds**: Avoids inefficient small executions
-///
-/// # Security Model
-/// - Executors can only trigger pre-configured actions (no arbitrary parameters)
-/// - Amount parameter is bounded: amount >= minBalance AND amount <= paymentRails balance
-/// - Modules are validated on configuration (moduleType() must return non-empty string)
-/// - Token approvals are revoked on execution failure
-/// - Reentrancy protection on executeAction()
+/// @notice See the documentation in {IPaymentRails}.
 contract PaymentRails is IPaymentRails, PaymentRailsState, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -122,25 +99,6 @@ contract PaymentRails is IPaymentRails, PaymentRailsState, Ownable, ReentrancyGu
 
     /// @inheritdoc IPaymentRails
     /// @dev Emits a {TokenConfigured} event.
-    ///
-    /// Notes:
-    /// - Setting actionType to empty string clears the configuration
-    /// - When clearing, actionModule must be address(0)
-    /// - Reconfiguring resets lastExecuted to 0
-    /// - Module is validated by calling moduleType() which must succeed and return non-empty string
-    ///
-    /// Requirements:
-    /// - The caller must be the contract owner
-    /// - `token` must not be the zero address
-    /// - If `actionType` is empty, `actionModule` must be address(0)
-    /// - If `actionType` is not empty, `actionModule` must be a valid contract implementing IActionModule
-    ///
-    /// @param token The token address to configure
-    /// @param actionType The action identifier string (e.g., "FORWARD", "SWAP", "BRIDGE")
-    /// @param actionModule The address of the action module contract
-    /// @param minBalance The minimum balance threshold required for execution
-    /// @param moduleParams ABI-encoded parameters specific to the action module
-    /// @param enabled Whether the token action should be immediately enabled
     function configureToken(
         address token,
         string calldata actionType,
@@ -197,25 +155,6 @@ contract PaymentRails is IPaymentRails, PaymentRailsState, Ownable, ReentrancyGu
 
     /// @inheritdoc IPaymentRails
     /// @dev Emits an {ActionExecuted} event on successful execution.
-    ///
-    /// Notes:
-    /// - Execution is permissionless - anyone can call this function
-    /// - The caller (msg.sender) is recorded in the ActionExecuted event for tracking
-    /// - Execution follows Check-Effects-Interactions pattern
-    /// - lastExecuted timestamp is updated BEFORE calling the module
-    /// - Token approval is granted to module, then revoked on failure
-    ///
-    /// Requirements:
-    /// - Token must be configured (non-empty actionType)
-    /// - Token must be enabled
-    /// - `amount` must not be zero
-    /// - `amount` must be >= minBalance (prevents inefficient small executions)
-    /// - Cooldown period must have elapsed since last execution
-    /// - PaymentRails must have sufficient token balance (balance >= amount)
-    ///
-    /// @param token The token address to execute action for
-    /// @param amount The exact amount of tokens to process (must be >= minBalance and <= balance)
-    /// @return success True if the action executed successfully, false otherwise
     function executeAction(address token, uint256 amount) external nonReentrant returns (bool success) {
         return _validateAndExecute(token, amount, "");
     }
@@ -237,7 +176,7 @@ contract PaymentRails is IPaymentRails, PaymentRailsState, Ownable, ReentrancyGu
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Validates preconditions and delegates to _executeActionInternal
+    /// @dev Validates preconditions and delegates to {_executeActionInternal}.
     function _validateAndExecute(
         address token,
         uint256 amount,
@@ -269,19 +208,7 @@ contract PaymentRails is IPaymentRails, PaymentRailsState, Ownable, ReentrancyGu
         return _executeActionInternal(token, amount, config, executionData);
     }
 
-    /// @notice Executes an action by delegating to the configured action module
-    /// @dev This function handles token approval, module execution, and cleanup
-    ///
-    /// Notes:
-    /// - Approves exact amount to module using forceApprove (handles non-standard ERC20s)
-    /// - Revokes approval on execution failure
-    /// - Does NOT revert on failure - returns false instead
-    ///
-    /// @param token The token address being processed
-    /// @param amount The amount of tokens to process
-    /// @param config The token configuration containing module address and parameters
-    /// @param executionData Dynamic per-execution data forwarded to the module
-    /// @return success True if module execution succeeded, false otherwise
+    /// @dev Approves the module, calls `execute`, and revokes approval on failure.
     function _executeActionInternal(
         address token,
         uint256 amount,

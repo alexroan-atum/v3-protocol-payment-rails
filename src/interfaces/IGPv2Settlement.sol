@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.29;
+pragma solidity 0.8.29;
 
 /// @title IGPv2Settlement
 /// @notice Minimal interface for the CoW Protocol GPv2Settlement contract.

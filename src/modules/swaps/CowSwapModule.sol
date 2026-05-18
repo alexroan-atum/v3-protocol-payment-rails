@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.29;
+pragma solidity 0.8.29;
 
 import { ICowSwapModule } from "../../interfaces/ICowSwapModule.sol";
 import { IGPv2Settlement } from "../../interfaces/IGPv2Settlement.sol";

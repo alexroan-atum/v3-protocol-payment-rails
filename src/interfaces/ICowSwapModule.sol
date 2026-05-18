@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.29;
+pragma solidity 0.8.29;
 
 import { IActionModule } from "./IActionModule.sol";
 import { DataTypes } from "../types/DataTypes.sol";
@@ -33,7 +33,8 @@ import { DataTypes } from "../types/DataTypes.sol";
 ///   - EIP-1271 signature: `abi.encode(orderId)` (32 bytes)
 ///
 /// Access model:
-///   - `execute()` is callable by any address (caller becomes the receiver).
+///   - `execute()` is callable by any address (the caller's address is recorded as the PaymentRails
+///     and set as the GPv2Order receiver — buyToken flows directly to that address).
 ///   - `cancelOrder()` is restricted to the module owner (Ownable2Step).
 ///
 /// Security notes:

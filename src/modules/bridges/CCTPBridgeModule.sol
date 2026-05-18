@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.29;
+pragma solidity 0.8.29;
 
 import { ICCTPBridgeModule } from "../../interfaces/ICCTPBridgeModule.sol";
 import { ITokenMessengerV2 } from "../../interfaces/ITokenMessengerV2.sol";

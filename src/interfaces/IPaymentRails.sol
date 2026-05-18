@@ -1,89 +1,19 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.29;
+pragma solidity 0.8.29;
 
 import { DataTypes } from "../types/DataTypes.sol";
 
 /// @title IPaymentRails
-/// @notice Interface for the core PaymentRails contract that routes tokens through action modules
-/// @dev PaymentRails maintains token configurations and delegates execution to modules
+/// @notice Interface for the core PaymentRails contract that routes tokens through action modules.
+/// @dev PaymentRails is a configurable router: it holds tokens, maintains per-token configurations, and
+/// delegates execution to pluggable {IActionModule} implementations (forward, swap, bridge, etc.).
 ///
-/// # Overview
-/// IPaymentRails is the core interface for the Receivables PaymentRails system - a flexible framework for
-/// automating token operations through pluggable action modules. The PaymentRails acts as a router
-/// that receives tokens, stores configurations, and delegates execution to specialized modules.
+/// The system uses a dual-permission model:
+/// - Configuration ({configureToken}): owner-only.
+/// - Execution ({executeAction}): permissionless — anyone can trigger pre-configured actions.
 ///
-/// # Architecture
-/// The system follows a hub-and-spoke pattern:
-/// - **PaymentRails (Hub)**: Holds tokens, validates preconditions, manages configurations
-/// - **Modules (Spokes)**: Execute specialized operations (forward, swap, bridge, etc.)
-/// - **Configuration**: Owner sets rules, execution is permissionless
-///
-/// # Key Features
-///
-/// **Modular Design:**
-/// - Support unlimited module types through string-based identification
-/// - Hot-swap modules by reconfiguring tokens
-/// - Add new capabilities without upgrading PaymentRails contract
-///
-/// **Dual Permission Model:**
-/// - Configuration: Only owner can call configureToken()
-/// - Execution: Anyone can call executeAction() (permissionless automation)
-///
-/// **Safety Mechanisms:**
-/// - Minimum balance thresholds (prevents dust execution)
-/// - Cooldown periods (prevents spam, encourages batching)
-/// - Enable/disable flags (emergency stops)
-/// - Module validation (ensures valid implementations)
-///
-/// **Preview Functionality:**
-/// - previewExecution() validates all requirements without executing
-/// - Follows ERC-4626 pattern for consistency
-/// - Returns estimated output for off-chain monitoring
-///
-/// # Typical Workflow
-///
-/// **1. Configuration (Owner):**
-/// ```solidity
-/// paymentRails.configureToken(
-///     tokenAddress,       // Token to automate
-///     "FORWARD",          // Action type
-///     moduleAddress,      // Module contract
-///     100e18,            // Minimum balance
-///     3600,              // Cooldown (1 hour)
-///     encodedParams,     // Module config
-///     true               // Enabled
-/// );
-/// ```
-///
-/// **2. Preview (Anyone):**
-/// ```solidity
-/// (uint256 output, address outToken) = paymentRails.previewExecution(tokenAddress);
-/// // Check if execution is profitable/desirable
-/// ```
-///
-/// **3. Execution (Anyone):**
-/// ```solidity
-/// bool success = paymentRails.executeAction(tokenAddress, amount);
-/// // Keeper bot, user, or automated system triggers execution
-/// ```
-///
-/// # Use Cases
-/// - **Receivables Automation**: Automatically forward invoice payments to treasury
-/// - **Treasury Management**: Auto-swap stablecoins, bridge to L2, stake yields
-/// - **Revenue Distribution**: Split and forward tokens to multiple beneficiaries
-/// - **DeFi Automation**: Compound yields, rebalance portfolios, harvest rewards
-/// - **Cross-Chain Operations**: Bridge tokens when thresholds are met
-///
-/// # Security Model
-/// - Owner can configure but cannot steal tokens (modules are validated)
-/// - Executors can only trigger pre-configured actions (no arbitrary parameters)
-/// - Modules receive limited approvals (exact amount only)
-/// - Reentrancy protection on executeAction()
-/// - Cooldowns prevent griefing attacks
-///
-/// # Events
-/// - TokenConfigured: Emitted when token configuration changes
-/// - ActionExecuted: Emitted when action executes successfully (includes executor)
+/// Safety mechanisms include minimum-balance thresholds, enable/disable flags, module validation,
+/// and reentrancy protection.
 interface IPaymentRails {
     /*//////////////////////////////////////////////////////////////////////////
                                     EVENTS
@@ -118,95 +48,26 @@ interface IPaymentRails {
                                   CONFIGURATION
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Configure a token's action module and parameters
-    /// @dev Only callable by owner - execution is permissionless (public)
-    /// @dev Can be called multiple times to reconfigure a token
+    /// @notice Configure a token's action module and parameters.
+    /// @dev Emits a {TokenConfigured} event. Can be called multiple times to reconfigure a token.
     ///
-    /// # Purpose
-    /// This function is the primary configuration interface for setting up automated token
-    /// actions. The owner defines what should happen when executeAction() is called for a token.
-    ///
-    /// # Parameters Explained
-    ///
-    /// **actionType** (string):
-    /// - Identifies the type of action (must match module.moduleType())
-    /// - Examples: "FORWARD", "SWAP", "BRIDGE", "STAKE"
-    /// - Used in events for tracking
-    /// - Empty string clears configuration
-    ///
-    /// **actionModule** (address):
-    /// - Contract implementing IActionModule interface
-    /// - Validated by calling moduleType() (must return non-empty string)
-    /// - Must be address(0) if actionType is empty
-    ///
-    /// **minBalance** (uint256):
-    /// - Minimum token balance required to execute
-    /// - Prevents inefficient dust executions
-    /// - Checked against `amount` parameter in executeAction()
-    /// - Set to 0 to disable this check
-    ///
-    /// **moduleParams** (bytes):
-    /// - ABI-encoded module-specific configuration
-    /// - For ForwardModule: encodeParams(ForwardParams)
-    /// - Passed to module's execute() and validate() functions
-    /// - Use module's encodeParams() helper to construct
-    ///
-    /// **enabled** (bool):
-    /// - Whether execution is currently allowed
-    /// - Provides emergency stop mechanism
-    /// - Can be toggled by reconfiguring
-    ///
-    /// # Usage Examples
-    ///
-    /// **Configure forward to treasury:**
-    /// ```solidity
-    /// ForwardParams memory params = ForwardParams({
-    ///     recipient: treasuryAddress,
-    ///     requireSuccessfulReceipt: false,
-    ///     minAmount: 0
-    /// });
-    /// paymentRails.configureToken(
-    ///     USDC,
-    ///     "FORWARD",
-    ///     address(forwardModule),
-    ///     1000e6,  // Min 1000 USDC
-    ///     forwardModule.encodeParams(params),
-    ///     true
-    /// );
-    /// ```
-    ///
-    /// **Disable token (emergency stop):**
-    /// ```solidity
-    /// paymentRails.configureToken(
-    ///     USDC,
-    ///     "FORWARD",
-    ///     address(forwardModule),
-    ///     1000e6,
-    ///     existingParams,
-    ///     false  // ← Disabled
-    /// );
-    /// ```
-    ///
-    /// # Reconfiguration
-    /// - Overwrites all previous configuration
-    /// - Emits TokenConfigured event
+    /// Notes:
+    /// - Setting `actionType` to an empty string clears the configuration.
+    /// - When clearing, `actionModule` must be `address(0)`.
+    /// - Module is validated by calling {IActionModule.moduleType}, which must return a non-empty string.
     ///
     /// Requirements:
-    /// - Caller must be contract owner
-    /// - token must not be address(0)
-    /// - If actionType is empty, actionModule must be address(0)
-    /// - If actionType is not empty, actionModule must implement IActionModule
-    /// - actionModule.moduleType() must return non-empty string
+    /// - The caller must be the contract owner.
+    /// - `token` must not be `address(0)`.
+    /// - If `actionType` is non-empty, `actionModule` must implement {IActionModule}.
+    /// - If `actionType` is empty, `actionModule` must be `address(0)`.
     ///
-    /// Emits:
-    /// - {TokenConfigured} event
-    ///
-    /// @param token Token address to configure
-    /// @param actionType Type of action (e.g., "FORWARD", "SWAP", "BRIDGE")
-    /// @param actionModule Address of the module contract
-    /// @param minBalance Minimum balance threshold for execution
-    /// @param moduleParams Module-specific parameters (ABI encoded)
-    /// @param enabled Whether the token action should be enabled
+    /// @param token Token address to configure.
+    /// @param actionType Action identifier (e.g., "FORWARD", "SWAP", "BRIDGE"). Empty string clears config.
+    /// @param actionModule Address of the module contract.
+    /// @param minBalance Minimum balance threshold for execution.
+    /// @param moduleParams ABI-encoded module-specific parameters.
+    /// @param enabled Whether the token action should be enabled.
     function configureToken(
         address token,
         string calldata actionType,
@@ -221,83 +82,22 @@ interface IPaymentRails {
                                    EXECUTION
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Execute the configured action for a token with a specific amount
-    /// @dev Permissionless - anyone can trigger execution
+    /// @notice Execute the configured action for a token.
+    /// @dev Permissionless. Validates preconditions, approves the module for `amount`, calls
+    /// {IActionModule.execute}, and emits {ActionExecuted} on success. Revokes approval on failure.
     ///
-    /// # Purpose
-    /// This is the main execution function that triggers the configured action for a token.
-    /// It performs validation, delegates to the module, and handles the results.
-    ///
-    /// # Execution Flow
-    /// 1. **Validation Phase:**
-    ///    - Check token is enabled
-    ///    - Check action is configured
-    ///    - Check amount is not zero
-    ///    - Check amount >= minBalance
-    ///    - Check cooldown has elapsed
-    ///    - Check PaymentRails has sufficient balance
-    ///
-    /// 2. **State Update:**
-    ///    - Update lastExecuted timestamp
-    ///
-    /// 3. **Module Execution:**
-    ///    - Approve module to spend tokens (exact amount)
-    ///    - Call module.execute(token, amount, params)
-    ///    - Handle success/failure
-    ///    - Revoke approval on failure
-    ///
-    /// 4. **Result Handling:**
-    ///    - If success: Emit ActionExecuted event, return true
-    ///    - If failure: Revoke approval, return false (no revert)
-    ///
-    /// # Permissionless Execution
-    /// Anyone can call this function:
-    /// - Keeper bots (automated execution services)
-    /// - Owner (manual triggers)
-    /// - Users (self-service execution)
-    /// - Smart contracts (composed automations)
-    ///
-    /// The executor address is recorded in ActionExecuted event for tracking.
-    ///
-    /// # Amount Parameter
-    /// The `amount` parameter allows partial executions:
-    /// - Can execute less than full balance
-    /// - Must be >= minBalance (prevents dust)
-    /// - Must be <= PaymentRails balance (validated)
-    /// - Enables batching strategies (execute 50% now, 50% later)
-    ///
-    /// # Error Handling
-    /// This function uses custom errors (reverts) for validation failures:
-    /// - PaymentRails_TokenNotEnabled: Token is disabled
-    /// - PaymentRails_NoActionConfigured: No configuration exists
-    /// - PaymentRails_ZeroAmount: Amount is zero
-    /// - PaymentRails_BelowMinimumBalance: Amount < minBalance
-    /// - PaymentRails_InsufficientBalance: PaymentRails balance < amount
-    ///
-    /// Module execution failures return false instead of reverting.
-    ///
-    /// # Gas Considerations
-    /// - Validation checks are optimized for early exit
-    /// - Storage updates are minimized (only lastExecuted)
-    /// - Module execution gas varies by module type
-    /// - Failed executions consume less gas (no token transfers)
-    ///
-    /// # Reentrancy Protection
-    /// - Function has nonReentrant modifier
-    /// - Follows Check-Effects-Interactions pattern
-    /// - State updates before external calls
+    /// Notes:
+    /// - The executor's address (`msg.sender`) is recorded in the {ActionExecuted} event.
+    /// - Module execution failures return `false` instead of reverting.
     ///
     /// Requirements:
-    /// - Token must be configured and enabled
-    /// - amount must be > 0 and >= minBalance
-    /// - PaymentRails must have >= amount token balance
+    /// - Token must be configured and enabled.
+    /// - `amount` must be > 0 and >= `minBalance`.
+    /// - PaymentRails must hold at least `amount` of `token`.
     ///
-    /// Emits:
-    /// - {ActionExecuted} if module execution succeeds
-    ///
-    /// @param token Token address to execute action for
-    /// @param amount Amount to process (must be >= minBalance and <= balance)
-    /// @return success True if module execution succeeded, false otherwise
+    /// @param token Token address to execute the action for.
+    /// @param amount Amount to process.
+    /// @return success True if the module execution succeeded.
     function executeAction(address token, uint256 amount) external returns (bool success);
 
     /// @notice Execute the configured action for a token with dynamic execution data
@@ -314,77 +114,23 @@ interface IPaymentRails {
                             CONSTANT FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Get full configuration for a token
-    /// @dev Returns the complete TokenConfig struct with all parameters
-    ///
-    /// # Purpose
-    /// Allows off-chain tools and contracts to query token configuration without parsing
-    /// events. Useful for:
-    /// - Frontends displaying configuration
-    /// - Keeper bots checking if token is configured
-    /// - Monitoring tools tracking configuration changes
-    /// - Integration contracts validating settings
-    ///
-    /// # Return Value
-    /// TokenConfig struct contains:
-    /// - actionType (string): The action type identifier
-    /// - actionModule (address): The module contract address
-    /// - enabled (bool): Whether execution is allowed
-    /// - minBalance (uint256): Minimum balance threshold
-    /// - moduleParams (bytes): ABI-encoded module parameters
-    ///
-    /// # Unconfigured Tokens
-    /// If token is not configured, returns empty struct:
-    /// - actionType = ""
-    /// - actionModule = address(0)
-    /// - enabled = false
-    /// - All numeric fields = 0
-    ///
-    /// @param token Token address to query
-    /// @return config Complete token configuration struct
+    /// @notice Returns the full configuration for a token.
+    /// @dev Returns a zero-initialized struct if the token is not configured.
+    /// @param token Token address to query.
+    /// @return config Complete token configuration struct.
     function getTokenConfig(address token) external view returns (DataTypes.TokenConfig memory config);
 
-    /// @notice Get current token balance held by the PaymentRails contract
-    /// @dev Convenience function that calls token.balanceOf(address(this))
-    ///
-    /// # Purpose
-    /// Provides easy access to PaymentRails's token balance without requiring callers to:
-    /// - Import IERC20 interface
-    /// - Know PaymentRails contract address
-    /// - Handle potential revert from malicious tokens
-    ///
-    /// # Usage
-    /// Common use cases:
-    /// - Check if balance >= minBalance before execution
-    /// - Monitor PaymentRails holdings for accounting
-    /// - Calculate how much can be executed
-    /// - Verify tokens were received after transfer
-    ///
-    /// Notes:
-    /// - This calls external token contract (may revert)
-    /// - Malicious tokens could return fake balance
-    /// - Assumes token implements ERC20.balanceOf() correctly
-    ///
-    /// @param token Token address to check balance of
-    /// @return balance Current balance of token held by this PaymentRails
+    /// @notice Returns the current token balance held by this PaymentRails contract.
+    /// @param token Token address to check.
+    /// @return balance Current balance of the token.
     function getTokenBalance(address token) external view returns (uint256 balance);
 
-    /// @notice Preview execution outcome for a token action
-    /// @dev Validates all execution requirements and estimates output in a single call
-    /// @dev Follows ERC-4626 preview pattern for consistency with DeFi standards
-    /// @dev Reverts with specific errors if execution would fail (see Errors.sol)
-    /// @dev Returns estimated output and token address on success
+    /// @notice Preview the execution outcome for a token action.
+    /// @dev Validates all requirements and calls {IActionModule.validate} and {IActionModule.estimateOutput}.
+    /// Reverts with specific errors if execution would fail.
     ///
-    /// Reverts:
-    /// - {PaymentRails_ZeroTokenAddress} if token is address(0)
-    /// - {PaymentRails_NoActionConfigured} if no action configured for token
-    /// - {PaymentRails_TokenNotEnabled} if token action is disabled
-    /// - {PaymentRails_InvalidModule} if module is not a deployed contract
-    /// - {PaymentRails_ZeroAmount} if balance is zero
-    /// - {PaymentRails_BelowMinimumBalance} if balance is below minimum threshold
-    ///
-    /// @param token Token address to preview
-    /// @return estimatedOutput Estimated output amount if execution succeeds
-    /// @return outputToken Address of output token
+    /// @param token Token address to preview.
+    /// @return estimatedOutput Estimated output amount.
+    /// @return outputToken Address of the output token.
     function previewExecution(address token) external view returns (uint256 estimatedOutput, address outputToken);
 }

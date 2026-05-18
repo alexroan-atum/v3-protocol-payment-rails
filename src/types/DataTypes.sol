@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.29;
+pragma solidity 0.8.29;
 
 /// @title DataTypes
 /// @notice Centralized type definitions for the Receivables PaymentRails system
 /// @dev This library contains all struct definitions used across PaymentRails, modules, and interfaces
 library DataTypes {
     /*//////////////////////////////////////////////////////////////////////////
-                                    NODE TYPES
+                                PAYMENT RAILS TYPES
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Configuration for a token's action in the PaymentRails

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.29;
+pragma solidity 0.8.29;
 
 import { IActionModule } from "./IActionModule.sol";
 import { DataTypes } from "../types/DataTypes.sol";
