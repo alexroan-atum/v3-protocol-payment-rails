@@ -72,6 +72,21 @@ library Errors {
     /// @param minAmountOut Minimum acceptable output.
     error DexSwapModule_InsufficientOutput(uint256 amountOut, uint256 minAmountOut);
 
+    /// @notice Thrown when a Chainlink price feed returns a non-positive answer.
+    /// @param feed The price feed address that returned invalid data.
+    error DexSwapModule_OraclePriceNonPositive(address feed);
+
+    /// @notice Thrown when a Chainlink price feed's data exceeds the configured max staleness.
+    /// @param feed The stale price feed address.
+    /// @param updatedAt Timestamp of the last feed update.
+    /// @param maxStaleness Owner-configured maximum age in seconds.
+    error DexSwapModule_OraclePriceStale(address feed, uint256 updatedAt, uint256 maxStaleness);
+
+    /// @notice Thrown when the caller's `minAmountOut` is below the oracle-enforced floor.
+    /// @param callerMinAmountOut The caller-supplied minimum output.
+    /// @param oracleFloor The oracle-computed minimum after applying `maxSlippageBps`.
+    error DexSwapModule_SlippageExceedsOracleFloor(uint256 callerMinAmountOut, uint256 oracleFloor);
+
     /*//////////////////////////////////////////////////////////////////////////
                             COWSWAP MODULE ERRORS
     //////////////////////////////////////////////////////////////////////////*/

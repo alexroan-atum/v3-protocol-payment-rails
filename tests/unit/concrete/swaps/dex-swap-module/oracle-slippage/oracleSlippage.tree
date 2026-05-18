@@ -1,0 +1,58 @@
+DexSwapModule_OracleSlippage
+├── given oracle is not configured (feeds are zero addresses)
+│   ├── when execute is called with low minAmountOut
+│   │   └── it should skip oracle check and execute normally
+│   ├── when validate is called
+│   │   └── it should skip oracle check and return valid
+│   └── when estimateOutput is called
+│       └── it should return zero estimate with correct target token
+├── given oracle is partially configured (only one feed set)
+│   ├── when execute is called
+│   │   └── it should skip oracle check and execute normally
+│   └── when maxSlippageBps is zero but feeds are set
+│       └── it should skip oracle check and execute normally
+├── given oracle is fully configured
+│   ├── when sell token price feed returns negative answer
+│   │   ├── it should return failed result in execute with oracle price unavailable
+│   │   └── it should return false in validate with oracle price unavailable
+│   ├── when buy token price feed returns negative answer
+│   │   ├── it should return failed result in execute with oracle price unavailable
+│   │   └── it should return false in validate with oracle price unavailable
+│   ├── when sell token price feed returns zero answer
+│   │   ├── it should return failed result in execute with oracle price unavailable
+│   │   └── it should return false in validate with oracle price unavailable
+│   ├── when sell token price feed is stale
+│   │   ├── it should return failed result in execute with oracle price unavailable
+│   │   └── it should return false in validate with oracle price unavailable
+│   ├── when buy token price feed is stale
+│   │   ├── it should return failed result in execute with oracle price unavailable
+│   │   └── it should return false in validate with oracle price unavailable
+│   ├── when sell token price feed reverts
+│   │   ├── it should return failed result in execute with oracle price unavailable
+│   │   └── it should return false in validate with oracle price unavailable
+│   ├── when buy token price feed reverts
+│   │   ├── it should return failed result in execute with oracle price unavailable
+│   │   └── it should return false in validate with oracle price unavailable
+│   ├── when decimals() call reverts on a feed
+│   │   ├── it should return failed result in execute with oracle price unavailable
+│   │   └── it should return false in validate with oracle price unavailable
+│   ├── when maxSlippageBps exceeds 10000
+│   │   ├── it should return failed result in execute with oracle price unavailable
+│   │   └── it should return false in validate with oracle price unavailable
+│   ├── when minAmountOut is below oracle floor
+│   │   ├── it should revert in execute with SlippageExceedsOracleFloor
+│   │   └── it should return false in validate with slippage below oracle floor
+│   ├── when minAmountOut equals oracle floor exactly
+│   │   └── it should succeed in execute
+│   ├── when minAmountOut is above oracle floor
+│   │   └── it should succeed in execute
+│   ├── when sell and buy tokens have different decimals
+│   │   └── it should correctly normalize output across 6 and 18 decimal tokens
+│   ├── when price feeds have different decimals
+│   │   └── it should correctly normalize using feed decimals
+│   └── when estimateOutput is called with oracle configured
+│       ├── it should return non-zero expected output
+│       └── it should return correct target token
+└── fuzz
+    ├── it should never revert on arbitrary oracle prices and slippage values
+    └── it should enforce floor equals expected times (10000 minus maxSlippageBps) over 10000

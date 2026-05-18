@@ -24,6 +24,10 @@ import { DataTypes } from "../types/DataTypes.sol";
 ///   - **Balance-diff verification**: Output is measured as the PaymentRails's targetToken balance
 ///     change — the module never trusts router return values.
 ///   - **Slippage enforcement**: Reverts if output < `minAmountOut` (atomic rollback).
+///   - **Oracle-enforced slippage floor**: When Chainlink price feeds are configured in the static
+///     params, the module computes a fair-market expected output and rejects any execution where
+///     `minAmountOut < oracleExpected * (10000 - maxSlippageBps) / 10000`. This prevents sandwich
+///     attacks by malicious permissionless executors who set artificially low slippage.
 ///   - **Fee-on-transfer support**: Sell-side pull uses balance-diff to determine actual received amount.
 ///   - **No residual state**: Module holds no tokens between executions.
 ///

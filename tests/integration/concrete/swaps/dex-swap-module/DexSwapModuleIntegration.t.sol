@@ -307,7 +307,7 @@ contract DexSwapModuleIntegrationTest is Test {
 
     /// @dev Token not enabled → PaymentRails reverts.
     function test_ValidationFailure_TokenNotEnabled_Reverts() public {
-        bytes memory params = abi.encode(address(buyToken));
+        bytes memory params = abi.encode(address(buyToken), uint16(0), address(0), address(0), uint256(0));
 
         vm.prank(owner);
         paymentRails.configureToken(address(sellToken), "DEX_SWAP", address(module), MIN_BALANCE, params, false);
@@ -615,7 +615,7 @@ contract DexSwapModuleIntegrationTest is Test {
         _configurePaymentRails(address(sellToken), MIN_BALANCE);
 
         // Disable
-        bytes memory params = abi.encode(address(buyToken));
+        bytes memory params = abi.encode(address(buyToken), uint16(0), address(0), address(0), uint256(0));
         vm.prank(owner);
         paymentRails.configureToken(address(sellToken), "DEX_SWAP", address(module), MIN_BALANCE, params, false);
 
@@ -654,7 +654,7 @@ contract DexSwapModuleIntegrationTest is Test {
         newModule.addRouter(address(newRouter));
 
         // Reconfigure paymentRails to use new module
-        bytes memory params = abi.encode(address(buyToken));
+        bytes memory params = abi.encode(address(buyToken), uint16(0), address(0), address(0), uint256(0));
         vm.prank(owner);
         paymentRails.configureToken(address(sellToken), "DEX_SWAP", address(newModule), MIN_BALANCE, params, true);
 
@@ -680,13 +680,13 @@ contract DexSwapModuleIntegrationTest is Test {
     //////////////////////////////////////////////////////////////////////////*/
 
     function _configurePaymentRails(address token, uint256 minBal) internal {
-        bytes memory params = abi.encode(address(buyToken));
+        bytes memory params = abi.encode(address(buyToken), uint16(0), address(0), address(0), uint256(0));
         vm.prank(owner);
         paymentRails.configureToken(token, "DEX_SWAP", address(module), minBal, params, true);
     }
 
     function _configurePaymentRailsFor(PaymentRails pr, address token, uint256 minBal) internal {
-        bytes memory params = abi.encode(address(buyToken));
+        bytes memory params = abi.encode(address(buyToken), uint16(0), address(0), address(0), uint256(0));
         vm.prank(owner);
         pr.configureToken(token, "DEX_SWAP", address(module), minBal, params, true);
     }
