@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.29;
+pragma solidity 0.8.29;
 
 /// @title DataTypes
 /// @notice Centralized type definitions for the Receivables PaymentRails system
 /// @dev This library contains all struct definitions used across PaymentRails, modules, and interfaces
 library DataTypes {
     /*//////////////////////////////////////////////////////////////////////////
-                                    NODE TYPES
+                                PAYMENT RAILS TYPES
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Configuration for a token's action in the PaymentRails
@@ -64,8 +64,20 @@ library DataTypes {
 
     /// @notice Static configuration for DEX swaps (stored in PaymentRails.moduleParams).
     /// @param targetToken Required output token — module rejects any swap producing a different token.
+    /// @param maxSlippageBps Owner-configured maximum slippage in basis points (e.g., 200 = 2%).
+    ///        Only enforced when both price feeds are non-zero. Set to 0 to disable oracle enforcement.
+    /// @param sellTokenPriceFeed Chainlink AggregatorV3 address for the sell token's USD price.
+    ///        Set to `address(0)` to disable oracle-based slippage enforcement.
+    /// @param buyTokenPriceFeed Chainlink AggregatorV3 address for the buy token's USD price.
+    ///        Set to `address(0)` to disable oracle-based slippage enforcement.
+    /// @param maxStaleness Maximum acceptable age (in seconds) for oracle price data.
+    ///        Reverts if `block.timestamp - updatedAt > maxStaleness`.
     struct DexSwapParams {
         address targetToken;
+        uint16 maxSlippageBps;
+        address sellTokenPriceFeed;
+        address buyTokenPriceFeed;
+        uint256 maxStaleness;
     }
 
     /// @notice Per-execution data for DEX swaps (passed as `executionData`).

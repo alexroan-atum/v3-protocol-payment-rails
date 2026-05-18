@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.29;
+pragma solidity 0.8.29;
 
 /// @title Errors
 /// @notice Centralized error definitions for the Receivables PaymentRails system
 /// @dev All custom errors are defined here for gas efficiency and maintainability
 library Errors {
     /*//////////////////////////////////////////////////////////////////////////
-                                    NODE ERRORS
+                                PAYMENT RAILS ERRORS
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Thrown when attempting to configure a token with zero address
@@ -26,9 +26,6 @@ library Errors {
     /// @notice Thrown when module validation call fails
     /// @dev This occurs when moduleType() call reverts or returns invalid data
     error PaymentRails_ModuleValidationFailed();
-
-    /// @notice Thrown when attempting to execute action on an unconfigured token
-    error PaymentRails_TokenNotConfigured();
 
     /// @notice Thrown when attempting to execute action on a disabled token
     /// @dev Token must have enabled=true in its configuration
@@ -52,38 +49,7 @@ library Errors {
     error PaymentRails_InsufficientBalance(uint256 balance, uint256 amount);
 
     /*//////////////////////////////////////////////////////////////////////////
-                            ACTION MODULE ERRORS
-    //////////////////////////////////////////////////////////////////////////*/
-
-    /// @notice Thrown when module execution fails
-    /// @param module Address of the module that failed
-    /// @param reason Failure reason from the module
-    error Module_ExecutionFailed(address module, string reason);
-
-    /// @notice Thrown when module validation fails
-    /// @param module Address of the module that failed validation
-    /// @param reason Validation failure reason
-    error Module_ValidationFailed(address module, string reason);
-
-    /*//////////////////////////////////////////////////////////////////////////
-                            FORWARD MODULE ERRORS
-    //////////////////////////////////////////////////////////////////////////*/
-
-    /// @notice Thrown when forward recipient is zero address
-    error ForwardModule_ZeroRecipient();
-
-    /// @notice Thrown when forward amount is below module's minimum
-    /// @param amount Attempted forward amount
-    /// @param minAmount Required minimum amount
-    error ForwardModule_BelowMinimumAmount(uint256 amount, uint256 minAmount);
-
-    /// @notice Thrown when token transfer to recipient fails
-    /// @param recipient Recipient address
-    /// @param amount Amount that failed to transfer
-    error ForwardModule_TransferFailed(address recipient, uint256 amount);
-
-    /*//////////////////////////////////////////////////////////////////////////
-                        UNISWAP SWAP MODULE ERRORS
+                            DEX SWAP MODULE ERRORS
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Thrown when a router address is the zero address (addRouter / executionData).
@@ -106,15 +72,27 @@ library Errors {
     /// @param minAmountOut Minimum acceptable output.
     error DexSwapModule_InsufficientOutput(uint256 amountOut, uint256 minAmountOut);
 
+    /// @notice Thrown when a Chainlink price feed returns a non-positive answer.
+    /// @param feed The price feed address that returned invalid data.
+    error DexSwapModule_OraclePriceNonPositive(address feed);
+
+    /// @notice Thrown when a Chainlink price feed's data exceeds the configured max staleness.
+    /// @param feed The stale price feed address.
+    /// @param updatedAt Timestamp of the last feed update.
+    /// @param maxStaleness Owner-configured maximum age in seconds.
+    error DexSwapModule_OraclePriceStale(address feed, uint256 updatedAt, uint256 maxStaleness);
+
+    /// @notice Thrown when the caller's `minAmountOut` is below the oracle-enforced floor.
+    /// @param callerMinAmountOut The caller-supplied minimum output.
+    /// @param oracleFloor The oracle-computed minimum after applying `maxSlippageBps`.
+    error DexSwapModule_SlippageExceedsOracleFloor(uint256 callerMinAmountOut, uint256 oracleFloor);
+
     /*//////////////////////////////////////////////////////////////////////////
                             COWSWAP MODULE ERRORS
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Thrown when the CowSwap GPv2Settlement address is the zero address
     error CowSwapModule_ZeroCowSettlement();
-
-    /// @notice Thrown when order target (buy) token is zero address
-    error CowSwapModule_ZeroTargetToken();
 
     /// @notice Thrown when attempting to act on an orderId that was never created
     /// @param orderId The unknown order digest

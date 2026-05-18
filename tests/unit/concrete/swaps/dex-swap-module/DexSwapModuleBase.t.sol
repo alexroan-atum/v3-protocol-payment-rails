@@ -127,11 +127,11 @@ abstract contract DexSwapModuleBase is Test {
     //////////////////////////////////////////////////////////////////////////*/
 
     function _defaultParams() internal view returns (bytes memory) {
-        return abi.encode(address(buyToken));
+        return abi.encode(address(buyToken), uint16(0), address(0), address(0), uint256(0));
     }
 
     function _buildParams(address targetToken) internal pure returns (bytes memory) {
-        return abi.encode(targetToken);
+        return abi.encode(targetToken, uint16(0), address(0), address(0), uint256(0));
     }
 
     function _defaultExecutionData() internal view returns (bytes memory) {

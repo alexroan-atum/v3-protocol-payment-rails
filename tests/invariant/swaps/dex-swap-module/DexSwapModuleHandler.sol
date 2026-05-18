@@ -128,7 +128,7 @@ contract DexSwapModuleHandler is Test {
         buyToken.mint(address(router), buyAmount);
 
         uint256 minAmountOut = buyAmount;
-        bytes memory params = abi.encode(address(buyToken));
+        bytes memory params = abi.encode(address(buyToken), uint16(0), address(0), address(0), uint256(0));
         bytes memory routerCalldata = abi.encodeWithSelector(
             MockRouter.swap.selector,
             address(sellToken),
@@ -162,7 +162,7 @@ contract DexSwapModuleHandler is Test {
 
         router.setShouldRevert(true);
 
-        bytes memory params = abi.encode(address(buyToken));
+        bytes memory params = abi.encode(address(buyToken), uint16(0), address(0), address(0), uint256(0));
         bytes memory routerCalldata = abi.encodeWithSelector(
             MockRouter.swap.selector, address(sellToken), sellAmount, address(buyToken), address(paymentRails), 1
         );
@@ -249,7 +249,7 @@ contract DexSwapModuleHandler is Test {
     /// validate() requires a real ERC20 (calls balanceOf), so we use known tokens.
     /// estimateOutput, isRouterAllowed, moduleType are tested with arbitrary inputs.
     function handler_callViewFunctions(address arbitraryAddr, uint256 amount) external {
-        bytes memory params = abi.encode(address(buyToken));
+        bytes memory params = abi.encode(address(buyToken), uint16(0), address(0), address(0), uint256(0));
 
         // validate with real sellToken: must never revert
         try module.validate(address(sellToken), amount, params, "") returns (bool, string memory) { }

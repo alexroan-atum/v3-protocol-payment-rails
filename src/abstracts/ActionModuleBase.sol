@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.29;
+pragma solidity 0.8.29;
 
 import { IActionModule } from "../interfaces/IActionModule.sol";
 import { DataTypes } from "../types/DataTypes.sol";
@@ -17,20 +17,18 @@ abstract contract ActionModuleBase is IActionModule {
                                 INTERNAL HELPERS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Checks if the caller has sufficient balance of a token
-    /// @dev Internal helper to validate balance before execution
-    /// @param token The token address to check
-    /// @param amount The required amount
-    /// @return True if caller has sufficient balance, false otherwise
+    /// @notice Checks if the caller has sufficient balance of a token.
+    /// @param token The token address to check.
+    /// @param amount The required amount.
+    /// @return True if caller has sufficient balance, false otherwise.
     function _hasSufficientBalance(address token, uint256 amount) internal view returns (bool) {
         return IERC20(token).balanceOf(msg.sender) >= amount;
     }
 
-    /// @notice Creates a failed ExecutionResult with a reason
-    /// @dev Helper to standardize failure responses
-    /// @param token The token being processed (used as outputToken in failure)
-    /// @param reason The failure reason message
-    /// @return result ExecutionResult with success=false and the provided reason
+    /// @notice Creates a failed ExecutionResult with a reason.
+    /// @param token The token being processed (used as outputToken in failure).
+    /// @param reason The failure reason message.
+    /// @return result ExecutionResult with success=false.
     function _failedResult(
         address token,
         string memory reason
@@ -44,12 +42,11 @@ abstract contract ActionModuleBase is IActionModule {
         });
     }
 
-    /// @notice Creates a successful ExecutionResult
-    /// @dev Helper to standardize success responses
-    /// @param amountOut The amount of output token produced
-    /// @param outputToken The address of the output token
-    /// @param data Additional module-specific data (can be empty)
-    /// @return result ExecutionResult with success=true
+    /// @notice Creates a successful ExecutionResult.
+    /// @param amountOut The amount of output token produced.
+    /// @param outputToken The address of the output token.
+    /// @param data Additional module-specific data.
+    /// @return result ExecutionResult with success=true.
     function _successResult(
         uint256 amountOut,
         address outputToken,
@@ -64,21 +61,19 @@ abstract contract ActionModuleBase is IActionModule {
         });
     }
 
-    /// @notice Validates that an address is not zero
-    /// @dev Common validation helper
-    /// @param addr The address to validate
-    /// @return True if address is not zero, false otherwise
+    /// @notice Validates that an address is not zero.
+    /// @param addr The address to validate.
+    /// @return True if address is not zero, false otherwise.
     function _isValidAddress(address addr) internal pure returns (bool) {
         return addr != address(0);
     }
 
-    /// @notice Safely transfers tokens from caller to recipient
-    /// @dev Uses SafeERC20 to handle non-standard ERC20 implementations
-    /// @param token The token to transfer
-    /// @param from The sender address (typically msg.sender)
-    /// @param to The recipient address
-    /// @param amount The amount to transfer
-    /// @return success True if transfer succeeded, false otherwise
+    /// @notice Safely transfers tokens from caller to recipient.
+    /// @param token The token to transfer.
+    /// @param from The sender address.
+    /// @param to The recipient address.
+    /// @param amount The amount to transfer.
+    /// @return success True if transfer succeeded, false otherwise.
     function _safeTransferFrom(address token, address from, address to, uint256 amount)
         internal
         returns (bool success)
@@ -95,7 +90,6 @@ abstract contract ActionModuleBase is IActionModule {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @inheritdoc IActionModule
-    /// @dev Must be implemented by inheriting contracts
     function execute(
         address token,
         uint256 amount,
@@ -107,7 +101,6 @@ abstract contract ActionModuleBase is IActionModule {
         returns (DataTypes.ExecutionResult memory result);
 
     /// @inheritdoc IActionModule
-    /// @dev Must be implemented by inheriting contracts
     function validate(
         address token,
         uint256 amount,
@@ -120,7 +113,6 @@ abstract contract ActionModuleBase is IActionModule {
         returns (bool isValid, string memory reason);
 
     /// @inheritdoc IActionModule
-    /// @dev Must be implemented by inheriting contracts
     function estimateOutput(
         address token,
         uint256 amount,
@@ -132,7 +124,5 @@ abstract contract ActionModuleBase is IActionModule {
         returns (uint256 estimatedOutput, address outputToken);
 
     /// @inheritdoc IActionModule
-    /// @dev Must be implemented by inheriting contracts - should return module type string
-    /// @dev Examples: "FORWARD", "SWAP", "BRIDGE", "STAKE", etc.
     function moduleType() external pure virtual returns (string memory);
 }

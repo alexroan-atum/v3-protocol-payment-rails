@@ -5,26 +5,26 @@
 [license]: https://opensource.org/licenses/MIT
 [license-badge]: https://img.shields.io/badge/License-MIT-blue.svg
 
-Modular cross-chain token routing rails. The repo ships a single core router contract — `Node` — together with a growing catalogue of pluggable **action modules** that handle the actual on-chain work: forwarding, swapping, bridging, and whatever the ecosystem adds next.
+Modular cross-chain token routing rails. The repo ships a single core router contract — `PaymentRails` — together with a growing catalogue of pluggable **action modules** that handle the actual on-chain work: forwarding, swapping, bridging, and whatever the ecosystem adds next.
 
 ## What this is
 
-- **`Node`** — owner-configurable router. The owner pre-registers a `(token, moduleType, params)` triple per token; anyone can then call `executeAction` to trigger that pre-configured action when the balance crosses a threshold. No arbitrary calldata, no surprise destinations.
-- **Action modules** — small, single-purpose contracts that implement the `IActionModule` interface. Each module is responsible for one side-effect (forward, swap, bridge), validates its own parameters, and is plugged into a `Node` by configuration.
+- **`PaymentRails`** — owner-configurable router. The owner pre-registers a `(token, moduleType, params)` triple per token; anyone can then call `executeAction` to trigger that pre-configured action when the balance crosses a threshold. No arbitrary calldata, no surprise destinations.
+- **Action modules** — small, single-purpose contracts that implement the `IActionModule` interface. Each module is responsible for one side-effect (forward, swap, bridge), validates its own parameters, and is plugged into a `PaymentRails` instance by configuration.
 - **Two-tier module catalogue** — first-party modules (CC owns and audits) live under `src/modules/<category>/`; community modules live under `src/modules/contrib/<category>/` with a different trust model. See [`MODULES.md`](./MODULES.md) and [`src/modules/contrib/README.md`](./src/modules/contrib/README.md).
 
 ## Repo layout
 
 ```
 src/
-  core/         Node — the router
-  abstracts/    NodeState, ActionModuleBase
-  interfaces/   IActionModule, INode, per-module interfaces
+  core/         PaymentRails — the router
+  abstracts/    PaymentRailsState, ActionModuleBase
+  interfaces/   IActionModule, IPaymentRails, per-module interfaces
   libraries/    Errors and shared utilities
   types/        DataTypes
   modules/
     forwards/   ForwardModule
-    swaps/      SwapModule, CowSwapModule
+    swaps/      DexSwapModule, CowSwapModule
     bridges/    CCTPBridgeModule
     contrib/    community modules (different trust model — see README inside)
 tests/          unit, integration, fork, invariant — mirroring src/modules categories
@@ -48,7 +48,7 @@ Add a remapping in `remappings.txt`:
 Import:
 
 ```solidity
-import { Node } from "@credit-cooperative/payment-rails/src/core/Node.sol";
+import { PaymentRails } from "@credit-cooperative/payment-rails/src/core/PaymentRails.sol";
 import { CCTPBridgeModule } from "@credit-cooperative/payment-rails/src/modules/bridges/CCTPBridgeModule.sol";
 ```
 

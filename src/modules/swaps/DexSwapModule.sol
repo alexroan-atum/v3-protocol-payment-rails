@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.29;
+pragma solidity 0.8.29;
 
 import { IDexSwapModule } from "../../interfaces/IDexSwapModule.sol";
 import { IActionModule } from "../../interfaces/IActionModule.sol";
+import { IChainlinkAggregatorV3 } from "../../interfaces/IChainlinkAggregatorV3.sol";
 import { ActionModuleBase } from "../../abstracts/ActionModuleBase.sol";
 import { DataTypes } from "../../types/DataTypes.sol";
 import { Errors } from "../../libraries/Errors.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { Ownable2Step, Ownable } from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 /// @title DexSwapModule
@@ -18,6 +21,12 @@ import { Ownable2Step, Ownable } from "@openzeppelin/contracts/access/Ownable2St
 /// The router sends output tokens directly to the PaymentRails (encoded in `routerCalldata`).
 /// The module verifies the swap by measuring the PaymentRails's targetToken balance before and after
 /// the router call — never trusting router return values.
+///
+/// Oracle-enforced slippage protection: when Chainlink price feeds are configured in the static
+/// params, the module computes a fair-price floor and rejects any execution where the caller's
+/// `minAmountOut` is below `oracleExpected * (10000 - maxSlippageBps) / 10000`. This prevents
+/// sandwich attacks by permissionless executors. When feeds are not configured, the module falls
+/// back to the caller-supplied `minAmountOut` only.
 ///
 /// A single instance may be shared across multiple PaymentRails, since the module holds no persistent
 /// token state. Router whitelist and ownership are module-level (not per-PaymentRails).
@@ -71,9 +80,11 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step {
         override(ActionModuleBase, IActionModule)
         returns (DataTypes.ExecutionResult memory)
     {
-        if (params.length < 32) return _failedResult(token, "Invalid params encoding");
-        if (executionData.length == 0) return _failedResult(token, "Missing execution data");
-        if (amount == 0) return _failedResult(token, "Zero sell amount");
+        {
+            (bool earlyValid, string memory earlyReason) =
+                _validateEarlyChecks(params.length, executionData.length, amount);
+            if (!earlyValid) return _failedResult(token, earlyReason);
+        }
 
         DataTypes.DexSwapParams memory cfg = decodeParams(params);
         DataTypes.DexSwapExecutionData memory exec = decodeExecutionData(executionData);
@@ -81,6 +92,11 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step {
         {
             (bool valid, string memory reason) = _validateInputs(token, amount, cfg, exec);
             if (!valid) return _failedResult(token, reason);
+        }
+
+        {
+            (bool oracleValid, string memory oracleReason) = _checkOracleFloor(token, amount, cfg, exec.minAmountOut);
+            if (!oracleValid) return _failedResult(token, oracleReason);
         }
 
         (bool ok, uint256 actualIn, uint256 amountOut) = _executeSwap(token, amount, cfg.targetToken, exec);
@@ -113,17 +129,23 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step {
         override(ActionModuleBase, IActionModule)
         returns (bool isValid, string memory reason)
     {
-        if (params.length < 32) return (false, "Invalid params encoding");
+        if (params.length < 160) return (false, "Invalid params encoding");
 
         DataTypes.DexSwapParams memory cfg = decodeParams(params);
 
-        if (cfg.targetToken == address(0)) return (false, "Zero target token");
-        if (cfg.targetToken == token) return (false, "Same input and output token");
-        if (amount == 0) return (false, "Zero sell amount");
+        {
+            (bool staticValid, string memory staticReason) = _validateStaticParams(token, amount, cfg);
+            if (!staticValid) return (false, staticReason);
+        }
 
         if (executionData.length > 0) {
             (bool execValid, string memory execReason) = _validateExecutionData(executionData);
             if (!execValid) return (false, execReason);
+
+            DataTypes.DexSwapExecutionData memory exec = decodeExecutionData(executionData);
+            (bool oracleValid, string memory oracleReason) =
+                _checkOracleFloorValidate(token, amount, cfg, exec.minAmountOut);
+            if (!oracleValid) return (false, oracleReason);
         }
 
         if (!_hasSufficientBalance(token, amount)) return (false, "Insufficient balance");
@@ -133,16 +155,20 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step {
 
     /// @inheritdoc IActionModule
     function estimateOutput(
-        address,
-        uint256,
+        address token,
+        uint256 amount,
         bytes calldata params
     )
         external
-        pure
+        view
         override(ActionModuleBase, IActionModule)
         returns (uint256 estimatedOutput, address outputToken)
     {
         DataTypes.DexSwapParams memory cfg = decodeParams(params);
+        if (_hasOracleConfig(cfg)) {
+            (bool oracleOk, uint256 expected) = _computeExpectedOutput(token, amount, cfg);
+            if (oracleOk) return (expected, cfg.targetToken);
+        }
         return (0, cfg.targetToken);
     }
 
@@ -158,12 +184,24 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step {
 
     /// @inheritdoc IDexSwapModule
     function encodeParams(DataTypes.DexSwapParams calldata params) external pure returns (bytes memory encoded) {
-        return abi.encode(params.targetToken);
+        return abi.encode(
+            params.targetToken,
+            params.maxSlippageBps,
+            params.sellTokenPriceFeed,
+            params.buyTokenPriceFeed,
+            params.maxStaleness
+        );
     }
 
     /// @inheritdoc IDexSwapModule
     function decodeParams(bytes calldata encoded) public pure returns (DataTypes.DexSwapParams memory params) {
-        (params.targetToken) = abi.decode(encoded, (address));
+        (
+            params.targetToken,
+            params.maxSlippageBps,
+            params.sellTokenPriceFeed,
+            params.buyTokenPriceFeed,
+            params.maxStaleness
+        ) = abi.decode(encoded, (address, uint16, address, address, uint256));
     }
 
     /// @inheritdoc IDexSwapModule
@@ -188,6 +226,189 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step {
     /*//////////////////////////////////////////////////////////////////////////
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
+
+    /// @dev Validates static config params (target token and amount) for validate().
+    function _validateStaticParams(
+        address token,
+        uint256 amount,
+        DataTypes.DexSwapParams memory cfg
+    )
+        private
+        pure
+        returns (bool, string memory)
+    {
+        if (cfg.targetToken == address(0)) return (false, "Zero target token");
+        if (cfg.targetToken == token) return (false, "Same input and output token");
+        if (amount == 0) return (false, "Zero sell amount");
+        return (true, "");
+    }
+
+    /// @dev Consolidates the three early-exit checks for execute() to reduce cyclomatic complexity.
+    function _validateEarlyChecks(
+        uint256 paramsLength,
+        uint256 executionDataLength,
+        uint256 amount
+    )
+        private
+        pure
+        returns (bool, string memory)
+    {
+        if (paramsLength < 160) return (false, "Invalid params encoding");
+        if (executionDataLength == 0) return (false, "Missing execution data");
+        if (amount == 0) return (false, "Zero sell amount");
+        return (true, "");
+    }
+
+    /// @dev Returns true if oracle-based slippage enforcement is fully configured.
+    function _hasOracleConfig(DataTypes.DexSwapParams memory cfg) private pure returns (bool) {
+        return cfg.maxSlippageBps > 0 && cfg.sellTokenPriceFeed != address(0) && cfg.buyTokenPriceFeed != address(0);
+    }
+
+    /// @dev Validates minAmountOut against the oracle-derived floor. Reverts if below floor,
+    /// returns soft failure if oracle is unavailable, and passes through if oracle is not configured.
+    function _checkOracleFloor(
+        address token,
+        uint256 amount,
+        DataTypes.DexSwapParams memory cfg,
+        uint256 minAmountOut
+    )
+        private
+        view
+        returns (bool valid, string memory reason)
+    {
+        if (!_hasOracleConfig(cfg)) return (true, "");
+
+        (bool oracleOk, uint256 oracleFloor) = _computeOracleFloor(token, amount, cfg);
+        if (!oracleOk) return (false, "Oracle price unavailable");
+        if (minAmountOut < oracleFloor) {
+            revert Errors.DexSwapModule_SlippageExceedsOracleFloor(minAmountOut, oracleFloor);
+        }
+        return (true, "");
+    }
+
+    /// @dev Same as _checkOracleFloor but returns (false, reason) instead of reverting,
+    /// suitable for the view-only validate() path.
+    function _checkOracleFloorValidate(
+        address token,
+        uint256 amount,
+        DataTypes.DexSwapParams memory cfg,
+        uint256 minAmountOut
+    )
+        private
+        view
+        returns (bool valid, string memory reason)
+    {
+        if (!_hasOracleConfig(cfg)) return (true, "");
+
+        (bool oracleOk, uint256 oracleFloor) = _computeOracleFloor(token, amount, cfg);
+        if (!oracleOk) return (false, "Oracle price unavailable");
+        if (minAmountOut < oracleFloor) return (false, "Slippage below oracle floor");
+        return (true, "");
+    }
+
+    /// @dev Reads a Chainlink price feed and validates freshness, positivity, and magnitude.
+    /// The uint128 upper bound prevents overflow in downstream mulDiv computations and is
+    /// well above any realistic Chainlink price (aggregators use int192, and no asset price
+    /// requires more than ~40 decimal digits).
+    function _getOraclePrice(
+        address feed,
+        uint256 maxStaleness
+    )
+        private
+        view
+        returns (bool ok, uint256 price, uint8 feedDecimals)
+    {
+        try IChainlinkAggregatorV3(feed).latestRoundData() returns (
+            uint80, int256 answer, uint256, uint256 updatedAt, uint80
+        ) {
+            if (answer <= 0) return (false, 0, 0);
+            if (uint256(answer) > type(uint128).max) return (false, 0, 0);
+            if (block.timestamp - updatedAt > maxStaleness) return (false, 0, 0);
+            try IChainlinkAggregatorV3(feed).decimals() returns (uint8 dec) {
+                return (true, uint256(answer), dec);
+            } catch {
+                return (false, 0, 0);
+            }
+        } catch {
+            return (false, 0, 0);
+        }
+    }
+
+    /// @dev Computes the oracle-expected output using Chainlink prices and token decimals.
+    /// Formula: expectedOutput = amount * sellPrice / buyPrice, adjusted for decimal differences.
+    /// Uses Math.mulDiv for overflow-safe 512-bit intermediate arithmetic.
+    function _computeExpectedOutput(
+        address token,
+        uint256 amount,
+        DataTypes.DexSwapParams memory cfg
+    )
+        private
+        view
+        returns (bool ok, uint256 expectedOutput)
+    {
+        uint256 sellPrice;
+        uint256 buyPrice;
+        uint256 sellExp;
+        uint256 buyExp;
+
+        {
+            uint8 sellFeedDec;
+            uint8 buyFeedDec;
+            bool oracleOk;
+            (oracleOk, sellPrice, sellFeedDec) = _getOraclePrice(cfg.sellTokenPriceFeed, cfg.maxStaleness);
+            if (!oracleOk) return (false, 0);
+            (oracleOk, buyPrice, buyFeedDec) = _getOraclePrice(cfg.buyTokenPriceFeed, cfg.maxStaleness);
+            if (!oracleOk) return (false, 0);
+
+            (bool sellDecOk, uint8 sellTokenDec) = _getTokenDecimals(token);
+            if (!sellDecOk) return (false, 0);
+            (bool buyDecOk, uint8 buyTokenDec) = _getTokenDecimals(cfg.targetToken);
+            if (!buyDecOk) return (false, 0);
+
+            sellExp = uint256(sellTokenDec) + uint256(sellFeedDec);
+            buyExp = uint256(buyTokenDec) + uint256(buyFeedDec);
+        }
+
+        if (buyExp >= sellExp) {
+            uint256 scale = 10 ** (buyExp - sellExp);
+            if (sellPrice > type(uint256).max / scale) return (false, 0);
+            expectedOutput = Math.mulDiv(amount, sellPrice * scale, buyPrice);
+        } else {
+            uint256 scale = 10 ** (sellExp - buyExp);
+            if (buyPrice > type(uint256).max / scale) return (false, 0);
+            expectedOutput = Math.mulDiv(amount, sellPrice, buyPrice * scale);
+        }
+
+        return (true, expectedOutput);
+    }
+
+    /// @dev Applies maxSlippageBps to the oracle-expected output to get the minimum floor.
+    function _computeOracleFloor(
+        address token,
+        uint256 amount,
+        DataTypes.DexSwapParams memory cfg
+    )
+        private
+        view
+        returns (bool ok, uint256 floor)
+    {
+        if (cfg.maxSlippageBps > 10_000) return (false, 0);
+
+        (bool oracleOk, uint256 expected) = _computeExpectedOutput(token, amount, cfg);
+        if (!oracleOk) return (false, 0);
+
+        floor = Math.mulDiv(expected, 10_000 - uint256(cfg.maxSlippageBps), 10_000);
+        return (true, floor);
+    }
+
+    /// @dev Safe wrapper for IERC20Metadata.decimals().
+    function _getTokenDecimals(address token) private view returns (bool ok, uint8 tokenDecimals) {
+        try IERC20Metadata(token).decimals() returns (uint8 dec) {
+            return (true, dec);
+        } catch {
+            return (false, 0);
+        }
+    }
 
     /// @dev Validates decoded execution data fields.
     function _validateExecutionData(bytes calldata executionData) private view returns (bool, string memory) {

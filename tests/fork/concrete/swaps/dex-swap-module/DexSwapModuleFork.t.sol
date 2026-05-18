@@ -5,6 +5,8 @@ import { Test, console2 } from "forge-std/src/Test.sol";
 import { DexSwapModule } from "../../../../../src/modules/swaps/DexSwapModule.sol";
 import { PaymentRails } from "../../../../../src/core/PaymentRails.sol";
 import { DataTypes } from "../../../../../src/types/DataTypes.sol";
+import { Errors } from "../../../../../src/libraries/Errors.sol";
+import { IChainlinkAggregatorV3 } from "../../../../../src/interfaces/IChainlinkAggregatorV3.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @dev Minimal interface for Uniswap V3 SwapRouter `exactInputSingle`.
@@ -60,6 +62,12 @@ abstract contract DexSwapModuleForkBase is Test {
     address internal constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     address internal constant DAI = 0x6B175474E89094C44Da98b954EedeAC495271d0F;
 
+    address internal constant ETH_USD_FEED = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419;
+    address internal constant USDC_USD_FEED = 0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6;
+    address internal constant DAI_USD_FEED = 0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9;
+
+    uint256 internal constant ORACLE_MAX_STALENESS = 86_400; // 24 hours (matches Chainlink stablecoin heartbeat)
+
     uint256 internal constant WETH_SELL_AMOUNT = 1 ether;
     uint256 internal constant USDC_SELL_AMOUNT = 2000e6;
     uint256 internal constant DAI_SELL_AMOUNT = 2000e18;
@@ -105,7 +113,36 @@ abstract contract DexSwapModuleForkBase is Test {
     //////////////////////////////////////////////////////////////////////////*/
 
     function _buildSwapParams(address targetToken) internal view returns (bytes memory) {
-        return module.encodeParams(DataTypes.DexSwapParams({ targetToken: targetToken }));
+        return module.encodeParams(
+            DataTypes.DexSwapParams({
+                targetToken: targetToken,
+                maxSlippageBps: 0,
+                sellTokenPriceFeed: address(0),
+                buyTokenPriceFeed: address(0),
+                maxStaleness: 0
+            })
+        );
+    }
+
+    function _buildOracleSwapParams(
+        address targetToken,
+        uint16 maxSlippageBps,
+        address sellTokenPriceFeed,
+        address buyTokenPriceFeed
+    )
+        internal
+        view
+        returns (bytes memory)
+    {
+        return module.encodeParams(
+            DataTypes.DexSwapParams({
+                targetToken: targetToken,
+                maxSlippageBps: maxSlippageBps,
+                sellTokenPriceFeed: sellTokenPriceFeed,
+                buyTokenPriceFeed: buyTokenPriceFeed,
+                maxStaleness: ORACLE_MAX_STALENESS
+            })
+        );
     }
 
     function _buildUniswapCalldata(
@@ -541,5 +578,312 @@ contract DexSwapModuleForkLifecycleTest is DexSwapModuleForkBase {
         console2.log("========================================");
         console2.log("  ALL SIMULATIONS PASSED");
         console2.log("========================================");
+    }
+}
+
+/*//////////////////////////////////////////////////////////////////////////
+            ORACLE SLIPPAGE: MAINNET CHAINLINK FEED TESTS
+//////////////////////////////////////////////////////////////////////////*/
+
+/// @notice Validates oracle slippage enforcement against real Chainlink feeds on Ethereum mainnet.
+/// @dev Uses ETH/USD, USDC/USD, and DAI/USD feeds at block 21_900_000.
+contract DexSwapModuleForkOracleSlippageTest is DexSwapModuleForkBase {
+    function test_Oracle_FeedsAreResponding() external view {
+        (, int256 ethPrice,,,) = IChainlinkAggregatorV3(ETH_USD_FEED).latestRoundData();
+        (, int256 usdcPrice,,,) = IChainlinkAggregatorV3(USDC_USD_FEED).latestRoundData();
+        (, int256 daiPrice,,,) = IChainlinkAggregatorV3(DAI_USD_FEED).latestRoundData();
+
+        assertGt(ethPrice, 0, "ETH/USD feed should return positive price");
+        assertGt(usdcPrice, 0, "USDC/USD feed should return positive price");
+        assertGt(daiPrice, 0, "DAI/USD feed should return positive price");
+
+        assertEq(IChainlinkAggregatorV3(ETH_USD_FEED).decimals(), 8, "ETH/USD should be 8 decimals");
+        assertEq(IChainlinkAggregatorV3(USDC_USD_FEED).decimals(), 8, "USDC/USD should be 8 decimals");
+        assertEq(IChainlinkAggregatorV3(DAI_USD_FEED).decimals(), 8, "DAI/USD should be 8 decimals");
+
+        console2.log("ETH/USD price:", uint256(ethPrice));
+        console2.log("USDC/USD price:", uint256(usdcPrice));
+        console2.log("DAI/USD price:", uint256(daiPrice));
+    }
+
+    function test_Oracle_EstimateOutput_WethToUsdc_RealisticPrice() external view {
+        bytes memory params = _buildOracleSwapParams(USDC, 100, ETH_USD_FEED, USDC_USD_FEED);
+
+        (uint256 estimated, address outputToken) = module.estimateOutput(WETH, WETH_SELL_AMOUNT, params);
+
+        assertEq(outputToken, USDC, "Output token should be USDC");
+        assertGt(estimated, 1000e6, "1 ETH should be worth > $1000 USDC");
+        assertLt(estimated, 10_000e6, "1 ETH should be worth < $10000 USDC");
+
+        console2.log("Oracle estimated output for 1 WETH -> USDC:", estimated / 1e6, "USDC");
+    }
+
+    function test_Oracle_EstimateOutput_UsdcToWeth_RealisticPrice() external view {
+        bytes memory params = _buildOracleSwapParams(WETH, 100, USDC_USD_FEED, ETH_USD_FEED);
+
+        (uint256 estimated, address outputToken) = module.estimateOutput(USDC, USDC_SELL_AMOUNT, params);
+
+        assertEq(outputToken, WETH, "Output token should be WETH");
+        assertGt(estimated, 0.1 ether, "2000 USDC should be worth > 0.1 ETH");
+        assertLt(estimated, 5 ether, "2000 USDC should be worth < 5 ETH");
+
+        console2.log("Oracle estimated output for 2000 USDC -> WETH (wei):", estimated);
+    }
+
+    function test_Oracle_EstimateOutput_DaiToUsdc_NearParity() external view {
+        bytes memory params = _buildOracleSwapParams(USDC, 100, DAI_USD_FEED, USDC_USD_FEED);
+
+        (uint256 estimated, address outputToken) = module.estimateOutput(DAI, DAI_SELL_AMOUNT, params);
+
+        assertEq(outputToken, USDC);
+        // DAI and USDC are both ~$1, so 2000 DAI ≈ 2000 USDC
+        assertGt(estimated, 1900e6, "2000 DAI should yield > 1900 USDC estimate");
+        assertLt(estimated, 2100e6, "2000 DAI should yield < 2100 USDC estimate");
+
+        console2.log("Oracle estimated output for 2000 DAI -> USDC:", estimated / 1e6, "USDC");
+    }
+
+    function test_Oracle_Validate_WethToUsdc_ReasonableSlippage_Passes() external {
+        bytes memory params = _buildOracleSwapParams(USDC, 100, ETH_USD_FEED, USDC_USD_FEED);
+
+        (uint256 estimated,) = module.estimateOutput(WETH, WETH_SELL_AMOUNT, params);
+        uint256 oracleFloor = estimated * 9900 / 10_000;
+
+        bytes memory routerCalldata =
+            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, 1);
+        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, oracleFloor, routerCalldata);
+
+        vm.prank(address(paymentRails));
+        (bool isValid, string memory reason) = module.validate(WETH, WETH_SELL_AMOUNT, params, executionData);
+
+        assertTrue(isValid, string.concat("Should validate with floor-level slippage, got: ", reason));
+    }
+
+    function test_Oracle_Validate_WethToUsdc_ExcessiveSlippage_Fails() external view {
+        bytes memory params = _buildOracleSwapParams(USDC, 100, ETH_USD_FEED, USDC_USD_FEED);
+
+        (uint256 estimated,) = module.estimateOutput(WETH, WETH_SELL_AMOUNT, params);
+        uint256 oracleFloor = estimated * 9900 / 10_000;
+
+        bytes memory routerCalldata =
+            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, 1);
+        // Set minAmountOut to 1 (attacker-level slippage)
+        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, 1, routerCalldata);
+
+        (bool isValid, string memory reason) = module.validate(WETH, WETH_SELL_AMOUNT, params, executionData);
+
+        assertFalse(isValid, "Should reject minAmountOut=1 with oracle configured");
+        assertEq(reason, "Slippage below oracle floor");
+
+        console2.log("Oracle floor for 1 WETH -> USDC:", oracleFloor / 1e6, "USDC");
+        console2.log("Attacker minAmountOut: 1 wei USDC - REJECTED");
+    }
+}
+
+/*//////////////////////////////////////////////////////////////////////////
+        ORACLE SLIPPAGE: MAINNET SWAP WITH ORACLE ENFORCEMENT
+//////////////////////////////////////////////////////////////////////////*/
+
+/// @notice End-to-end swap execution with oracle slippage protection on mainnet.
+contract DexSwapModuleForkOracleSwapTest is DexSwapModuleForkBase {
+    function test_Oracle_WethToUsdc_SwapSucceeds_WithOracleProtection() external {
+        // Configure with 1% slippage tolerance
+        bytes memory params = _buildOracleSwapParams(USDC, 100, ETH_USD_FEED, USDC_USD_FEED);
+
+        (uint256 estimated,) = module.estimateOutput(WETH, WETH_SELL_AMOUNT, params);
+        uint256 oracleFloor = estimated * 9900 / 10_000;
+
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, params, true);
+
+        bytes memory routerCalldata =
+            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, oracleFloor);
+        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, oracleFloor, routerCalldata);
+
+        uint256 usdcBefore = IERC20(USDC).balanceOf(address(paymentRails));
+
+        bool success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT, executionData);
+        assertTrue(success, "Oracle-protected swap should succeed");
+
+        uint256 usdcReceived = IERC20(USDC).balanceOf(address(paymentRails)) - usdcBefore;
+        assertGe(usdcReceived, oracleFloor, "Should receive at least the oracle floor");
+
+        console2.log("=== Oracle-Protected WETH -> USDC Swap ===");
+        console2.log("Oracle estimate:", estimated / 1e6, "USDC");
+        console2.log("Oracle floor (1% slippage):", oracleFloor / 1e6, "USDC");
+        console2.log("Actual received:", usdcReceived / 1e6, "USDC");
+        console2.log("PASSED");
+    }
+
+    function test_Oracle_WethToUsdc_SandwichAttack_BlockedByOracle() external {
+        bytes memory params = _buildOracleSwapParams(USDC, 100, ETH_USD_FEED, USDC_USD_FEED);
+
+        (uint256 estimated,) = module.estimateOutput(WETH, WETH_SELL_AMOUNT, params);
+        uint256 oracleFloor = estimated * 9900 / 10_000;
+
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, params, true);
+
+        // Attacker calls executeAction with minAmountOut = 1 (sandwich enabler)
+        bytes memory routerCalldata =
+            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, 1);
+        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, 1, routerCalldata);
+
+        // PaymentRails.executeAction catches the revert and returns false
+        bool success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT, executionData);
+        assertFalse(success, "Sandwich attack should be blocked by oracle floor");
+
+        // Verify no tokens were lost
+        assertEq(
+            IERC20(WETH).balanceOf(address(paymentRails)), WETH_SELL_AMOUNT * 10, "PaymentRails should retain all WETH"
+        );
+
+        console2.log("=== Sandwich Attack Blocked ===");
+        console2.log("Oracle floor:", oracleFloor / 1e6, "USDC");
+        console2.log("Attacker minAmountOut: 1 wei - BLOCKED");
+    }
+
+    function test_Oracle_DaiToUsdc_SwapSucceeds_WithOracleProtection() external {
+        bytes memory params = _buildOracleSwapParams(USDC, 50, DAI_USD_FEED, USDC_USD_FEED);
+
+        (uint256 estimated,) = module.estimateOutput(DAI, DAI_SELL_AMOUNT, params);
+        uint256 oracleFloor = estimated * 9950 / 10_000; // 0.5% slippage
+
+        vm.prank(owner);
+        paymentRails.configureToken(DAI, "SWAP", address(module), DAI_SELL_AMOUNT, params, true);
+
+        bytes memory routerCalldata =
+            _buildUniswapCalldata(DAI, USDC, FEE_LOW, address(paymentRails), DAI_SELL_AMOUNT, oracleFloor);
+        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, oracleFloor, routerCalldata);
+
+        uint256 usdcBefore = IERC20(USDC).balanceOf(address(paymentRails));
+
+        bool success = paymentRails.executeAction(DAI, DAI_SELL_AMOUNT, executionData);
+        assertTrue(success, "DAI->USDC oracle-protected swap should succeed");
+
+        uint256 usdcReceived = IERC20(USDC).balanceOf(address(paymentRails)) - usdcBefore;
+        assertGe(usdcReceived, oracleFloor, "Should receive at least oracle floor");
+
+        console2.log("=== Oracle-Protected DAI -> USDC Swap ===");
+        console2.log("Oracle estimate:", estimated / 1e6, "USDC");
+        console2.log("Oracle floor (0.5% slippage):", oracleFloor / 1e6, "USDC");
+        console2.log("Actual received:", usdcReceived / 1e6, "USDC");
+        console2.log("PASSED");
+    }
+
+    function test_Oracle_WethToUsdc_DirectModuleCall_WithOracle() external {
+        bytes memory params = _buildOracleSwapParams(USDC, 100, ETH_USD_FEED, USDC_USD_FEED);
+
+        (uint256 estimated,) = module.estimateOutput(WETH, WETH_SELL_AMOUNT, params);
+        uint256 oracleFloor = estimated * 9900 / 10_000;
+
+        bytes memory routerCalldata =
+            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, oracleFloor);
+        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, oracleFloor, routerCalldata);
+
+        vm.startPrank(address(paymentRails));
+        IERC20(WETH).approve(address(module), WETH_SELL_AMOUNT);
+        DataTypes.ExecutionResult memory result = module.execute(WETH, WETH_SELL_AMOUNT, params, executionData);
+        vm.stopPrank();
+
+        assertTrue(result.success, "Direct module call with oracle should succeed");
+        assertGe(result.amountOut, oracleFloor, "amountOut should be >= oracle floor");
+        assertEq(result.outputToken, USDC);
+    }
+
+    function test_Oracle_WethToUsdc_DirectModuleCall_SandwichReverts() external {
+        bytes memory params = _buildOracleSwapParams(USDC, 100, ETH_USD_FEED, USDC_USD_FEED);
+
+        (uint256 estimated,) = module.estimateOutput(WETH, WETH_SELL_AMOUNT, params);
+        uint256 oracleFloor = estimated * 9900 / 10_000;
+
+        bytes memory routerCalldata =
+            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, 1);
+        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, 1, routerCalldata);
+
+        vm.startPrank(address(paymentRails));
+        IERC20(WETH).approve(address(module), WETH_SELL_AMOUNT);
+        vm.expectRevert(
+            abi.encodeWithSelector(Errors.DexSwapModule_SlippageExceedsOracleFloor.selector, 1, oracleFloor)
+        );
+        module.execute(WETH, WETH_SELL_AMOUNT, params, executionData);
+        vm.stopPrank();
+    }
+}
+
+/*//////////////////////////////////////////////////////////////////////////
+        ORACLE SLIPPAGE: FULL LIFECYCLE WITH ORACLE
+//////////////////////////////////////////////////////////////////////////*/
+
+contract DexSwapModuleForkOracleLifecycleTest is DexSwapModuleForkBase {
+    function test_Lifecycle_OracleProtectedSwaps() external {
+        console2.log("=============================================");
+        console2.log("  Oracle-Protected Lifecycle Simulation");
+        console2.log("=============================================");
+        console2.log("");
+
+        // Step 1: Read oracle prices
+        (, int256 ethPrice,,,) = IChainlinkAggregatorV3(ETH_USD_FEED).latestRoundData();
+        (, int256 usdcPrice,,,) = IChainlinkAggregatorV3(USDC_USD_FEED).latestRoundData();
+        console2.log("[1] ETH/USD:", uint256(ethPrice) / 1e8, "USD");
+        console2.log("[1] USDC/USD:", uint256(usdcPrice) / 1e8, "USD");
+        console2.log("");
+
+        // Step 2: Configure WETH→USDC with oracle protection (1% slippage)
+        bytes memory params = _buildOracleSwapParams(USDC, 100, ETH_USD_FEED, USDC_USD_FEED);
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, params, true);
+
+        // Step 3: Get oracle estimate
+        (uint256 estimated,) = module.estimateOutput(WETH, WETH_SELL_AMOUNT, params);
+        uint256 oracleFloor = estimated * 9900 / 10_000;
+        console2.log("[2] Oracle estimate for 1 WETH:", estimated / 1e6, "USDC");
+        console2.log("[2] Oracle floor (1%):", oracleFloor / 1e6, "USDC");
+        console2.log("");
+
+        // Step 4: Validate before executing
+        bytes memory routerCalldata =
+            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, oracleFloor);
+        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, oracleFloor, routerCalldata);
+
+        vm.prank(address(paymentRails));
+        (bool isValid,) = module.validate(WETH, WETH_SELL_AMOUNT, params, executionData);
+        assertTrue(isValid, "Pre-execution validation should pass");
+        console2.log("[3] Pre-execution validation: PASSED");
+        console2.log("");
+
+        // Step 5: Execute the swap
+        uint256 usdcBefore = IERC20(USDC).balanceOf(address(paymentRails));
+        bool success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT, executionData);
+        assertTrue(success, "Oracle-protected swap should succeed");
+
+        uint256 usdcReceived = IERC20(USDC).balanceOf(address(paymentRails)) - usdcBefore;
+        console2.log("[4] Swap executed:");
+        console2.log("    USDC received:", usdcReceived / 1e6, "USDC");
+        console2.log("    Above oracle floor:", usdcReceived >= oracleFloor ? "YES" : "NO");
+        console2.log("");
+
+        // Step 6: Verify no residual state
+        assertEq(IERC20(WETH).balanceOf(address(module)), 0, "No residual WETH");
+        assertEq(IERC20(USDC).balanceOf(address(module)), 0, "No residual USDC");
+        console2.log("[5] Module residual state: CLEAN");
+        console2.log("");
+
+        // Step 7: Verify oracle floor was respected
+        assertGe(usdcReceived, oracleFloor, "Received should be >= oracle floor");
+
+        // Step 8: Show that sandwich attempt would fail
+        bytes memory sandwichCalldata =
+            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, 1);
+        bytes memory sandwichExecData = _buildExecutionData(UNISWAP_V3_ROUTER, 1, sandwichCalldata);
+
+        bool sandwichSuccess = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT, sandwichExecData);
+        assertFalse(sandwichSuccess, "Sandwich attempt should be blocked");
+        console2.log("[6] Sandwich attack with minAmountOut=1: BLOCKED");
+
+        console2.log("");
+        console2.log("=============================================");
+        console2.log("  ORACLE LIFECYCLE SIMULATION PASSED");
+        console2.log("=============================================");
     }
 }
