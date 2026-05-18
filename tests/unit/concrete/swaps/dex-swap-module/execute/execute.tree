@@ -1,0 +1,53 @@
+DexSwapModule_Execute
+├── when params are too short
+│   ├── it should return failed result with invalid params encoding
+│   └── it should not transfer any tokens
+├── when execution data is empty
+│   ├── it should return failed result with missing execution data
+│   └── it should not transfer any tokens
+├── when amount is zero
+│   └── it should return failed result with zero sell amount
+├── when target token is zero address
+│   └── it should return failed result with zero target token
+├── when target token equals sell token
+│   └── it should return failed result with same input and output token
+├── when router is not whitelisted
+│   └── it should return failed result with router not allowed
+├── when min amount out is zero
+│   └── it should return failed result with zero min amount out
+├── when deadline has expired
+│   └── it should return failed result with deadline expired
+├── when caller has insufficient balance
+│   └── it should return failed result with insufficient balance
+├── when router call reverts
+│   ├── it should return failed result with router call failed
+│   ├── it should return all sell tokens to caller via leftover
+│   └── it should leave module with zero sell token balance
+├── when router call succeeds but output is below minimum
+│   ├── it should revert with DexSwapModule_InsufficientOutput
+│   └── it should not transfer sell tokens (atomic rollback)
+├── when router steals sell tokens but sends no buy tokens
+│   └── it should revert with DexSwapModule_InsufficientOutput (atomic rollback)
+├── when router does nothing (noop)
+│   └── it should revert with DexSwapModule_InsufficientOutput
+├── when fee-on-transfer sell token
+│   ├── it should use balance-diff for actual received amount
+│   ├── it should approve router for actual received (not requested) amount
+│   └── it should return leftover correctly
+├── when router partially consumes sell token
+│   ├── it should succeed if output meets minimum
+│   └── it should return unconsumed sell tokens to caller
+├── when all validations pass
+│   ├── it should transfer sell tokens from caller to module then to router
+│   ├── it should increase caller buy token balance by amountOut
+│   ├── it should return success true
+│   ├── it should return correct amountOut
+│   ├── it should return outputToken equal to target token
+│   ├── it should return encoded router in data field
+│   ├── it should emit SwapExecuted with correct params
+│   ├── it should leave module with zero sell token balance
+│   ├── it should leave module with zero buy token balance
+│   ├── it should revoke router approval after swap
+│   └── it should not hold any residual state between swaps
+└── fuzz
+    └── it should handle any valid sell amount and buy amount

@@ -1,0 +1,5 @@
+DexSwapModule_EstimateOutput
+├── it should return zero as estimated output
+├── it should return target token as output token
+├── it should ignore sell amount
+└── it should ignore sell token address

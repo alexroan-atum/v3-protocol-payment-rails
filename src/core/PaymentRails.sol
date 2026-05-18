@@ -23,8 +23,9 @@ import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 /// - Uses SafeERC20 for safe token transfers
 ///
 /// # Key Features
-/// - **Modular Design**: Delegates actions to separate module contracts (ForwardModule, DexAggregatorModule,
-/// BridgeModule) - **Permissionless Execution**: Anyone can trigger pre-configured actions via executeAction()
+/// - **Modular Design**: Delegates actions to separate module contracts (ForwardModule, DexSwapModule,
+/// CowSwapModule, CCTPBridgeModule)
+/// - **Permissionless Execution**: Anyone can trigger pre-configured actions via executeAction()
 /// - **Owner-Only Configuration**: Only owner can call configureToken() to set destinations and parameters
 /// - **String-Based Action Types**: Supports unlimited module types without interface changes
 /// - **Cooldown Mechanism**: Prevents spam and encourages batching with per-token cooldown periods

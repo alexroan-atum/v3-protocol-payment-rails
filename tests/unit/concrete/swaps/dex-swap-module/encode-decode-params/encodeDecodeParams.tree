@@ -1,0 +1,9 @@
+DexSwapModule_EncodeDecodeParams
+├── given valid target token
+│   └── it should round-trip correctly
+├── given zero address target token
+│   └── it should round-trip correctly
+├── given max address target token
+│   └── it should round-trip correctly
+└── fuzz
+    └── it should round-trip any address correctly

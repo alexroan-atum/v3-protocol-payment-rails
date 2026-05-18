@@ -1,0 +1,13 @@
+DexSwapModule_AddRouter
+├── when caller is not owner
+│   └── it should revert with OwnableUnauthorizedAccount
+├── when router is zero address
+│   └── it should revert with DexSwapModule_ZeroRouter
+├── when router has no deployed code
+│   └── it should revert with DexSwapModule_RouterNotContract
+├── when router is already whitelisted
+│   └── it should revert with DexSwapModule_RouterAlreadyAdded
+└── when all validations pass
+    ├── it should whitelist the router
+    ├── it should emit RouterAdded
+    └── it should allow the router in isRouterAllowed

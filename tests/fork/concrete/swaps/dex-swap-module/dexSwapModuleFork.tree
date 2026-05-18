@@ -1,0 +1,58 @@
+DexSwapModule_Fork
+├── setup
+│   ├── it should deploy module with correct owner
+│   ├── it should whitelist Uniswap V3 Router
+│   ├── it should fund PaymentRails with WETH, USDC, and DAI
+│   └── it should return SWAP as moduleType
+├── simulate WETH → USDC
+│   ├── given PaymentRails configured for WETH → USDC via executeAction
+│   │   ├── it should succeed
+│   │   ├── it should decrease PaymentRails WETH by sell amount
+│   │   ├── it should increase PaymentRails USDC within expected range
+│   │   └── it should leave module with zero WETH and zero USDC
+│   └── given direct module call from PaymentRails
+│       ├── it should return success with correct outputToken
+│       ├── it should match amountOut to actual balance diff
+│       └── it should report correct router in result data
+├── simulate USDC → WETH
+│   └── given PaymentRails configured for USDC → WETH via executeAction
+│       ├── it should succeed
+│       ├── it should receive WETH
+│       └── it should decrease PaymentRails USDC by sell amount
+├── simulate DAI → USDC
+│   └── given PaymentRails configured for DAI → USDC via executeAction
+│       ├── it should succeed
+│       ├── it should receive USDC within 1:1 range
+│       └── it should decrease PaymentRails DAI by sell amount
+├── validation
+│   ├── given valid params with whitelisted router
+│   │   └── it should return true
+│   ├── given unwhitelisted router
+│   │   └── it should return false with "Router not allowed"
+│   └── given expired deadline
+│       └── it should return false with "Deadline expired"
+├── slippage enforcement
+│   ├── given minAmountOut set impossibly high
+│   │   ├── it should fail (revert caught by PaymentRails)
+│   │   └── it should retain all WETH in PaymentRails
+│   └── given reasonable minAmountOut
+│       └── it should succeed
+├── router whitelist
+│   ├── given unlisted router in executionData
+│   │   ├── it should fail gracefully
+│   │   └── it should retain all tokens in PaymentRails
+│   └── given owner adds then removes a router
+│       ├── it should allow the router after add
+│       └── it should disallow the router after remove
+├── no residual state
+│   ├── given a successful swap
+│   │   └── it should leave module with zero sellToken and zero buyToken
+│   └── given three consecutive swaps
+│       └── it should leave module with zero balances after each
+└── lifecycle
+    ├── given deploy → configure → swap → swap
+    │   ├── it should execute both swaps successfully
+    │   ├── it should decrease WETH by total sold
+    │   ├── it should receive reasonable total USDC
+    │   └── it should leave module with zero balances
+    └── it should log simulation results

@@ -1,0 +1,25 @@
+DexSwapModule_Validate
+├── when params are too short
+│   └── it should return false with invalid params encoding
+├── when target token is zero address
+│   └── it should return false with zero target token
+├── when target token equals sell token
+│   └── it should return false with same input and output token
+├── when amount is zero
+│   └── it should return false with zero sell amount
+├── when execution data provided with unwhitelisted router
+│   └── it should return false with router not allowed
+├── when execution data provided with zero min amount out
+│   └── it should return false with zero min amount out
+├── when execution data provided with expired deadline
+│   └── it should return false with deadline expired
+├── when caller has insufficient balance
+│   └── it should return false with insufficient balance
+├── when all valid without execution data
+│   └── it should return true with empty reason
+├── when all valid with execution data
+│   └── it should return true with empty reason
+└── validate and execute should agree on failure reasons
+    ├── it should agree on params too short
+    ├── it should agree on zero target token
+    └── it should agree on zero sell amount
