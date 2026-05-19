@@ -3,6 +3,7 @@ pragma solidity ^0.8.29;
 
 import { CCTPBridgeModuleBase } from "../CCTPBridgeModuleBase.t.sol";
 import { CCTPBridgeModule } from "../../../../../../src/modules/bridges/CCTPBridgeModule.sol";
+import { MockBridgePaymentRails } from "../../../../../shared/mocks/MockBridgePaymentRails.sol";
 import { DataTypes } from "../../../../../../src/types/DataTypes.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -90,6 +91,30 @@ contract CCTPBridgeModuleExecuteTest is CCTPBridgeModuleBase {
 
         assertFalse(result.success);
         assertEq(result.failureReason, "Token transfer failed");
+    }
+
+    /// @dev Regression test for Certora finding: non-standard ERC20 tokens that return no data
+    /// from transferFrom must be treated as successful, not failed.
+    function test_WhenNoReturnToken_SucceedsAndBridges() external {
+        CCTPBridgeModule nrtModule = new CCTPBridgeModule(address(tokenMessenger), address(noReturnToken), owner);
+        nrtModule.setDomainConfig(
+            DOMAIN_BASE,
+            DEFAULT_MINT_RECIPIENT,
+            DEFAULT_DESTINATION_CALLER,
+            DEFAULT_MAX_FEE,
+            FINALITY_FAST,
+            DEFAULT_HOOK_DATA
+        );
+
+        MockBridgePaymentRails nrtPaymentRails = new MockBridgePaymentRails(address(nrtModule));
+        noReturnToken.mint(address(nrtPaymentRails), DEFAULT_BRIDGE_AMOUNT * 10);
+
+        DataTypes.ExecutionResult memory result =
+            nrtPaymentRails.initiateBridge(address(noReturnToken), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
+
+        assertTrue(result.success, "should succeed with no-return token");
+        assertEq(result.amountOut, DEFAULT_BRIDGE_AMOUNT - DEFAULT_MAX_FEE, "amountOut");
+        assertEq(tokenMessenger.getDepositCallCount(), 1, "depositForBurn called");
     }
 
     /*//////////////////////////////////////////////////////////////////////////

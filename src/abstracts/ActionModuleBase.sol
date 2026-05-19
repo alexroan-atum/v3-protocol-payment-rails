@@ -69,6 +69,8 @@ abstract contract ActionModuleBase is IActionModule {
     }
 
     /// @notice Safely transfers tokens from caller to recipient.
+    /// @dev Uses OZ's trySafeTransferFrom to handle non-standard ERC20 tokens (e.g. USDT)
+    /// that do not return a bool on transferFrom.
     /// @param token The token to transfer.
     /// @param from The sender address.
     /// @param to The recipient address.
@@ -78,11 +80,7 @@ abstract contract ActionModuleBase is IActionModule {
         internal
         returns (bool success)
     {
-        try IERC20(token).transferFrom(from, to, amount) returns (bool result) {
-            return result;
-        } catch {
-            return false;
-        }
+        return IERC20(token).trySafeTransferFrom(from, to, amount);
     }
 
     /*//////////////////////////////////////////////////////////////////////////

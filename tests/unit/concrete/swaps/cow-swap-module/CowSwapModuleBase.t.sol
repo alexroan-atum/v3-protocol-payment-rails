@@ -7,6 +7,7 @@ import { DataTypes } from "../../../../../src/types/DataTypes.sol";
 
 import { MockERC20 } from "../../../../shared/mocks/MockERC20.sol";
 import { FeeOnTransferERC20 } from "../../../../shared/mocks/FeeOnTransferERC20.sol";
+import { NoReturnERC20 } from "../../../../shared/mocks/NoReturnERC20.sol";
 import { MockCowSettlement } from "../../../../shared/mocks/MockCowSettlement.sol";
 import { MockPaymentRails } from "../../../../shared/mocks/MockPaymentRails.sol";
 
@@ -56,6 +57,7 @@ abstract contract CowSwapModuleBase is Test {
     MockERC20 internal sellToken;
     MockERC20 internal buyToken;
     FeeOnTransferERC20 internal fotSellToken;
+    NoReturnERC20 internal noReturnSellToken;
 
     address internal attacker = makeAddr("attacker");
 
@@ -77,9 +79,11 @@ abstract contract CowSwapModuleBase is Test {
         sellToken = new MockERC20("USDC", "USDC");
         buyToken = new MockERC20("WETH", "WETH");
         fotSellToken = new FeeOnTransferERC20();
+        noReturnSellToken = new NoReturnERC20();
 
         sellToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 10);
         fotSellToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 10);
+        noReturnSellToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 10);
     }
 
     /*//////////////////////////////////////////////////////////////////////////

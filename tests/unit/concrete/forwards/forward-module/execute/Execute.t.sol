@@ -165,6 +165,22 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
         assertLt(actualReceived, DEFAULT_AMOUNT, "actual received < reported");
     }
 
+    /// @dev Regression test for Certora finding: non-standard ERC20 tokens (e.g. USDT) that return
+    /// no data from transferFrom must be treated as successful, not failed.
+    function test_WhenNoReturnToken_TransfersSuccessfully() external whenAllValidationsPass {
+        bytes memory params = _buildParams(recipient, false, 0);
+        uint256 paymentRailsBefore = noReturnToken.balanceOf(paymentRails);
+        uint256 recipientBefore = noReturnToken.balanceOf(recipient);
+
+        vm.prank(paymentRails);
+        DataTypes.ExecutionResult memory result = module.execute(address(noReturnToken), DEFAULT_AMOUNT, params, "");
+
+        assertTrue(result.success, "success");
+        assertEq(result.amountOut, DEFAULT_AMOUNT, "amountOut");
+        assertEq(noReturnToken.balanceOf(paymentRails), paymentRailsBefore - DEFAULT_AMOUNT, "paymentRails balance");
+        assertEq(noReturnToken.balanceOf(recipient), recipientBefore + DEFAULT_AMOUNT, "recipient balance");
+    }
+
     /*//////////////////////////////////////////////////////////////////////////
                             FUZZ TESTS
     //////////////////////////////////////////////////////////////////////////*/

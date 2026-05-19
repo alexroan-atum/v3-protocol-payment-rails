@@ -24,6 +24,8 @@ CowSwapModule_Execute
 │   └── it should return failed result with insufficient balance reason
 ├── when token transfer fails
 │   └── it should return failed result with token transfer failed reason
+├── when no-return sell token (e.g. USDT)
+│   └── it should succeed and store order metadata
 ├── when concurrent orders share the same sell token
 │   ├── it should use accumulated approval after second order
 │   ├── it should preserve second order approval after first order is mark filled

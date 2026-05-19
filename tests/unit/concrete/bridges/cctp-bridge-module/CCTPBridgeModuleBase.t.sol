@@ -7,6 +7,7 @@ import { MockERC20 } from "../../../../shared/mocks/MockERC20.sol";
 import { MockBridgePaymentRails } from "../../../../shared/mocks/MockBridgePaymentRails.sol";
 import { MockTokenMessengerV2 } from "../../../../shared/mocks/MockTokenMessengerV2.sol";
 import { FailingTransferERC20 } from "../../../../shared/mocks/FailingTransferERC20.sol";
+import { NoReturnERC20 } from "../../../../shared/mocks/NoReturnERC20.sol";
 
 /// @dev Base test contract for CCTPBridgeModule unit tests.
 ///      Provides shared state, constants, mocks, modifiers, and helpers following Sablier BTT style.
@@ -63,6 +64,7 @@ abstract contract CCTPBridgeModuleBase is Test {
     MockERC20 internal usdc;
     MockERC20 internal otherToken;
     FailingTransferERC20 internal failToken;
+    NoReturnERC20 internal noReturnToken;
 
     address internal owner;
     address internal attacker;
@@ -79,6 +81,7 @@ abstract contract CCTPBridgeModuleBase is Test {
         usdc = new MockERC20("USD Coin", "USDC");
         otherToken = new MockERC20("Other Token", "OTH");
         failToken = new FailingTransferERC20();
+        noReturnToken = new NoReturnERC20();
 
         module = new CCTPBridgeModule(address(tokenMessenger), address(usdc), owner);
         paymentRails = new MockBridgePaymentRails(address(module));
@@ -86,6 +89,7 @@ abstract contract CCTPBridgeModuleBase is Test {
         usdc.mint(address(paymentRails), DEFAULT_BRIDGE_AMOUNT * 10);
         otherToken.mint(address(paymentRails), DEFAULT_BRIDGE_AMOUNT * 10);
         failToken.mint(address(paymentRails), DEFAULT_BRIDGE_AMOUNT * 10);
+        noReturnToken.mint(address(paymentRails), DEFAULT_BRIDGE_AMOUNT * 10);
     }
 
     /*//////////////////////////////////////////////////////////////////////////

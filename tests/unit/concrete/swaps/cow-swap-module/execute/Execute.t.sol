@@ -366,6 +366,39 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
     }
 
     // -----------------------------------------------------------------------
+    // no-return sellToken (e.g. USDT)
+    // -----------------------------------------------------------------------
+
+    /// @dev Regression test for Certora finding: non-standard ERC20 tokens that return no data
+    /// from transferFrom must be treated as successful, not failed.
+    function test_Execute_NoReturnSellToken_SucceedsAndStoresOrder() external {
+        bytes memory params =
+            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+
+        uint256 paymentRailsBefore = noReturnSellToken.balanceOf(address(paymentRails));
+
+        DataTypes.ExecutionResult memory result =
+            paymentRails.initiateSwap(address(noReturnSellToken), DEFAULT_SELL_AMOUNT, params);
+
+        assertTrue(result.success, "should succeed");
+        assertEq(result.amountOut, 0, "async order: amountOut=0");
+
+        bytes32 orderId = abi.decode(result.data, (bytes32));
+        DataTypes.CowOrderMetadata memory meta = module.getOrder(orderId);
+        assertEq(meta.paymentRails, address(paymentRails), "paymentRails stored");
+        assertEq(meta.sellToken, address(noReturnSellToken), "sellToken stored");
+        assertEq(meta.sellAmount, DEFAULT_SELL_AMOUNT, "sellAmount stored");
+        assertFalse(meta.cancelled, "not cancelled");
+
+        assertEq(noReturnSellToken.balanceOf(address(module)), DEFAULT_SELL_AMOUNT, "module received tokens");
+        assertEq(
+            noReturnSellToken.balanceOf(address(paymentRails)),
+            paymentRailsBefore - DEFAULT_SELL_AMOUNT,
+            "paymentRails debited"
+        );
+    }
+
+    // -----------------------------------------------------------------------
     // fee-on-transfer sellToken
     // -----------------------------------------------------------------------
 

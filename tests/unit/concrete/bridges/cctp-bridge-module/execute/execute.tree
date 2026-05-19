@@ -13,6 +13,8 @@ CCTPBridgeModule_Execute
 │   └── it should return failed result with "Insufficient balance"
 ├── when token transfer from caller fails
 │   └── it should return failed result with "Token transfer failed"
+├── when no-return token (e.g. USDT)
+│   └── it should succeed and bridge despite missing return value
 ├── given domain configured without hook data
 │   ├── when tokenMessenger reverts
 │   │   └── it should revert (propagate CCTP revert)
