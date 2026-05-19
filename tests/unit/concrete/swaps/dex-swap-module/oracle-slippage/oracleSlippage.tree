@@ -53,6 +53,10 @@ DexSwapModule_OracleSlippage
 │   └── when estimateOutput is called with oracle configured
 │       ├── it should return non-zero expected output
 │       └── it should return correct target token
+├── validate vs execute ordering — intentional divergence
+│   └── when both oracle and balance are invalid
+│       ├── validate should report oracle error first (oracle before balance)
+│       └── execute should report balance error first (balance before oracle)
 └── fuzz
     ├── it should never revert on arbitrary oracle prices and slippage values
     └── it should enforce floor equals expected times (10000 minus maxSlippageBps) over 10000

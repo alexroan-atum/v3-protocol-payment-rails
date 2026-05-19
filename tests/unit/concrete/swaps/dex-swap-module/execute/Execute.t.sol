@@ -431,11 +431,11 @@ contract DexSwapModule_Execute_Test is DexSwapModuleBase {
                 VALIDATION ORDER TESTS (first failure wins)
     //////////////////////////////////////////////////////////////////////////*/
 
-    function test_ValidationOrder_ParamsCheckedBeforeExecutionData() external {
+    function test_ValidationOrder_ExecutionDataCheckedBeforeParams() external {
         bytes memory shortParams = hex"00";
         DataTypes.ExecutionResult memory result =
             paymentRails.executeSwap(address(sellToken), DEFAULT_SELL_AMOUNT, shortParams, "");
-        assertEq(result.failureReason, "Invalid params encoding", "params checked before executionData");
+        assertEq(result.failureReason, "Missing execution data", "executionData checked before params");
     }
 
     function test_ValidationOrder_ExecutionDataCheckedBeforeAmount() external {

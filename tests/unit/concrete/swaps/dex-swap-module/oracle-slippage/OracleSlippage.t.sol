@@ -512,6 +512,33 @@ contract DexSwapModule_OracleSlippage_Test is DexSwapModuleBase {
     }
 
     /*//////////////////////////////////////////////////////////////////////////
+            VALIDATE vs EXECUTE ORDERING — INTENTIONAL DIVERGENCE
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @dev When both oracle AND balance are invalid, execute and validate report different
+    /// first errors because they check these in opposite order:
+    ///   execute: balance → oracle (fail fast on balance, avoid oracle query)
+    ///   validate: oracle → balance (oracle is inside executionData block)
+    /// This is intentional — the shared _validateSwapParams checks everything before these.
+    function test_Oracle_AndBalance_BothBad_IntentionalOrderingDivergence() external {
+        sellFeed.setAnswer(-1);
+        uint256 tooMuch = DEFAULT_SELL_AMOUNT * 101;
+
+        // validate: oracle check fires first → "Oracle price unavailable"
+        vm.prank(address(paymentRails));
+        (bool isValid, string memory valReason) =
+            module.validate(address(sellToken), tooMuch, _oracleParams(), _defaultExecutionData());
+        assertFalse(isValid);
+        assertEq(valReason, "Oracle price unavailable", "validate checks oracle before balance");
+
+        // execute: balance check fires first → "Insufficient balance"
+        DataTypes.ExecutionResult memory result =
+            paymentRails.executeSwap(address(sellToken), tooMuch, _oracleParams(), _defaultExecutionData());
+        assertFalse(result.success);
+        assertEq(result.failureReason, "Insufficient balance", "execute checks balance before oracle");
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
             FUZZ TESTS
     //////////////////////////////////////////////////////////////////////////*/
 

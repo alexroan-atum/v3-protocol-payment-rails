@@ -80,19 +80,17 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step {
         override(ActionModuleBase, IActionModule)
         returns (DataTypes.ExecutionResult memory)
     {
-        {
-            (bool earlyValid, string memory earlyReason) =
-                _validateEarlyChecks(params.length, executionData.length, amount);
-            if (!earlyValid) return _failedResult(token, earlyReason);
-        }
+        if (executionData.length == 0) return _failedResult(token, "Missing execution data");
 
-        DataTypes.DexSwapParams memory cfg = decodeParams(params);
-        DataTypes.DexSwapExecutionData memory exec = decodeExecutionData(executionData);
+        (
+            bool valid,
+            string memory reason,
+            DataTypes.DexSwapParams memory cfg,
+            DataTypes.DexSwapExecutionData memory exec
+        ) = _validateSwapParams(token, amount, params, executionData);
+        if (!valid) return _failedResult(token, reason);
 
-        {
-            (bool valid, string memory reason) = _validateInputs(token, amount, cfg, exec);
-            if (!valid) return _failedResult(token, reason);
-        }
+        if (!_hasSufficientBalance(token, amount)) return _failedResult(token, "Insufficient balance");
 
         {
             (bool oracleValid, string memory oracleReason) = _checkOracleFloor(token, amount, cfg, exec.minAmountOut);
@@ -129,20 +127,13 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step {
         override(ActionModuleBase, IActionModule)
         returns (bool isValid, string memory reason)
     {
-        if (params.length < 160) return (false, "Invalid params encoding");
+        DataTypes.DexSwapParams memory cfg;
+        DataTypes.DexSwapExecutionData memory exec;
 
-        DataTypes.DexSwapParams memory cfg = decodeParams(params);
-
-        {
-            (bool staticValid, string memory staticReason) = _validateStaticParams(token, amount, cfg);
-            if (!staticValid) return (false, staticReason);
-        }
+        (isValid, reason, cfg, exec) = _validateSwapParams(token, amount, params, executionData);
+        if (!isValid) return (false, reason);
 
         if (executionData.length > 0) {
-            (bool execValid, string memory execReason) = _validateExecutionData(executionData);
-            if (!execValid) return (false, execReason);
-
-            DataTypes.DexSwapExecutionData memory exec = decodeExecutionData(executionData);
             (bool oracleValid, string memory oracleReason) =
                 _checkOracleFloorValidate(token, amount, cfg, exec.minAmountOut);
             if (!oracleValid) return (false, oracleReason);
@@ -227,36 +218,56 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step {
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @dev Validates static config params (target token and amount) for validate().
-    function _validateStaticParams(
+    /// @dev Shared validation for `execute` and `validate`. Returns decoded params and execution
+    ///      data on success so callers avoid redundant decoding.
+    ///      Oracle floor enforcement is excluded: `execute` reverts (security-critical) while
+    ///      `validate` returns a soft failure — callers apply the appropriate check after this.
+    function _validateSwapParams(
         address token,
         uint256 amount,
-        DataTypes.DexSwapParams memory cfg
+        bytes calldata params,
+        bytes calldata executionData
     )
         private
-        pure
-        returns (bool, string memory)
+        view
+        returns (
+            bool valid,
+            string memory reason,
+            DataTypes.DexSwapParams memory cfg,
+            DataTypes.DexSwapExecutionData memory exec
+        )
     {
-        if (cfg.targetToken == address(0)) return (false, "Zero target token");
-        if (cfg.targetToken == token) return (false, "Same input and output token");
-        if (amount == 0) return (false, "Zero sell amount");
-        return (true, "");
+        if (params.length < 160) {
+            return (false, "Invalid params encoding", cfg, exec);
+        }
+
+        cfg = decodeParams(params);
+
+        if (cfg.targetToken == address(0)) return (false, "Zero target token", cfg, exec);
+        if (cfg.targetToken == token) return (false, "Same input and output token", cfg, exec);
+        if (amount == 0) return (false, "Zero sell amount", cfg, exec);
+
+        if (executionData.length > 0) {
+            bool execValid;
+            string memory execReason;
+            (execValid, execReason, exec) = _validateExecutionData(executionData);
+            if (!execValid) return (false, execReason, cfg, exec);
+        }
+
+        return (true, "", cfg, exec);
     }
 
-    /// @dev Consolidates the three early-exit checks for execute() to reduce cyclomatic complexity.
-    function _validateEarlyChecks(
-        uint256 paramsLength,
-        uint256 executionDataLength,
-        uint256 amount
-    )
+    /// @dev Validates execution data fields: router whitelist, minimum output, and deadline.
+    function _validateExecutionData(bytes calldata executionData)
         private
-        pure
-        returns (bool, string memory)
+        view
+        returns (bool valid, string memory reason, DataTypes.DexSwapExecutionData memory exec)
     {
-        if (paramsLength < 160) return (false, "Invalid params encoding");
-        if (executionDataLength == 0) return (false, "Missing execution data");
-        if (amount == 0) return (false, "Zero sell amount");
-        return (true, "");
+        exec = decodeExecutionData(executionData);
+        if (!_allowedRouters[exec.router]) return (false, "Router not allowed", exec);
+        if (exec.minAmountOut == 0) return (false, "Zero min amount out", exec);
+        if (block.timestamp > exec.deadline) return (false, "Deadline expired", exec);
+        return (true, "", exec);
     }
 
     /// @dev Returns true if oracle-based slippage enforcement is fully configured.
@@ -408,35 +419,6 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step {
         } catch {
             return (false, 0);
         }
-    }
-
-    /// @dev Validates decoded execution data fields.
-    function _validateExecutionData(bytes calldata executionData) private view returns (bool, string memory) {
-        DataTypes.DexSwapExecutionData memory exec = decodeExecutionData(executionData);
-        if (!_allowedRouters[exec.router]) return (false, "Router not allowed");
-        if (exec.minAmountOut == 0) return (false, "Zero min amount out");
-        if (block.timestamp > exec.deadline) return (false, "Deadline expired");
-        return (true, "");
-    }
-
-    /// @dev Validates static config and execution data constraints.
-    function _validateInputs(
-        address token,
-        uint256 amount,
-        DataTypes.DexSwapParams memory cfg,
-        DataTypes.DexSwapExecutionData memory exec
-    )
-        private
-        view
-        returns (bool, string memory)
-    {
-        if (cfg.targetToken == address(0)) return (false, "Zero target token");
-        if (cfg.targetToken == token) return (false, "Same input and output token");
-        if (!_allowedRouters[exec.router]) return (false, "Router not allowed");
-        if (exec.minAmountOut == 0) return (false, "Zero min amount out");
-        if (block.timestamp > exec.deadline) return (false, "Deadline expired");
-        if (!_hasSufficientBalance(token, amount)) return (false, "Insufficient balance");
-        return (true, "");
     }
 
     /// @dev Pulls sellToken via SafeERC20, calls the router, and measures output via balance diff.

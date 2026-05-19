@@ -19,7 +19,14 @@ DexSwapModule_Validate
 │   └── it should return true with empty reason
 ├── when all valid with execution data
 │   └── it should return true with empty reason
-└── validate and execute should agree on failure reasons
-    ├── it should agree on params too short
-    ├── it should agree on zero target token
-    └── it should agree on zero sell amount
+├── validate and execute should agree on failure reasons (shared validator)
+│   ├── it should agree on params too short
+│   ├── it should agree on zero target token
+│   ├── it should agree on zero sell amount
+│   ├── it should agree on router not allowed
+│   ├── it should agree on zero min amount out
+│   ├── it should agree on deadline expired
+│   ├── it should agree on insufficient balance
+│   └── it should agree on same input and output token
+└── fuzz: validate and execute agreement
+    └── it should produce identical failure reasons for any amount and minAmountOut

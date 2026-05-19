@@ -135,4 +135,89 @@ contract DexSwapModule_Validate_Test is DexSwapModuleBase {
             paymentRails.executeSwap(address(sellToken), 0, _defaultParams(), _defaultExecutionData());
         assertEq(valReason, result.failureReason, "reasons must match");
     }
+
+    function test_ValidateExecuteAgree_RouterNotAllowed() external {
+        MockRouter unlisted = new MockRouter();
+        bytes memory execData = _buildExecutionData(
+            address(unlisted), DEFAULT_MIN_AMOUNT_OUT, DEFAULT_DEADLINE, _defaultRouterCalldata()
+        );
+        vm.prank(address(paymentRails));
+        (, string memory valReason) =
+            module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams(), execData);
+        DataTypes.ExecutionResult memory result =
+            paymentRails.executeSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams(), execData);
+        assertEq(valReason, result.failureReason, "reasons must match");
+    }
+
+    function test_ValidateExecuteAgree_ZeroMinAmountOut() external {
+        bytes memory execData = _buildExecutionData(address(router), 0, DEFAULT_DEADLINE, _defaultRouterCalldata());
+        vm.prank(address(paymentRails));
+        (, string memory valReason) =
+            module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams(), execData);
+        DataTypes.ExecutionResult memory result =
+            paymentRails.executeSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams(), execData);
+        assertEq(valReason, result.failureReason, "reasons must match");
+    }
+
+    function test_ValidateExecuteAgree_DeadlineExpired() external {
+        vm.warp(1000);
+        bytes memory execData =
+            _buildExecutionData(address(router), DEFAULT_MIN_AMOUNT_OUT, 999, _defaultRouterCalldata());
+        vm.prank(address(paymentRails));
+        (, string memory valReason) =
+            module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams(), execData);
+        DataTypes.ExecutionResult memory result =
+            paymentRails.executeSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams(), execData);
+        assertEq(valReason, result.failureReason, "reasons must match");
+    }
+
+    function test_ValidateExecuteAgree_InsufficientBalance() external {
+        uint256 tooMuch = DEFAULT_SELL_AMOUNT * 101;
+        vm.prank(address(paymentRails));
+        (, string memory valReason) =
+            module.validate(address(sellToken), tooMuch, _defaultParams(), _defaultExecutionData());
+        DataTypes.ExecutionResult memory result =
+            paymentRails.executeSwap(address(sellToken), tooMuch, _defaultParams(), _defaultExecutionData());
+        assertEq(valReason, result.failureReason, "reasons must match");
+    }
+
+    function test_ValidateExecuteAgree_SameInputOutputToken() external {
+        bytes memory params = _buildParams(address(sellToken));
+        vm.prank(address(paymentRails));
+        (, string memory valReason) =
+            module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, params, _defaultExecutionData());
+        DataTypes.ExecutionResult memory result =
+            paymentRails.executeSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params, _defaultExecutionData());
+        assertEq(valReason, result.failureReason, "reasons must match");
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                    FUZZ: VALIDATE / EXECUTE AGREEMENT
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @dev Proves the shared validator produces identical failure reasons in both paths
+    /// for any combination of amount and minAmountOut (no oracle configured).
+    function testFuzz_ValidateExecuteAgreeOnSharedChecks(uint256 amount, uint256 minAmountOut) external {
+        amount = bound(amount, 0, DEFAULT_SELL_AMOUNT * 200);
+        minAmountOut = bound(minAmountOut, 0, type(uint128).max);
+
+        bytes memory execData =
+            _buildExecutionData(address(router), minAmountOut, DEFAULT_DEADLINE, _defaultRouterCalldata());
+
+        vm.prank(address(paymentRails));
+        (bool isValid, string memory valReason) =
+            module.validate(address(sellToken), amount, _defaultParams(), execData);
+
+        // Execute may revert on post-swap checks (InsufficientOutput, SlippageExceedsOracleFloor)
+        // that validate cannot predict. Only compare when both return without reverting.
+        try paymentRails.executeSwap(address(sellToken), amount, _defaultParams(), execData) returns (
+            DataTypes.ExecutionResult memory result
+        ) {
+            if (!isValid && !result.success) {
+                assertEq(valReason, result.failureReason, "shared validator reasons must match");
+            }
+        } catch {
+            // Execute reverted at execution level (e.g., InsufficientOutput) — not a validation divergence
+        }
+    }
 }
