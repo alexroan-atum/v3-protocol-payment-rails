@@ -10,6 +10,10 @@ import { Errors } from "../../../../../src/libraries/Errors.sol";
 import { MockERC20 } from "../../../../shared/mocks/MockERC20.sol";
 import { FeeOnTransferERC20 } from "../../../../shared/mocks/FeeOnTransferERC20.sol";
 import { ReentrantSellToken } from "../../../../shared/mocks/ReentrantSellToken.sol";
+import { ReentrantExecuteSellToken } from "../../../../shared/mocks/ReentrantExecuteSellToken.sol";
+import {
+    ReentrantCancelDuringExecuteSellToken
+} from "../../../../shared/mocks/ReentrantCancelDuringExecuteSellToken.sol";
 import { MockCowSettlement } from "../../../../shared/mocks/MockCowSettlement.sol";
 import { MockPaymentRails } from "../../../../shared/mocks/MockPaymentRails.sol";
 
@@ -455,6 +459,137 @@ contract CowSwapModuleIntegrationTest is Test {
 
         // PaymentRails received tokens exactly once
         assertEq(reentrantToken.balanceOf(address(mockPaymentRails)), nodeBalBefore + SELL_AMOUNT);
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+            GROUP 5b: CEI + REENTRANCY GUARD IN execute()
+            ERC-777-style sell token re-enters execute() during transferFrom.
+            Both CEI ordering AND ReentrancyGuard prevent double-deposit.
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @dev CEI + ReentrancyGuard in execute(): a reentrant sell token attempts to
+    ///      call execute() again during transferFrom. The inner call is blocked by
+    ///      nonReentrant. The outer call succeeds normally. Module holds exactly 1x tokens.
+    function test_CEI_ReentrantSellToken_Execute_BlockedByReentrancyGuard() public {
+        ReentrantExecuteSellToken reentrantToken = new ReentrantExecuteSellToken(address(module));
+        reentrantToken.mint(address(mockPaymentRails), SELL_AMOUNT);
+        // Fund the reentrant token contract itself (it becomes msg.sender in the reentrant call)
+        reentrantToken.mint(address(reentrantToken), SELL_AMOUNT);
+
+        bytes memory params = _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, APP_DATA);
+
+        // Arm reentrancy: on transfer to module, token tries module.execute() again
+        reentrantToken.setReentryConfig(SELL_AMOUNT, params);
+
+        // mockPaymentRails approves and calls execute
+        vm.prank(address(mockPaymentRails));
+        reentrantToken.approve(address(module), SELL_AMOUNT);
+
+        vm.prank(address(mockPaymentRails));
+        DataTypes.ExecutionResult memory result = module.execute(address(reentrantToken), SELL_AMOUNT, params, "");
+
+        // Outer call succeeds
+        assertTrue(result.success, "outer execute must succeed");
+
+        // Confirm the hook actually fired (not silently skipped)
+        assertTrue(reentrantToken.reentryAttempted(), "hook must have fired");
+
+        // Inner reentrant call was blocked
+        assertTrue(reentrantToken.reentrancyBlocked(), "reentrant execute must be blocked by nonReentrant");
+
+        // Module holds exactly 1x tokens — no double deposit
+        assertEq(reentrantToken.balanceOf(address(module)), SELL_AMOUNT, "module holds exactly 1x");
+
+        // Only one order exists
+        bytes32 orderId = abi.decode(result.data, (bytes32));
+        DataTypes.CowOrderMetadata memory meta = module.getOrder(orderId);
+        assertEq(meta.paymentRails, address(mockPaymentRails));
+        assertEq(meta.sellAmount, SELL_AMOUNT);
+        assertFalse(meta.cancelled);
+    }
+
+    /// @dev End-to-end: execute with reentrant token → cancel → full recovery.
+    ///      Proves that the order created during a reentrancy attempt is fully functional
+    ///      and the module state remains consistent throughout the lifecycle.
+    function test_CEI_ReentrantSellToken_Execute_FullLifecycle_ExecuteCancelRecover() public {
+        ReentrantExecuteSellToken reentrantToken = new ReentrantExecuteSellToken(address(module));
+        reentrantToken.mint(address(mockPaymentRails), SELL_AMOUNT * 2);
+        reentrantToken.mint(address(reentrantToken), SELL_AMOUNT);
+
+        bytes memory params = _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, APP_DATA);
+        reentrantToken.setReentryConfig(SELL_AMOUNT, params);
+
+        vm.prank(address(mockPaymentRails));
+        reentrantToken.approve(address(module), SELL_AMOUNT);
+
+        vm.prank(address(mockPaymentRails));
+        DataTypes.ExecutionResult memory result = module.execute(address(reentrantToken), SELL_AMOUNT, params, "");
+
+        assertTrue(result.success);
+        bytes32 orderId = abi.decode(result.data, (bytes32));
+
+        // isValidSignature validates the order
+        assertEq(module.isValidSignature(orderId, abi.encode(orderId)), MAGIC_VALUE);
+
+        // Cancel recovers tokens cleanly
+        uint256 nodeBalBefore = reentrantToken.balanceOf(address(mockPaymentRails));
+        module.cancelOrder(orderId);
+
+        assertTrue(module.getOrder(orderId).cancelled);
+        assertEq(reentrantToken.balanceOf(address(module)), 0, "module drained after cancel");
+        assertEq(reentrantToken.balanceOf(address(mockPaymentRails)), nodeBalBefore + SELL_AMOUNT);
+
+        // isValidSignature rejects after cancel
+        assertEq(module.isValidSignature(orderId, abi.encode(orderId)), FAILURE_VALUE);
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+            GROUP 5c: CROSS-FUNCTION REENTRANCY (execute → cancelOrder)
+            During execute()'s transferFrom, a hook-enabled token calls cancelOrder()
+            on a pre-existing order. The shared ReentrancyGuard lock blocks it.
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @dev Cross-function reentrancy: during execute(), hook calls cancelOrder() on a
+    ///      different pre-existing order. The shared nonReentrant lock blocks it.
+    ///      The pre-existing order remains pending and its tokens are untouched.
+    function test_CEI_CrossFunctionReentrancy_CancelOrderBlockedDuringExecute() public {
+        // Step 1: create a pre-existing order with normal sellToken
+        bytes32 existingOrderId = _initiateOrder();
+        assertFalse(module.getOrder(existingOrderId).cancelled, "pre-existing order is pending");
+
+        // Step 2: set up the cross-function reentrant token
+        ReentrantCancelDuringExecuteSellToken crossToken = new ReentrantCancelDuringExecuteSellToken(address(module));
+        crossToken.mint(address(mockPaymentRails), SELL_AMOUNT);
+
+        // Arm: during transferFrom, token will try cancelOrder(existingOrderId)
+        crossToken.setReentryConfig(existingOrderId);
+
+        bytes memory params =
+            _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, keccak256("cross-func-integ"));
+
+        vm.prank(address(mockPaymentRails));
+        crossToken.approve(address(module), SELL_AMOUNT);
+
+        vm.prank(address(mockPaymentRails));
+        DataTypes.ExecutionResult memory result = module.execute(address(crossToken), SELL_AMOUNT, params, "");
+
+        // Outer execute succeeds
+        assertTrue(result.success, "outer execute must succeed");
+
+        // Cross-function reentrancy was attempted and blocked
+        assertTrue(crossToken.reentryAttempted(), "hook must have fired");
+        assertTrue(crossToken.cancelBlocked(), "cross-function cancelOrder must be blocked");
+
+        // Pre-existing order is NOT cancelled
+        assertFalse(module.getOrder(existingOrderId).cancelled, "pre-existing order must remain pending");
+
+        // Pre-existing order's tokens are untouched
+        assertEq(sellToken.balanceOf(address(module)), SELL_AMOUNT, "pre-existing order tokens intact");
+
+        // New order also created successfully
+        bytes32 newOrderId = abi.decode(result.data, (bytes32));
+        assertFalse(module.getOrder(newOrderId).cancelled);
+        assertEq(crossToken.balanceOf(address(module)), SELL_AMOUNT, "new order tokens in module");
     }
 
     /*//////////////////////////////////////////////////////////////////////////

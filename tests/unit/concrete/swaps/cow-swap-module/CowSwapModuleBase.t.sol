@@ -169,4 +169,48 @@ abstract contract CowSwapModuleBase is Test {
         );
         return abi.decode(result.data, (bytes32));
     }
+
+    /// @dev Mirrors CowSwapModule._computeOrderDigest for test-side orderId computation.
+    ///      Needed to verify struct cleanup when execute() fails (no orderId in result).
+    function _computeTestOrderDigest(
+        address _sellToken,
+        address _buyToken,
+        address _receiver,
+        uint256 _sellAmount,
+        uint256 _buyAmount,
+        uint32 _validTo,
+        bytes32 _appData
+    )
+        internal
+        pure
+        returns (bytes32)
+    {
+        bytes32 orderTypeHash = keccak256(
+            "Order(" "address sellToken," "address buyToken," "address receiver," "uint256 sellAmount,"
+            "uint256 buyAmount," "uint32 validTo," "bytes32 appData," "uint256 feeAmount," "string kind,"
+            "bool partiallyFillable," "string sellTokenBalance," "string buyTokenBalance" ")"
+        );
+        bytes32 kindSell = keccak256("sell");
+        bytes32 balanceErc20 = keccak256("erc20");
+
+        bytes32 structHash = keccak256(
+            abi.encode(
+                orderTypeHash,
+                _sellToken,
+                _buyToken,
+                _receiver,
+                _sellAmount,
+                _buyAmount,
+                _validTo,
+                _appData,
+                uint256(0),
+                kindSell,
+                false,
+                balanceErc20,
+                balanceErc20
+            )
+        );
+
+        return keccak256(abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, structHash));
+    }
 }

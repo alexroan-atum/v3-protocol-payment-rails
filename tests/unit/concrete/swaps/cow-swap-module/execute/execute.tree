@@ -22,8 +22,17 @@ CowSwapModule_Execute
 │   └── it should create two independent orders with distinct order ids
 ├── when paymentRails has insufficient sell token balance
 │   └── it should return failed result with insufficient balance reason
-├── when token transfer fails
-│   └── it should return failed result with token transfer failed reason
+├── when token transfer fails (returns false)
+│   ├── it should return failed result with token transfer failed reason
+│   ├── it should clean up order metadata (CEI rollback — no stale collision)
+│   ├── it should zero all struct fields in _orders mapping
+│   └── it should cause isValidSignature to return FAILURE for the cleaned-up orderId
+├── when token transfer reverts
+│   └── it should clean up order metadata (CEI rollback — no stale collision)
+├── when sell token reenters execute during transferFrom
+│   └── it should revert the reentrant call (ReentrancyGuard)
+├── when sell token reenters cancelOrder during execute transferFrom
+│   └── it should revert the reentrant cancelOrder (shared ReentrancyGuard lock)
 ├── when no-return sell token (e.g. USDT)
 │   └── it should succeed and store order metadata
 ├── when concurrent orders share the same sell token

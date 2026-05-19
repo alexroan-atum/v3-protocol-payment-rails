@@ -4,6 +4,11 @@ pragma solidity ^0.8.29;
 import { CowSwapModuleBase } from "../CowSwapModuleBase.t.sol";
 import { DataTypes } from "../../../../../../src/types/DataTypes.sol";
 import { FailingTransferERC20 } from "../../../../../shared/mocks/FailingTransferERC20.sol";
+import { RevertingTransferERC20 } from "../../../../../shared/mocks/RevertingTransferERC20.sol";
+import { ReentrantExecuteSellToken } from "../../../../../shared/mocks/ReentrantExecuteSellToken.sol";
+import {
+    ReentrantCancelDuringExecuteSellToken
+} from "../../../../../shared/mocks/ReentrantCancelDuringExecuteSellToken.sol";
 
 /// @notice Unit tests for CowSwapModule.execute()
 /// @dev Tree: tests/unit/concrete/cow-swap-module/execute/execute.tree
@@ -173,6 +178,23 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
         DataTypes.ExecutionResult memory result =
             paymentRails.initiateSwap(address(failToken), DEFAULT_SELL_AMOUNT, params);
         assertEq(result.data.length, 0);
+    }
+
+    /// @dev CEI rollback: metadata is written before transfer (effects before interactions),
+    ///      then cleaned up via `delete _orders[orderId]` when transfer fails.
+    function test_WhenTokenTransferFails_CleansUpOrderMetadata_CEIRollback() external {
+        FailingTransferERC20 failToken = new FailingTransferERC20();
+        failToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 10);
+
+        bytes memory params =
+            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        paymentRails.initiateSwap(address(failToken), DEFAULT_SELL_AMOUNT, params);
+
+        // After the failed transfer, the same params should NOT collide — metadata was cleaned up
+        DataTypes.ExecutionResult memory result2 =
+            paymentRails.initiateSwap(address(failToken), DEFAULT_SELL_AMOUNT, params);
+        assertFalse(result2.success, "still fails (transfer always fails)");
+        assertEq(result2.failureReason, "Token transfer failed", "failure reason is transfer, not collision");
     }
 
     // -----------------------------------------------------------------------
@@ -437,5 +459,211 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
         vm.prank(module.vaultRelayer());
         vm.expectRevert();
         fotSellToken.transferFrom(address(module), address(cowSettlement), sellAmount);
+    }
+
+    // -----------------------------------------------------------------------
+    // reentrancy guard: ERC-777-style reentrant sell token
+    // -----------------------------------------------------------------------
+
+    /// @dev Simulates an ERC-777 tokensToSend hook that re-enters execute() during transferFrom.
+    ///      The ReentrancyGuard blocks the inner call; the outer call succeeds normally.
+    function test_Execute_ReentrantSellToken_InnerCallBlockedByReentrancyGuard() external {
+        ReentrantExecuteSellToken reentrantToken = new ReentrantExecuteSellToken(address(module));
+        reentrantToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 5);
+        // Mint tokens to the reentrant token contract itself (it will be msg.sender for the inner call)
+        reentrantToken.mint(address(reentrantToken), DEFAULT_SELL_AMOUNT * 5);
+
+        bytes memory params =
+            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+
+        // Arm the reentrancy hook
+        reentrantToken.setReentryConfig(DEFAULT_SELL_AMOUNT, params);
+
+        // Approve from paymentRails
+        vm.prank(address(paymentRails));
+        reentrantToken.approve(address(module), DEFAULT_SELL_AMOUNT);
+
+        // Execute from paymentRails — triggers transferFrom → _update → reentrant execute()
+        vm.prank(address(paymentRails));
+        DataTypes.ExecutionResult memory result =
+            module.execute(address(reentrantToken), DEFAULT_SELL_AMOUNT, params, "");
+
+        // Outer call succeeds
+        assertTrue(result.success, "outer execute must succeed");
+
+        // Confirm the hook actually fired (not silently skipped)
+        assertTrue(reentrantToken.reentryAttempted(), "hook must have fired");
+
+        // Inner reentrant call was blocked by nonReentrant
+        assertTrue(reentrantToken.reentrancyBlocked(), "reentrant execute must be blocked");
+
+        // Only one order created, only 1x tokens locked
+        bytes32 orderId = abi.decode(result.data, (bytes32));
+        assertEq(module.getOrder(orderId).sellAmount, DEFAULT_SELL_AMOUNT, "exactly 1x sell amount recorded");
+        assertEq(reentrantToken.balanceOf(address(module)), DEFAULT_SELL_AMOUNT, "module holds exactly 1x");
+    }
+
+    /// @dev Verifies that after a reentrant call is blocked, the module state is clean:
+    ///      no phantom orders, no stuck tokens, module balance matches the single order.
+    function test_Execute_ReentrantSellToken_ModuleStateCleanAfterBlockedReentry() external {
+        ReentrantExecuteSellToken reentrantToken = new ReentrantExecuteSellToken(address(module));
+        reentrantToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 5);
+        reentrantToken.mint(address(reentrantToken), DEFAULT_SELL_AMOUNT * 5);
+
+        bytes memory params =
+            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+
+        reentrantToken.setReentryConfig(DEFAULT_SELL_AMOUNT, params);
+
+        vm.prank(address(paymentRails));
+        reentrantToken.approve(address(module), DEFAULT_SELL_AMOUNT);
+
+        vm.prank(address(paymentRails));
+        DataTypes.ExecutionResult memory result =
+            module.execute(address(reentrantToken), DEFAULT_SELL_AMOUNT, params, "");
+
+        bytes32 orderId = abi.decode(result.data, (bytes32));
+
+        // The order is valid and can be cancelled normally
+        DataTypes.CowOrderMetadata memory meta = module.getOrder(orderId);
+        assertEq(meta.paymentRails, address(paymentRails));
+        assertFalse(meta.cancelled);
+
+        // Cancel the order — tokens return cleanly
+        module.cancelOrder(orderId);
+        assertTrue(module.getOrder(orderId).cancelled);
+        assertEq(reentrantToken.balanceOf(address(module)), 0, "all tokens returned after cancel");
+        assertEq(reentrantToken.balanceOf(address(paymentRails)), DEFAULT_SELL_AMOUNT * 5, "paymentRails made whole");
+    }
+
+    // -----------------------------------------------------------------------
+    // cross-function reentrancy: execute → cancelOrder
+    // -----------------------------------------------------------------------
+
+    /// @dev During execute()'s transferFrom, a hook-enabled token attempts cancelOrder() on
+    ///      a pre-existing order. The shared ReentrancyGuard lock blocks the cross-function call.
+    function test_Execute_CrossFunctionReentrancy_CancelOrderBlockedDuringExecute() external {
+        // Step 1: create a pre-existing order with normal sellToken
+        bytes32 existingOrderId = _initiateDefaultOrder();
+        assertFalse(module.getOrder(existingOrderId).cancelled, "pre-existing order is pending");
+
+        // Step 2: set up the cross-function reentrant token
+        ReentrantCancelDuringExecuteSellToken crossToken = new ReentrantCancelDuringExecuteSellToken(address(module));
+        crossToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT);
+
+        // Arm: during transferFrom, token will try cancelOrder(existingOrderId)
+        crossToken.setReentryConfig(existingOrderId);
+
+        bytes memory params =
+            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, keccak256("cross-func-test"));
+
+        vm.prank(address(paymentRails));
+        crossToken.approve(address(module), DEFAULT_SELL_AMOUNT);
+
+        vm.prank(address(paymentRails));
+        DataTypes.ExecutionResult memory result = module.execute(address(crossToken), DEFAULT_SELL_AMOUNT, params, "");
+
+        // Outer execute succeeds
+        assertTrue(result.success, "outer execute must succeed");
+
+        // Cross-function reentrancy was attempted and blocked
+        assertTrue(crossToken.reentryAttempted(), "hook must have fired");
+        assertTrue(crossToken.cancelBlocked(), "cross-function cancelOrder must be blocked by shared nonReentrant");
+
+        // Pre-existing order is NOT cancelled (the reentrant cancel was blocked)
+        assertFalse(module.getOrder(existingOrderId).cancelled, "pre-existing order must remain pending");
+        assertEq(sellToken.balanceOf(address(module)), DEFAULT_SELL_AMOUNT, "pre-existing order tokens intact");
+    }
+
+    // -----------------------------------------------------------------------
+    // CEI cleanup: reverting transferFrom (not just false-return)
+    // -----------------------------------------------------------------------
+
+    /// @dev RevertingTransferERC20's transferFrom reverts (vs FailingTransferERC20 which returns false).
+    ///      Both paths go through trySafeTransferFrom → return false → delete _orders[orderId].
+    function test_WhenTokenTransferReverts_CleansUpOrderMetadata() external {
+        RevertingTransferERC20 revertToken = new RevertingTransferERC20();
+        revertToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 10);
+
+        bytes memory params =
+            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+
+        DataTypes.ExecutionResult memory result =
+            paymentRails.initiateSwap(address(revertToken), DEFAULT_SELL_AMOUNT, params);
+
+        assertFalse(result.success, "must fail");
+        assertEq(result.failureReason, "Token transfer failed");
+
+        // Retry with same params: must fail with "transfer failed", NOT "collision"
+        DataTypes.ExecutionResult memory result2 =
+            paymentRails.initiateSwap(address(revertToken), DEFAULT_SELL_AMOUNT, params);
+        assertFalse(result2.success);
+        assertEq(result2.failureReason, "Token transfer failed", "no stale collision after revert cleanup");
+    }
+
+    // -----------------------------------------------------------------------
+    // CEI cleanup: explicit struct zeroing and isValidSignature verification
+    // -----------------------------------------------------------------------
+
+    /// @dev After a failed transfer, `delete _orders[orderId]` must zero ALL struct fields.
+    ///      Computes the actual orderId that was written during the effects phase and verifies
+    ///      every field is zeroed after the cleanup.
+    function test_WhenTokenTransferFails_AllStructFieldsZeroed() external {
+        FailingTransferERC20 failToken = new FailingTransferERC20();
+        failToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 10);
+
+        bytes memory params =
+            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        paymentRails.initiateSwap(address(failToken), DEFAULT_SELL_AMOUNT, params);
+
+        // Compute the actual orderId that was written then deleted.
+        // msg.sender inside module.execute() is address(paymentRails) (MockPaymentRails calls execute).
+        uint32 expectedValidTo = uint32(block.timestamp + DEFAULT_VALIDITY);
+        bytes32 orderId = _computeTestOrderDigest(
+            address(failToken),
+            address(buyToken),
+            address(paymentRails),
+            DEFAULT_SELL_AMOUNT,
+            DEFAULT_MIN_BUY_AMOUNT,
+            expectedValidTo,
+            DEFAULT_APP_DATA
+        );
+
+        DataTypes.CowOrderMetadata memory meta = module.getOrder(orderId);
+        assertEq(meta.paymentRails, address(0), "paymentRails must be zero after cleanup");
+        assertEq(meta.sellToken, address(0), "sellToken must be zero after cleanup");
+        assertEq(meta.buyToken, address(0), "buyToken must be zero after cleanup");
+        assertEq(meta.sellAmount, 0, "sellAmount must be zero after cleanup");
+        assertEq(meta.validTo, 0, "validTo must be zero after cleanup");
+        assertFalse(meta.cancelled, "cancelled must be false after cleanup");
+    }
+
+    /// @dev After a failed transfer, isValidSignature must return FAILURE for the exact orderId
+    ///      that was transiently written during the CEI effects phase then cleaned up.
+    function test_WhenTokenTransferFails_IsValidSignatureReturnsFailureForCleanedUpOrderId() external {
+        FailingTransferERC20 failToken = new FailingTransferERC20();
+        failToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 10);
+
+        bytes memory params =
+            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        paymentRails.initiateSwap(address(failToken), DEFAULT_SELL_AMOUNT, params);
+
+        uint32 expectedValidTo = uint32(block.timestamp + DEFAULT_VALIDITY);
+        bytes32 orderId = _computeTestOrderDigest(
+            address(failToken),
+            address(buyToken),
+            address(paymentRails),
+            DEFAULT_SELL_AMOUNT,
+            DEFAULT_MIN_BUY_AMOUNT,
+            expectedValidTo,
+            DEFAULT_APP_DATA
+        );
+
+        // isValidSignature for the exact cleaned-up orderId must return FAILURE
+        assertEq(
+            module.isValidSignature(orderId, abi.encode(orderId)),
+            EIP1271_FAILURE,
+            "isValidSignature must return FAILURE for cleaned-up orderId"
+        );
     }
 }

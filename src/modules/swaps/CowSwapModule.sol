@@ -10,13 +10,14 @@ import { Errors } from "../../libraries/Errors.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Ownable2Step, Ownable } from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title CowSwapModule
 /// @author Credit Cooperative
 /// @notice Async action module that submits sell orders to the CowSwap order-book protocol.
 /// @dev See {ICowSwapModule} for the full lifecycle, deployment model, and security model.
 /// Each PaymentRails must deploy its own private instance — do NOT share across PaymentRails.
-contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
+contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -92,10 +93,13 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
     )
         external
         override(ActionModuleBase, IActionModule)
+        nonReentrant
         returns (DataTypes.ExecutionResult memory result)
     {
         DataTypes.CowSwapParams memory swapParams;
         uint32 validTo;
+
+        // --- Checks ---
 
         {
             bool valid;
@@ -118,17 +122,6 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
             return _failedResult(token, "Insufficient balance");
         }
 
-        // --- Interactions ---
-
-        bool transferred = _safeTransferFrom(token, msg.sender, address(this), amount);
-        if (!transferred) {
-            return _failedResult(token, "Token transfer failed");
-        }
-
-        if (IERC20(token).allowance(address(this), vaultRelayer) < type(uint256).max) {
-            IERC20(token).forceApprove(vaultRelayer, type(uint256).max);
-        }
-
         // --- Effects ---
 
         _orders[orderId] = DataTypes.CowOrderMetadata({
@@ -139,6 +132,18 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
             validTo: validTo,
             cancelled: false
         });
+
+        // --- Interactions ---
+
+        bool transferred = _safeTransferFrom(token, msg.sender, address(this), amount);
+        if (!transferred) {
+            delete _orders[orderId];
+            return _failedResult(token, "Token transfer failed");
+        }
+
+        if (IERC20(token).allowance(address(this), vaultRelayer) < type(uint256).max) {
+            IERC20(token).forceApprove(vaultRelayer, type(uint256).max);
+        }
 
         emit OrderCreated(
             orderId,
@@ -155,7 +160,7 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step {
     }
 
     /// @inheritdoc ICowSwapModule
-    function cancelOrder(bytes32 orderId) external {
+    function cancelOrder(bytes32 orderId) external nonReentrant {
         DataTypes.CowOrderMetadata storage meta = _orders[orderId];
 
         if (meta.paymentRails == address(0)) {
