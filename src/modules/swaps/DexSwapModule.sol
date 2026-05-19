@@ -12,6 +12,7 @@ import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/I
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { Ownable2Step, Ownable } from "@openzeppelin/contracts/access/Ownable2Step.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title DexSwapModule
 /// @author Credit Cooperative
@@ -30,7 +31,7 @@ import { Ownable2Step, Ownable } from "@openzeppelin/contracts/access/Ownable2St
 ///
 /// A single instance may be shared across multiple PaymentRails, since the module holds no persistent
 /// token state. Router whitelist and ownership are module-level (not per-PaymentRails).
-contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step {
+contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -78,6 +79,7 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step {
     )
         external
         override(ActionModuleBase, IActionModule)
+        nonReentrant
         returns (DataTypes.ExecutionResult memory)
     {
         if (executionData.length == 0) return _failedResult(token, "Missing execution data");

@@ -5,6 +5,9 @@ import { DexSwapModuleBase } from "../DexSwapModuleBase.t.sol";
 import { DataTypes } from "../../../../../../src/types/DataTypes.sol";
 import { Errors } from "../../../../../../src/libraries/Errors.sol";
 import { MockRouter } from "../../../../../shared/mocks/MockRouter.sol";
+import { ReentrantRouter } from "../../../../../shared/mocks/ReentrantRouter.sol";
+import { MockDexSwapPaymentRails } from "../../../../../shared/mocks/MockDexSwapPaymentRails.sol";
+import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @notice Unit tests for DexSwapModule.execute()
 /// @dev Tree: tests/unit/concrete/swaps/dex-swap-module/execute/execute.tree
@@ -396,6 +399,182 @@ contract DexSwapModule_Execute_Test is DexSwapModuleBase {
 
         assertEq(sellToken.balanceOf(address(module)), 0, "zero after swap 2");
         assertEq(buyToken.balanceOf(address(module)), 0, "zero after swap 2");
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                    REENTRANCY GUARD TESTS
+    //////////////////////////////////////////////////////////////////////////*/
+
+    // -----------------------------------------------------------------------
+    // when router re-enters execute during swap callback
+    // -----------------------------------------------------------------------
+
+    function test_WhenRouterReenters_RevertsWithReentrancyGuardReentrantCall() external {
+        (ReentrantRouter reentrantRouter, MockDexSwapPaymentRails victim,) = _setupReentrancyScenario();
+
+        // Arm the reentrant call — router will try module.execute() mid-swap
+        reentrantRouter.setReentrantCall(
+            address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams(), _defaultExecutionData()
+        );
+
+        bytes memory victimExecData = _buildReentrantVictimExecData(reentrantRouter, victim);
+        victim.executeSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams(), victimExecData);
+
+        assertTrue(reentrantRouter.reentrancyAttempted(), "router attempted reentrancy");
+        assertFalse(reentrantRouter.reentrancySucceeded(), "reentrant call was blocked");
+
+        // Verify the SPECIFIC revert reason is ReentrancyGuardReentrantCall, not an incidental failure
+        bytes memory expectedRevert = abi.encodeWithSelector(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        assertEq(reentrantRouter.revertReasonBytes(), expectedRevert, "reverted with ReentrancyGuardReentrantCall");
+    }
+
+    function test_WhenRouterReenters_OriginalSwapCompletesSuccessfully() external {
+        (ReentrantRouter reentrantRouter, MockDexSwapPaymentRails victim,) = _setupReentrancyScenario();
+
+        reentrantRouter.setReentrantCall(
+            address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams(), _defaultExecutionData()
+        );
+
+        bytes memory victimExecData = _buildReentrantVictimExecData(reentrantRouter, victim);
+
+        uint256 victimSellBefore = sellToken.balanceOf(address(victim));
+        uint256 victimBuyBefore = buyToken.balanceOf(address(victim));
+
+        DataTypes.ExecutionResult memory result =
+            victim.executeSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams(), victimExecData);
+
+        assertTrue(result.success, "original swap succeeds");
+        assertEq(result.amountOut, DEFAULT_BUY_AMOUNT, "correct output amount");
+        assertEq(sellToken.balanceOf(address(victim)), victimSellBefore - DEFAULT_SELL_AMOUNT, "sell tokens debited");
+        assertEq(buyToken.balanceOf(address(victim)), victimBuyBefore + DEFAULT_BUY_AMOUNT, "buy tokens credited");
+        assertEq(sellToken.balanceOf(address(module)), 0, "module retains nothing");
+    }
+
+    function test_WhenRouterReenters_AttackerBalancesUnchanged() external {
+        (ReentrantRouter reentrantRouter, MockDexSwapPaymentRails victim, MockDexSwapPaymentRails attackerRails) =
+            _setupReentrancyScenario();
+
+        // Give attacker tokens and approval for the reentrant call
+        sellToken.mint(address(attackerRails), DEFAULT_SELL_AMOUNT);
+
+        bytes memory attackerRouterCalldata = abi.encodeWithSelector(
+            MockRouter.swap.selector,
+            address(sellToken),
+            DEFAULT_SELL_AMOUNT,
+            address(buyToken),
+            address(attackerRails),
+            DEFAULT_BUY_AMOUNT
+        );
+        bytes memory attackerExecData =
+            abi.encode(address(reentrantRouter), DEFAULT_MIN_AMOUNT_OUT, DEFAULT_DEADLINE, attackerRouterCalldata);
+        reentrantRouter.setReentrantCall(address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams(), attackerExecData);
+
+        uint256 attackerSellBefore = sellToken.balanceOf(address(attackerRails));
+        uint256 attackerBuyBefore = buyToken.balanceOf(address(attackerRails));
+
+        bytes memory victimExecData = _buildReentrantVictimExecData(reentrantRouter, victim);
+        victim.executeSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams(), victimExecData);
+
+        assertEq(sellToken.balanceOf(address(attackerRails)), attackerSellBefore, "attacker sell tokens unchanged");
+        assertEq(buyToken.balanceOf(address(attackerRails)), attackerBuyBefore, "attacker buy tokens unchanged");
+    }
+
+    function test_WhenRouterReenters_ModuleRemainsUsableAfterBlockedReentrancy() external {
+        (ReentrantRouter reentrantRouter, MockDexSwapPaymentRails victim,) = _setupReentrancyScenario();
+
+        reentrantRouter.setReentrantCall(
+            address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams(), _defaultExecutionData()
+        );
+
+        bytes memory victimExecData = _buildReentrantVictimExecData(reentrantRouter, victim);
+        victim.executeSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams(), victimExecData);
+
+        // After reentrancy was blocked, verify the module works normally for a subsequent swap
+        buyToken.mint(address(router), DEFAULT_BUY_AMOUNT);
+        DataTypes.ExecutionResult memory result = paymentRails.executeSwap(
+            address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams(), _defaultExecutionData()
+        );
+
+        assertTrue(result.success, "module functional after blocked reentrancy");
+        assertEq(result.amountOut, DEFAULT_BUY_AMOUNT, "subsequent swap correct output");
+        assertEq(sellToken.balanceOf(address(module)), 0, "no residual after subsequent swap");
+    }
+
+    function test_WhenDirectCallerReenters_RevertsWithReentrancyGuardReentrantCall() external {
+        ReentrantRouter reentrantRouter = new ReentrantRouter(address(module));
+        module.addRouter(address(reentrantRouter));
+
+        // Direct caller: an EOA that calls module.execute() directly, bypassing PaymentRails
+        address directCaller = makeAddr("directCaller");
+        sellToken.mint(directCaller, DEFAULT_SELL_AMOUNT);
+        buyToken.mint(address(reentrantRouter), DEFAULT_BUY_AMOUNT);
+        vm.prank(directCaller);
+        sellToken.approve(address(module), DEFAULT_SELL_AMOUNT);
+
+        // Arm the reentrant call — router will try execute() directly during its callback
+        reentrantRouter.setReentrantCall(
+            address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams(), _defaultExecutionData()
+        );
+
+        bytes memory directRouterCalldata = abi.encodeWithSelector(
+            ReentrantRouter.swapAndReenter.selector,
+            address(sellToken),
+            DEFAULT_SELL_AMOUNT,
+            address(buyToken),
+            directCaller,
+            DEFAULT_BUY_AMOUNT
+        );
+        bytes memory directExecData =
+            abi.encode(address(reentrantRouter), DEFAULT_MIN_AMOUNT_OUT, DEFAULT_DEADLINE, directRouterCalldata);
+
+        // Call execute() directly as the EOA (bypassing PaymentRails entirely)
+        vm.prank(directCaller);
+        DataTypes.ExecutionResult memory result =
+            module.execute(address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams(), directExecData);
+
+        assertTrue(result.success, "direct call swap succeeds");
+        assertTrue(reentrantRouter.reentrancyAttempted(), "direct caller reentrancy attempted");
+        assertFalse(reentrantRouter.reentrancySucceeded(), "direct caller reentrancy blocked");
+
+        bytes memory expectedRevert = abi.encodeWithSelector(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        assertEq(reentrantRouter.revertReasonBytes(), expectedRevert, "reverted with ReentrancyGuardReentrantCall");
+    }
+
+    // -----------------------------------------------------------------------
+    // Reentrancy test helpers
+    // -----------------------------------------------------------------------
+
+    function _setupReentrancyScenario()
+        private
+        returns (ReentrantRouter reentrantRouter, MockDexSwapPaymentRails victim, MockDexSwapPaymentRails attackerRails)
+    {
+        reentrantRouter = new ReentrantRouter(address(module));
+        module.addRouter(address(reentrantRouter));
+
+        victim = new MockDexSwapPaymentRails(address(module));
+        sellToken.mint(address(victim), DEFAULT_SELL_AMOUNT);
+        buyToken.mint(address(reentrantRouter), DEFAULT_BUY_AMOUNT);
+
+        attackerRails = new MockDexSwapPaymentRails(address(module));
+    }
+
+    function _buildReentrantVictimExecData(
+        ReentrantRouter reentrantRouter,
+        MockDexSwapPaymentRails victim
+    )
+        private
+        view
+        returns (bytes memory)
+    {
+        bytes memory victimRouterCalldata = abi.encodeWithSelector(
+            ReentrantRouter.swapAndReenter.selector,
+            address(sellToken),
+            DEFAULT_SELL_AMOUNT,
+            address(buyToken),
+            address(victim),
+            DEFAULT_BUY_AMOUNT
+        );
+        return abi.encode(address(reentrantRouter), DEFAULT_MIN_AMOUNT_OUT, DEFAULT_DEADLINE, victimRouterCalldata);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
