@@ -91,8 +91,7 @@ abstract contract ActionModuleBase is IActionModule {
     function execute(
         address token,
         uint256 amount,
-        bytes calldata params,
-        bytes calldata executionData
+        bytes calldata params
     )
         external
         virtual
@@ -102,8 +101,7 @@ abstract contract ActionModuleBase is IActionModule {
     function validate(
         address token,
         uint256 amount,
-        bytes calldata params,
-        bytes calldata executionData
+        bytes calldata params
     )
         external
         view

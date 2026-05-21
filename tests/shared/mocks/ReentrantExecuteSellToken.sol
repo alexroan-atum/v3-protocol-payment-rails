@@ -47,7 +47,7 @@ contract ReentrantExecuteSellToken is ERC20 {
 
             _approve(address(this), address(module), reentrantAmount);
 
-            try module.execute(address(this), reentrantAmount, reentrantParams, "") {
+            try module.execute(address(this), reentrantAmount, reentrantParams) {
                 reentrancyBlocked = false;
             } catch {
                 reentrancyBlocked = true;

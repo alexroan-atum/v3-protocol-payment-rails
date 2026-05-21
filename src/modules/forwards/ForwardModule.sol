@@ -18,8 +18,7 @@ contract ForwardModule is IForwardModule, ActionModuleBase {
     function execute(
         address token,
         uint256 amount,
-        bytes calldata params,
-        bytes calldata /* executionData */
+        bytes calldata params
     )
         external
         override(ActionModuleBase, IActionModule)
@@ -56,8 +55,7 @@ contract ForwardModule is IForwardModule, ActionModuleBase {
     function validate(
         address token,
         uint256 amount,
-        bytes calldata params,
-        bytes calldata /* executionData */
+        bytes calldata params
     )
         external
         view

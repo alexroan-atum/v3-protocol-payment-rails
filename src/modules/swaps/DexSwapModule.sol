@@ -3,6 +3,7 @@ pragma solidity 0.8.29;
 
 import { IDexSwapModule } from "../../interfaces/IDexSwapModule.sol";
 import { IActionModule } from "../../interfaces/IActionModule.sol";
+import { ISwapRouter } from "../../interfaces/ISwapRouter.sol";
 import { IChainlinkAggregatorV3 } from "../../interfaces/IChainlinkAggregatorV3.sol";
 import { ActionModuleBase } from "../../abstracts/ActionModuleBase.sol";
 import { DataTypes } from "../../types/DataTypes.sol";
@@ -11,106 +12,78 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
-import { Ownable2Step, Ownable } from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title DexSwapModule
 /// @author Credit Cooperative
-/// @notice Synchronous swap module that executes atomic swaps through whitelisted DEX routers.
+/// @notice Oracle-only synchronous swap module — the permissionless executor controls nothing.
 /// @dev See {IDexSwapModule} for the full architecture, security model, and execution flow.
 ///
-/// The router sends output tokens directly to the PaymentRails (encoded in `routerCalldata`).
-/// The module verifies the swap by measuring the PaymentRails's targetToken balance before and after
-/// the router call — never trusting router return values.
+/// All swap parameters are owner-configured in the static {DexSwapParams}. The executor calls
+/// `PaymentRails.executeAction(token, amount)` — no `executionData`, no caller-controlled values.
 ///
-/// Oracle-enforced slippage protection: when Chainlink price feeds are configured in the static
-/// params, the module computes a fair-price floor and rejects any execution where the caller's
-/// `minAmountOut` is below `oracleExpected * (10000 - maxSlippageBps) / 10000`. This prevents
-/// sandwich attacks by permissionless executors. When feeds are not configured, the module falls
-/// back to the caller-supplied `minAmountOut` only.
+/// The module computes `amountOutMinimum` on-chain from Chainlink oracle prices:
+///   `oracleExpected * (10000 - maxSlippageBps) / 10000`
+/// Oracle feeds are mandatory — there is no fallback to caller-supplied slippage.
 ///
-/// A single instance may be shared across multiple PaymentRails, since the module holds no persistent
-/// token state. Router whitelist and ownership are module-level (not per-PaymentRails).
-contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step, ReentrancyGuard {
+/// The router is immutable (set once at construction). No owner key, no whitelist, no mutable
+/// state. The module is fully stateless across transactions.
+contract DexSwapModule is IDexSwapModule, ActionModuleBase, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /*//////////////////////////////////////////////////////////////////////////
-                                MUTABLE STATE
+                                IMMUTABLE STATE
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @dev Whitelisted router addresses. Only these may be called during execute().
-    mapping(address router => bool allowed) private _allowedRouters;
+    /// @inheritdoc IDexSwapModule
+    address public immutable override router;
 
     /*//////////////////////////////////////////////////////////////////////////
                                   CONSTRUCTOR
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @param _owner Address that will own this module (manages router whitelist).
-    constructor(address _owner) Ownable(_owner) { }
+    /// @param _router Uniswap V3 SwapRouter address. Must be a contract. Immutable after deployment.
+    constructor(address _router) {
+        if (_router == address(0)) revert Errors.DexSwapModule_ZeroRouter();
+        if (_router.code.length == 0) revert Errors.DexSwapModule_RouterNotContract(_router);
+        router = _router;
+    }
 
     /*//////////////////////////////////////////////////////////////////////////
                             NON-CONSTANT FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @inheritdoc IDexSwapModule
-    function addRouter(address router) external onlyOwner {
-        if (router == address(0)) revert Errors.DexSwapModule_ZeroRouter();
-        if (router.code.length == 0) revert Errors.DexSwapModule_RouterNotContract(router);
-        if (_allowedRouters[router]) revert Errors.DexSwapModule_RouterAlreadyAdded(router);
-
-        _allowedRouters[router] = true;
-        emit RouterAdded(router);
-    }
-
-    /// @inheritdoc IDexSwapModule
-    function removeRouter(address router) external onlyOwner {
-        if (!_allowedRouters[router]) revert Errors.DexSwapModule_RouterNotAllowed(router);
-
-        _allowedRouters[router] = false;
-        emit RouterRemoved(router);
-    }
-
     /// @inheritdoc IActionModule
     function execute(
         address token,
         uint256 amount,
-        bytes calldata params,
-        bytes calldata executionData
+        bytes calldata params
     )
         external
         override(ActionModuleBase, IActionModule)
         nonReentrant
         returns (DataTypes.ExecutionResult memory)
     {
-        if (executionData.length == 0) return _failedResult(token, "Missing execution data");
-
-        (
-            bool valid,
-            string memory reason,
-            DataTypes.DexSwapParams memory cfg,
-            DataTypes.DexSwapExecutionData memory exec
-        ) = _validateSwapParams(token, amount, params, executionData);
+        (bool valid, string memory reason, DataTypes.DexSwapParams memory cfg) = _validateParams(token, amount, params);
         if (!valid) return _failedResult(token, reason);
 
         if (!_hasSufficientBalance(token, amount)) return _failedResult(token, "Insufficient balance");
 
-        {
-            (bool oracleValid, string memory oracleReason) = _checkOracleFloor(token, amount, cfg, exec.minAmountOut);
-            if (!oracleValid) return _failedResult(token, oracleReason);
-        }
+        (bool oracleOk, uint256 oracleFloor) = _computeOracleFloor(token, amount, cfg);
+        if (!oracleOk) return _failedResult(token, "Oracle price unavailable");
 
-        (bool ok, uint256 actualIn, uint256 amountOut) = _executeSwap(token, amount, cfg.targetToken, exec);
+        (bool ok, uint256 actualIn, uint256 amountOut) = _executeSwap(token, amount, cfg, oracleFloor);
 
         _returnLeftover(token, msg.sender);
 
         if (!ok) return _failedResult(token, "Router call failed");
-        if (amountOut < exec.minAmountOut) {
-            revert Errors.DexSwapModule_InsufficientOutput(amountOut, exec.minAmountOut);
+        if (amountOut < oracleFloor) {
+            revert Errors.DexSwapModule_InsufficientOutput(amountOut, oracleFloor);
         }
 
-        emit SwapExecuted(msg.sender, token, cfg.targetToken, actualIn, amountOut, exec.router);
+        emit SwapExecuted(msg.sender, token, cfg.targetToken, actualIn, amountOut);
 
-        return _successResult(amountOut, cfg.targetToken, abi.encode(exec.router));
+        return _successResult(amountOut, cfg.targetToken, "");
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -121,8 +94,7 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step, Reentr
     function validate(
         address token,
         uint256 amount,
-        bytes calldata params,
-        bytes calldata executionData
+        bytes calldata params
     )
         external
         view
@@ -130,16 +102,11 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step, Reentr
         returns (bool isValid, string memory reason)
     {
         DataTypes.DexSwapParams memory cfg;
-        DataTypes.DexSwapExecutionData memory exec;
-
-        (isValid, reason, cfg, exec) = _validateSwapParams(token, amount, params, executionData);
+        (isValid, reason, cfg) = _validateParams(token, amount, params);
         if (!isValid) return (false, reason);
 
-        if (executionData.length > 0) {
-            (bool oracleValid, string memory oracleReason) =
-                _checkOracleFloorValidate(token, amount, cfg, exec.minAmountOut);
-            if (!oracleValid) return (false, oracleReason);
-        }
+        (bool oracleOk,) = _computeOracleFloor(token, amount, cfg);
+        if (!oracleOk) return (false, "Oracle price unavailable");
 
         if (!_hasSufficientBalance(token, amount)) return (false, "Insufficient balance");
 
@@ -158,10 +125,8 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step, Reentr
         returns (uint256 estimatedOutput, address outputToken)
     {
         DataTypes.DexSwapParams memory cfg = decodeParams(params);
-        if (_hasOracleConfig(cfg)) {
-            (bool oracleOk, uint256 expected) = _computeExpectedOutput(token, amount, cfg);
-            if (oracleOk) return (expected, cfg.targetToken);
-        }
+        (bool oracleOk, uint256 expected) = _computeExpectedOutput(token, amount, cfg);
+        if (oracleOk) return (expected, cfg.targetToken);
         return (0, cfg.targetToken);
     }
 
@@ -171,18 +136,15 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step, Reentr
     }
 
     /// @inheritdoc IDexSwapModule
-    function isRouterAllowed(address router) external view returns (bool allowed) {
-        return _allowedRouters[router];
-    }
-
-    /// @inheritdoc IDexSwapModule
     function encodeParams(DataTypes.DexSwapParams calldata params) external pure returns (bytes memory encoded) {
         return abi.encode(
             params.targetToken,
+            params.fee,
             params.maxSlippageBps,
             params.sellTokenPriceFeed,
             params.buyTokenPriceFeed,
-            params.maxStaleness
+            params.maxStaleness,
+            params.swapDeadlineSeconds
         );
     }
 
@@ -190,139 +152,48 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step, Reentr
     function decodeParams(bytes calldata encoded) public pure returns (DataTypes.DexSwapParams memory params) {
         (
             params.targetToken,
+            params.fee,
             params.maxSlippageBps,
             params.sellTokenPriceFeed,
             params.buyTokenPriceFeed,
-            params.maxStaleness
-        ) = abi.decode(encoded, (address, uint16, address, address, uint256));
-    }
-
-    /// @inheritdoc IDexSwapModule
-    function encodeExecutionData(DataTypes.DexSwapExecutionData calldata data)
-        external
-        pure
-        returns (bytes memory encoded)
-    {
-        return abi.encode(data.router, data.minAmountOut, data.deadline, data.routerCalldata);
-    }
-
-    /// @inheritdoc IDexSwapModule
-    function decodeExecutionData(bytes calldata encoded)
-        public
-        pure
-        returns (DataTypes.DexSwapExecutionData memory data)
-    {
-        (data.router, data.minAmountOut, data.deadline, data.routerCalldata) =
-            abi.decode(encoded, (address, uint256, uint256, bytes));
+            params.maxStaleness,
+            params.swapDeadlineSeconds
+        ) = abi.decode(encoded, (address, uint24, uint16, address, address, uint256, uint256));
     }
 
     /*//////////////////////////////////////////////////////////////////////////
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @dev Shared validation for `execute` and `validate`. Returns decoded params and execution
-    ///      data on success so callers avoid redundant decoding.
-    ///      Oracle floor enforcement is excluded: `execute` reverts (security-critical) while
-    ///      `validate` returns a soft failure — callers apply the appropriate check after this.
-    function _validateSwapParams(
+    /// @dev Validates static params: encoding length, targetToken, amount, oracle config, deadline config.
+    // solhint-disable-next-line code-complexity
+    function _validateParams(
         address token,
         uint256 amount,
-        bytes calldata params,
-        bytes calldata executionData
+        bytes calldata params
     )
         private
-        view
-        returns (
-            bool valid,
-            string memory reason,
-            DataTypes.DexSwapParams memory cfg,
-            DataTypes.DexSwapExecutionData memory exec
-        )
+        pure
+        returns (bool valid, string memory reason, DataTypes.DexSwapParams memory cfg)
     {
-        if (params.length < 160) {
-            return (false, "Invalid params encoding", cfg, exec);
+        if (params.length < 224) {
+            return (false, "Invalid params encoding", cfg);
         }
 
-        cfg = decodeParams(params);
+        cfg = abi.decode(params, (DataTypes.DexSwapParams));
 
-        if (cfg.targetToken == address(0)) return (false, "Zero target token", cfg, exec);
-        if (cfg.targetToken == token) return (false, "Same input and output token", cfg, exec);
-        if (amount == 0) return (false, "Zero sell amount", cfg, exec);
+        if (cfg.targetToken == address(0)) return (false, "Zero target token", cfg);
+        if (cfg.targetToken == token) return (false, "Same input and output token", cfg);
+        if (amount == 0) return (false, "Zero sell amount", cfg);
+        if (cfg.maxSlippageBps == 0 || cfg.maxSlippageBps > 10_000) return (false, "Invalid slippage bps", cfg);
+        if (cfg.sellTokenPriceFeed == address(0)) return (false, "Missing sell token price feed", cfg);
+        if (cfg.buyTokenPriceFeed == address(0)) return (false, "Missing buy token price feed", cfg);
+        if (cfg.swapDeadlineSeconds == 0) return (false, "Zero swap deadline", cfg);
 
-        if (executionData.length > 0) {
-            bool execValid;
-            string memory execReason;
-            (execValid, execReason, exec) = _validateExecutionData(executionData);
-            if (!execValid) return (false, execReason, cfg, exec);
-        }
-
-        return (true, "", cfg, exec);
-    }
-
-    /// @dev Validates execution data fields: router whitelist, minimum output, and deadline.
-    function _validateExecutionData(bytes calldata executionData)
-        private
-        view
-        returns (bool valid, string memory reason, DataTypes.DexSwapExecutionData memory exec)
-    {
-        exec = decodeExecutionData(executionData);
-        if (!_allowedRouters[exec.router]) return (false, "Router not allowed", exec);
-        if (exec.minAmountOut == 0) return (false, "Zero min amount out", exec);
-        if (block.timestamp > exec.deadline) return (false, "Deadline expired", exec);
-        return (true, "", exec);
-    }
-
-    /// @dev Returns true if oracle-based slippage enforcement is fully configured.
-    function _hasOracleConfig(DataTypes.DexSwapParams memory cfg) private pure returns (bool) {
-        return cfg.maxSlippageBps > 0 && cfg.sellTokenPriceFeed != address(0) && cfg.buyTokenPriceFeed != address(0);
-    }
-
-    /// @dev Validates minAmountOut against the oracle-derived floor. Reverts if below floor,
-    /// returns soft failure if oracle is unavailable, and passes through if oracle is not configured.
-    function _checkOracleFloor(
-        address token,
-        uint256 amount,
-        DataTypes.DexSwapParams memory cfg,
-        uint256 minAmountOut
-    )
-        private
-        view
-        returns (bool valid, string memory reason)
-    {
-        if (!_hasOracleConfig(cfg)) return (true, "");
-
-        (bool oracleOk, uint256 oracleFloor) = _computeOracleFloor(token, amount, cfg);
-        if (!oracleOk) return (false, "Oracle price unavailable");
-        if (minAmountOut < oracleFloor) {
-            revert Errors.DexSwapModule_SlippageExceedsOracleFloor(minAmountOut, oracleFloor);
-        }
-        return (true, "");
-    }
-
-    /// @dev Same as _checkOracleFloor but returns (false, reason) instead of reverting,
-    /// suitable for the view-only validate() path.
-    function _checkOracleFloorValidate(
-        address token,
-        uint256 amount,
-        DataTypes.DexSwapParams memory cfg,
-        uint256 minAmountOut
-    )
-        private
-        view
-        returns (bool valid, string memory reason)
-    {
-        if (!_hasOracleConfig(cfg)) return (true, "");
-
-        (bool oracleOk, uint256 oracleFloor) = _computeOracleFloor(token, amount, cfg);
-        if (!oracleOk) return (false, "Oracle price unavailable");
-        if (minAmountOut < oracleFloor) return (false, "Slippage below oracle floor");
-        return (true, "");
+        return (true, "", cfg);
     }
 
     /// @dev Reads a Chainlink price feed and validates freshness, positivity, and magnitude.
-    /// The uint128 upper bound prevents overflow in downstream mulDiv computations and is
-    /// well above any realistic Chainlink price (aggregators use int192, and no asset price
-    /// requires more than ~40 decimal digits).
     function _getOraclePrice(
         address feed,
         uint256 maxStaleness
@@ -347,9 +218,7 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step, Reentr
         }
     }
 
-    /// @dev Computes the oracle-expected output using Chainlink prices and token decimals.
-    /// Formula: expectedOutput = amount * sellPrice / buyPrice, adjusted for decimal differences.
-    /// Uses Math.mulDiv for overflow-safe 512-bit intermediate arithmetic.
+    /// @dev Computes oracle-expected output: amount * sellPrice / buyPrice, decimal-adjusted.
     function _computeExpectedOutput(
         address token,
         uint256 amount,
@@ -395,7 +264,7 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step, Reentr
         return (true, expectedOutput);
     }
 
-    /// @dev Applies maxSlippageBps to the oracle-expected output to get the minimum floor.
+    /// @dev Applies maxSlippageBps to oracle-expected output to get the minimum floor.
     function _computeOracleFloor(
         address token,
         uint256 amount,
@@ -405,8 +274,6 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step, Reentr
         view
         returns (bool ok, uint256 floor)
     {
-        if (cfg.maxSlippageBps > 10_000) return (false, 0);
-
         (bool oracleOk, uint256 expected) = _computeExpectedOutput(token, amount, cfg);
         if (!oracleOk) return (false, 0);
 
@@ -423,13 +290,13 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step, Reentr
         }
     }
 
-    /// @dev Pulls sellToken via SafeERC20, calls the router, and measures output via balance diff.
-    /// Uses balance-diff for the pull to correctly account for fee-on-transfer tokens.
+    /// @dev Pulls sellToken, builds exactInputSingle calldata with oracle floor as amountOutMinimum,
+    /// calls the immutable router, measures output via balance diff, forwards to msg.sender.
     function _executeSwap(
         address token,
         uint256 amount,
-        address targetToken,
-        DataTypes.DexSwapExecutionData memory exec
+        DataTypes.DexSwapParams memory cfg,
+        uint256 oracleFloor
     )
         private
         returns (bool ok, uint256 actualIn, uint256 amountOut)
@@ -438,20 +305,37 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, Ownable2Step, Reentr
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
         actualIn = IERC20(token).balanceOf(address(this)) - sellBefore;
 
-        IERC20(token).forceApprove(exec.router, actualIn);
+        IERC20(token).forceApprove(router, actualIn);
 
-        uint256 buyTokenBefore = IERC20(targetToken).balanceOf(msg.sender);
+        uint256 buyTokenBefore = IERC20(cfg.targetToken).balanceOf(address(this));
 
-        // solhint-disable-next-line avoid-low-level-calls
-        (ok,) = exec.router.call(exec.routerCalldata);
+        bytes memory swapCalldata = abi.encodeCall(
+            ISwapRouter.exactInputSingle,
+            (ISwapRouter.ExactInputSingleParams({
+                    tokenIn: token,
+                    tokenOut: cfg.targetToken,
+                    fee: cfg.fee,
+                    recipient: address(this),
+                    deadline: block.timestamp + cfg.swapDeadlineSeconds,
+                    amountIn: actualIn,
+                    amountOutMinimum: oracleFloor,
+                    sqrtPriceLimitX96: 0
+                }))
+        );
 
-        IERC20(token).forceApprove(exec.router, 0);
+        (ok,) = router.call(swapCalldata);
+
+        IERC20(token).forceApprove(router, 0);
 
         if (!ok) return (false, actualIn, 0);
 
-        uint256 buyTokenAfter = IERC20(targetToken).balanceOf(msg.sender);
+        uint256 buyTokenAfter = IERC20(cfg.targetToken).balanceOf(address(this));
         if (buyTokenAfter < buyTokenBefore) return (false, actualIn, 0);
         amountOut = buyTokenAfter - buyTokenBefore;
+
+        if (amountOut > 0) {
+            IERC20(cfg.targetToken).safeTransfer(msg.sender, amountOut);
+        }
     }
 
     /// @dev Transfers any sellToken remaining in the module back to the PaymentRails.

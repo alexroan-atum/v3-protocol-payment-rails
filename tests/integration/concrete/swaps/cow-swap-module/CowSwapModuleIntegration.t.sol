@@ -444,7 +444,7 @@ contract CowSwapModuleIntegrationTest is Test {
 
         // Directly call execute from mockPaymentRails context
         vm.prank(address(mockPaymentRails));
-        DataTypes.ExecutionResult memory result = module.execute(address(reentrantToken), SELL_AMOUNT, params, "");
+        DataTypes.ExecutionResult memory result = module.execute(address(reentrantToken), SELL_AMOUNT, params);
         bytes32 orderId = abi.decode(result.data, (bytes32));
 
         reentrantToken.setTargetOrder(orderId);
@@ -486,7 +486,7 @@ contract CowSwapModuleIntegrationTest is Test {
         reentrantToken.approve(address(module), SELL_AMOUNT);
 
         vm.prank(address(mockPaymentRails));
-        DataTypes.ExecutionResult memory result = module.execute(address(reentrantToken), SELL_AMOUNT, params, "");
+        DataTypes.ExecutionResult memory result = module.execute(address(reentrantToken), SELL_AMOUNT, params);
 
         // Outer call succeeds
         assertTrue(result.success, "outer execute must succeed");
@@ -523,7 +523,7 @@ contract CowSwapModuleIntegrationTest is Test {
         reentrantToken.approve(address(module), SELL_AMOUNT);
 
         vm.prank(address(mockPaymentRails));
-        DataTypes.ExecutionResult memory result = module.execute(address(reentrantToken), SELL_AMOUNT, params, "");
+        DataTypes.ExecutionResult memory result = module.execute(address(reentrantToken), SELL_AMOUNT, params);
 
         assertTrue(result.success);
         bytes32 orderId = abi.decode(result.data, (bytes32));
@@ -571,7 +571,7 @@ contract CowSwapModuleIntegrationTest is Test {
         crossToken.approve(address(module), SELL_AMOUNT);
 
         vm.prank(address(mockPaymentRails));
-        DataTypes.ExecutionResult memory result = module.execute(address(crossToken), SELL_AMOUNT, params, "");
+        DataTypes.ExecutionResult memory result = module.execute(address(crossToken), SELL_AMOUNT, params);
 
         // Outer execute succeeds
         assertTrue(result.success, "outer execute must succeed");
@@ -604,7 +604,7 @@ contract CowSwapModuleIntegrationTest is Test {
         vm.startPrank(attacker);
         sellToken.approve(address(module), SELL_AMOUNT);
         bytes memory params = _buildParams(address(buyToken), MIN_BUY_AMOUNT, VALIDITY_DURATION, APP_DATA);
-        DataTypes.ExecutionResult memory result = module.execute(address(sellToken), SELL_AMOUNT, params, "");
+        DataTypes.ExecutionResult memory result = module.execute(address(sellToken), SELL_AMOUNT, params);
         vm.stopPrank();
 
         assertTrue(result.success);
@@ -635,7 +635,7 @@ contract CowSwapModuleIntegrationTest is Test {
         // Attacker frontruns: calls execute() before mockPaymentRails in the same block
         vm.startPrank(attacker);
         sellToken.approve(address(module), SELL_AMOUNT);
-        DataTypes.ExecutionResult memory attackResult = module.execute(address(sellToken), SELL_AMOUNT, params, "");
+        DataTypes.ExecutionResult memory attackResult = module.execute(address(sellToken), SELL_AMOUNT, params);
         vm.stopPrank();
         bytes32 attackerOrderId = abi.decode(attackResult.data, (bytes32));
 

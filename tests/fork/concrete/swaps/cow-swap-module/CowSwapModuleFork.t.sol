@@ -185,7 +185,7 @@ abstract contract CowSwapModuleForkBase is Test {
 
         vm.startPrank(address(paymentRails));
         IERC20(sellToken).approve(address(module), sellAmount);
-        DataTypes.ExecutionResult memory result = module.execute(sellToken, sellAmount, params, "");
+        DataTypes.ExecutionResult memory result = module.execute(sellToken, sellAmount, params);
         vm.stopPrank();
 
         assertTrue(result.success, "Order initiation should succeed");
@@ -352,7 +352,7 @@ contract CowSwapModuleForkExecuteTest is CowSwapModuleForkBase {
             DEFAULT_APP_DATA
         );
 
-        module.execute(USDC, USDC_SELL_AMOUNT, params, "");
+        module.execute(USDC, USDC_SELL_AMOUNT, params);
         vm.stopPrank();
     }
 
@@ -361,7 +361,7 @@ contract CowSwapModuleForkExecuteTest is CowSwapModuleForkBase {
 
         vm.startPrank(address(paymentRails));
         IERC20(USDC).approve(address(module), USDC_SELL_AMOUNT);
-        DataTypes.ExecutionResult memory result = module.execute(USDC, USDC_SELL_AMOUNT, params, "");
+        DataTypes.ExecutionResult memory result = module.execute(USDC, USDC_SELL_AMOUNT, params);
         vm.stopPrank();
 
         assertTrue(result.success);
@@ -379,7 +379,7 @@ contract CowSwapModuleForkExecuteTest is CowSwapModuleForkBase {
 
         vm.startPrank(address(paymentRails));
         IERC20(USDC).approve(address(module), USDC_SELL_AMOUNT);
-        DataTypes.ExecutionResult memory result = module.execute(USDC, USDC_SELL_AMOUNT, params, "");
+        DataTypes.ExecutionResult memory result = module.execute(USDC, USDC_SELL_AMOUNT, params);
         vm.stopPrank();
 
         bytes32 returnedOrderId = abi.decode(result.data, (bytes32));
@@ -441,7 +441,7 @@ contract CowSwapModuleForkValidateTest is CowSwapModuleForkBase {
         bytes memory params = _buildParams(WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
         vm.prank(address(paymentRails));
-        (bool isValid, string memory reason) = module.validate(USDC, USDC_SELL_AMOUNT, params, "");
+        (bool isValid, string memory reason) = module.validate(USDC, USDC_SELL_AMOUNT, params);
 
         assertTrue(isValid);
         assertEq(bytes(reason).length, 0);
@@ -450,7 +450,7 @@ contract CowSwapModuleForkValidateTest is CowSwapModuleForkBase {
     function test_Validate_ZeroSellAmount_ReturnsFalse() external view {
         bytes memory params = _buildParams(WETH, MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
-        (bool isValid, string memory reason) = module.validate(USDC, 0, params, "");
+        (bool isValid, string memory reason) = module.validate(USDC, 0, params);
 
         assertFalse(isValid);
         assertEq(reason, "Zero sell amount");
@@ -459,7 +459,7 @@ contract CowSwapModuleForkValidateTest is CowSwapModuleForkBase {
     function test_Validate_ZeroTargetToken_ReturnsFalse() external view {
         bytes memory params = _buildParams(address(0), MIN_WETH_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
-        (bool isValid, string memory reason) = module.validate(USDC, USDC_SELL_AMOUNT, params, "");
+        (bool isValid, string memory reason) = module.validate(USDC, USDC_SELL_AMOUNT, params);
 
         assertFalse(isValid);
         assertEq(reason, "Zero target token");
@@ -468,7 +468,7 @@ contract CowSwapModuleForkValidateTest is CowSwapModuleForkBase {
     function test_Validate_SameSellAndBuyToken_ReturnsFalse() external view {
         bytes memory params = _buildParams(USDC, MIN_USDC_BUY, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
-        (bool isValid, string memory reason) = module.validate(USDC, USDC_SELL_AMOUNT, params, "");
+        (bool isValid, string memory reason) = module.validate(USDC, USDC_SELL_AMOUNT, params);
 
         assertFalse(isValid);
         assertEq(reason, "Same sell and buy token");
@@ -477,7 +477,7 @@ contract CowSwapModuleForkValidateTest is CowSwapModuleForkBase {
     function test_Validate_ZeroValidityDuration_ReturnsFalse() external view {
         bytes memory params = _buildParams(WETH, MIN_WETH_BUY, 0, DEFAULT_APP_DATA);
 
-        (bool isValid, string memory reason) = module.validate(USDC, USDC_SELL_AMOUNT, params, "");
+        (bool isValid, string memory reason) = module.validate(USDC, USDC_SELL_AMOUNT, params);
 
         assertFalse(isValid);
         assertEq(reason, "Zero validity duration");
@@ -1408,7 +1408,7 @@ contract CowSwapModuleForkSecurityTest is CowSwapModuleForkBase {
 
         vm.startPrank(address(paymentRails));
         IERC20(USDC).approve(address(module), USDC_SELL_AMOUNT);
-        DataTypes.ExecutionResult memory result = module.execute(USDC, USDC_SELL_AMOUNT, params, "");
+        DataTypes.ExecutionResult memory result = module.execute(USDC, USDC_SELL_AMOUNT, params);
         vm.stopPrank();
 
         assertFalse(result.success);
@@ -1452,12 +1452,12 @@ contract CowSwapModuleForkSecurityTest is CowSwapModuleForkBase {
 
         vm.startPrank(address(paymentRails));
         IERC20(USDC).approve(address(module), USDC_SELL_AMOUNT);
-        DataTypes.ExecutionResult memory result1 = module.execute(USDC, USDC_SELL_AMOUNT, params, "");
+        DataTypes.ExecutionResult memory result1 = module.execute(USDC, USDC_SELL_AMOUNT, params);
         vm.stopPrank();
 
         vm.startPrank(address(paymentRails2));
         IERC20(USDC).approve(address(module), USDC_SELL_AMOUNT);
-        DataTypes.ExecutionResult memory result2 = module.execute(USDC, USDC_SELL_AMOUNT, params, "");
+        DataTypes.ExecutionResult memory result2 = module.execute(USDC, USDC_SELL_AMOUNT, params);
         vm.stopPrank();
 
         bytes32 orderId1 = abi.decode(result1.data, (bytes32));

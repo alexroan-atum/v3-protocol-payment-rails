@@ -153,7 +153,7 @@ abstract contract CCTPBridgeModuleForkBase is Test {
 
         vm.startPrank(address(paymentRails));
         IERC20(USDC).approve(address(module), amount);
-        DataTypes.ExecutionResult memory result = module.execute(USDC, amount, params, "");
+        DataTypes.ExecutionResult memory result = module.execute(USDC, amount, params);
         vm.stopPrank();
 
         return result;
@@ -258,7 +258,7 @@ contract CCTPBridgeModuleForkExecuteTest is CCTPBridgeModuleForkBase {
             ""
         );
 
-        module.execute(USDC, BRIDGE_AMOUNT, params, "");
+        module.execute(USDC, BRIDGE_AMOUNT, params);
         vm.stopPrank();
     }
 
@@ -294,7 +294,7 @@ contract CCTPBridgeModuleForkExecuteTest is CCTPBridgeModuleForkBase {
             hex"deadbeef"
         );
 
-        module.execute(USDC, BRIDGE_AMOUNT, params, "");
+        module.execute(USDC, BRIDGE_AMOUNT, params);
         vm.stopPrank();
     }
 
@@ -335,7 +335,7 @@ contract CCTPBridgeModuleForkValidateTest is CCTPBridgeModuleForkBase {
         bytes memory params = _buildParams(DOMAIN_BASE);
 
         vm.prank(address(paymentRails));
-        (bool isValid, string memory reason) = module.validate(USDC, BRIDGE_AMOUNT, params, "");
+        (bool isValid, string memory reason) = module.validate(USDC, BRIDGE_AMOUNT, params);
 
         assertTrue(isValid);
         assertEq(bytes(reason).length, 0);
@@ -345,7 +345,7 @@ contract CCTPBridgeModuleForkValidateTest is CCTPBridgeModuleForkBase {
         address fakeToken = makeAddr("fakeToken");
         bytes memory params = _buildParams(DOMAIN_BASE);
 
-        (bool isValid, string memory reason) = module.validate(fakeToken, BRIDGE_AMOUNT, params, "");
+        (bool isValid, string memory reason) = module.validate(fakeToken, BRIDGE_AMOUNT, params);
 
         assertFalse(isValid);
         assertEq(reason, "Only USDC supported");
@@ -354,7 +354,7 @@ contract CCTPBridgeModuleForkValidateTest is CCTPBridgeModuleForkBase {
     function test_Validate_ZeroAmount_ReturnsFalse() external view {
         bytes memory params = _buildParams(DOMAIN_BASE);
 
-        (bool isValid, string memory reason) = module.validate(USDC, 0, params, "");
+        (bool isValid, string memory reason) = module.validate(USDC, 0, params);
 
         assertFalse(isValid);
         assertEq(reason, "Zero bridge amount");
@@ -363,7 +363,7 @@ contract CCTPBridgeModuleForkValidateTest is CCTPBridgeModuleForkBase {
     function test_Validate_UnconfiguredDomain_ReturnsFalse() external view {
         bytes memory params = _buildParams(uint32(99));
 
-        (bool isValid, string memory reason) = module.validate(USDC, BRIDGE_AMOUNT, params, "");
+        (bool isValid, string memory reason) = module.validate(USDC, BRIDGE_AMOUNT, params);
 
         assertFalse(isValid);
         assertEq(reason, "Domain not configured");
@@ -374,7 +374,7 @@ contract CCTPBridgeModuleForkValidateTest is CCTPBridgeModuleForkBase {
         bytes memory params = _buildParams(DOMAIN_BASE);
 
         vm.prank(emptyPaymentRails);
-        (bool isValid, string memory reason) = module.validate(USDC, BRIDGE_AMOUNT, params, "");
+        (bool isValid, string memory reason) = module.validate(USDC, BRIDGE_AMOUNT, params);
 
         assertFalse(isValid);
         assertEq(reason, "Insufficient balance");
@@ -478,7 +478,7 @@ contract CCTPBridgeModuleForkDomainConfigTest is CCTPBridgeModuleForkBase {
 
         vm.startPrank(address(paymentRails));
         IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
-        DataTypes.ExecutionResult memory result = module.execute(USDC, BRIDGE_AMOUNT, params, "");
+        DataTypes.ExecutionResult memory result = module.execute(USDC, BRIDGE_AMOUNT, params);
         vm.stopPrank();
 
         assertFalse(result.success);
@@ -663,7 +663,7 @@ contract CCTPBridgeModuleForkSecurityTest is CCTPBridgeModuleForkBase {
 
         vm.startPrank(randomCaller);
         IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
-        DataTypes.ExecutionResult memory result = module.execute(USDC, BRIDGE_AMOUNT, params, "");
+        DataTypes.ExecutionResult memory result = module.execute(USDC, BRIDGE_AMOUNT, params);
         vm.stopPrank();
 
         assertTrue(result.success, "Any address should be able to execute");

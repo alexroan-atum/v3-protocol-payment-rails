@@ -25,7 +25,6 @@ contract ReentrantModule is IActionModule {
     function execute(
         address tkn,
         uint256 amount,
-        bytes calldata,
         bytes calldata
     )
         external
@@ -46,17 +45,7 @@ contract ReentrantModule is IActionModule {
             });
     }
 
-    function validate(
-        address,
-        uint256,
-        bytes calldata,
-        bytes calldata
-    )
-        external
-        pure
-        override
-        returns (bool, string memory)
-    {
+    function validate(address, uint256, bytes calldata) external pure override returns (bool, string memory) {
         return (true, "");
     }
 

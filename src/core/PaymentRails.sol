@@ -82,7 +82,7 @@ contract PaymentRails is IPaymentRails, PaymentRailsState, Ownable, ReentrancyGu
 
         // Check: Module validation
         (bool isValid, string memory reason) =
-            IActionModule(config.actionModule).validate(token, balance, config.moduleParams, "");
+            IActionModule(config.actionModule).validate(token, balance, config.moduleParams);
         if (!isValid) {
             // Module validation failed - revert with module's reason
             // Note: Cannot revert with module's custom error, so we use a descriptive revert
@@ -156,35 +156,6 @@ contract PaymentRails is IPaymentRails, PaymentRailsState, Ownable, ReentrancyGu
     /// @inheritdoc IPaymentRails
     /// @dev Emits an {ActionExecuted} event on successful execution.
     function executeAction(address token, uint256 amount) external nonReentrant returns (bool success) {
-        return _validateAndExecute(token, amount, "");
-    }
-
-    /// @inheritdoc IPaymentRails
-    function executeAction(
-        address token,
-        uint256 amount,
-        bytes calldata executionData
-    )
-        external
-        nonReentrant
-        returns (bool success)
-    {
-        return _validateAndExecute(token, amount, executionData);
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                            INTERNAL FUNCTIONS
-    //////////////////////////////////////////////////////////////////////////*/
-
-    /// @dev Validates preconditions and delegates to {_executeActionInternal}.
-    function _validateAndExecute(
-        address token,
-        uint256 amount,
-        bytes memory executionData
-    )
-        private
-        returns (bool success)
-    {
         DataTypes.TokenConfig memory config = _tokenConfigs[token];
 
         if (!config.enabled) {
@@ -205,37 +176,19 @@ contract PaymentRails is IPaymentRails, PaymentRailsState, Ownable, ReentrancyGu
             revert Errors.PaymentRails_InsufficientBalance(balance, amount);
         }
 
-        return _executeActionInternal(token, amount, config, executionData);
-    }
-
-    /// @dev Approves the module, calls `execute`, and revokes approval on failure.
-    function _executeActionInternal(
-        address token,
-        uint256 amount,
-        DataTypes.TokenConfig memory config,
-        bytes memory executionData
-    )
-        private
-        returns (bool success)
-    {
-        // Interaction: Approve module to spend tokens
         IERC20(token).forceApprove(config.actionModule, amount);
 
-        // Interaction: Execute via module
-        try IActionModule(config.actionModule).execute(token, amount, config.moduleParams, executionData) returns (
+        try IActionModule(config.actionModule).execute(token, amount, config.moduleParams) returns (
             DataTypes.ExecutionResult memory result
         ) {
             if (result.success) {
-                // Log: Emit success event
                 emit ActionExecuted(token, config.actionType, amount, result.amountOut, result.outputToken, msg.sender);
                 return true;
             } else {
-                // Effect: Revoke approval on module-reported failure
                 IERC20(token).forceApprove(config.actionModule, 0);
                 return false;
             }
         } catch {
-            // Effect: Revoke approval on execution revert
             IERC20(token).forceApprove(config.actionModule, 0);
             return false;
         }

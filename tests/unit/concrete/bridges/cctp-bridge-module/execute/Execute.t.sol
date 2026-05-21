@@ -14,21 +14,21 @@ contract CCTPBridgeModuleExecuteTest is CCTPBridgeModuleBase {
 
     function test_WhenParamsLengthLessThan32() external {
         vm.prank(address(paymentRails));
-        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, hex"00", "");
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, hex"00");
         assertFalse(result.success);
         assertEq(result.failureReason, "Invalid params encoding");
     }
 
     function test_WhenParamsEmpty() external {
         vm.prank(address(paymentRails));
-        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, "", "");
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, "");
         assertFalse(result.success);
         assertEq(result.failureReason, "Invalid params encoding");
     }
 
     function test_WhenAmountIsZero() external givenDomainConfigured {
         vm.prank(address(paymentRails));
-        DataTypes.ExecutionResult memory result = module.execute(address(usdc), 0, _defaultParams(), "");
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), 0, _defaultParams());
         assertFalse(result.success);
         assertEq(result.failureReason, "Zero bridge amount");
     }
@@ -36,38 +36,35 @@ contract CCTPBridgeModuleExecuteTest is CCTPBridgeModuleBase {
     function test_WhenTokenIsNotUSDC() external givenDomainConfigured {
         vm.prank(address(paymentRails));
         DataTypes.ExecutionResult memory result =
-            module.execute(address(otherToken), DEFAULT_BRIDGE_AMOUNT, _defaultParams(), "");
+            module.execute(address(otherToken), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
         assertFalse(result.success);
         assertEq(result.failureReason, "Only USDC supported");
     }
 
     function test_WhenDomainNotConfigured() external {
         vm.prank(address(paymentRails));
-        DataTypes.ExecutionResult memory result =
-            module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams(), "");
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
         assertFalse(result.success);
         assertEq(result.failureReason, "Domain not configured");
     }
 
     function test_WhenMaxFeeEqualsAmount() external givenDomainConfigured {
         vm.prank(address(paymentRails));
-        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_MAX_FEE, _defaultParams(), "");
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_MAX_FEE, _defaultParams());
         assertFalse(result.success);
         assertEq(result.failureReason, "Max fee exceeds amount");
     }
 
     function test_WhenMaxFeeExceedsAmount() external givenDomainConfigured {
         vm.prank(address(paymentRails));
-        DataTypes.ExecutionResult memory result =
-            module.execute(address(usdc), DEFAULT_MAX_FEE - 1, _defaultParams(), "");
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_MAX_FEE - 1, _defaultParams());
         assertFalse(result.success);
         assertEq(result.failureReason, "Max fee exceeds amount");
     }
 
     function test_WhenCallerHasInsufficientBalance() external givenDomainConfigured {
         vm.prank(attacker);
-        DataTypes.ExecutionResult memory result =
-            module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams(), "");
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
         assertFalse(result.success);
         assertEq(result.failureReason, "Insufficient balance");
     }
@@ -86,7 +83,7 @@ contract CCTPBridgeModuleExecuteTest is CCTPBridgeModuleBase {
         vm.startPrank(address(paymentRails));
         IERC20(address(failToken)).approve(address(failModule), DEFAULT_BRIDGE_AMOUNT);
         DataTypes.ExecutionResult memory result =
-            failModule.execute(address(failToken), DEFAULT_BRIDGE_AMOUNT, _defaultParams(), "");
+            failModule.execute(address(failToken), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
         vm.stopPrank();
 
         assertFalse(result.success);

@@ -25,7 +25,7 @@ contract BridgePaymentRailsProxy is Test {
         returns (DataTypes.ExecutionResult memory)
     {
         IERC20(token).approve(address(module), amount);
-        return module.execute(token, amount, params, "");
+        return module.execute(token, amount, params);
     }
 }
 
@@ -174,7 +174,7 @@ contract CCTPBridgeModuleHandler is Test {
         IERC20(address(otherToken)).approve(address(module), amount);
 
         vm.prank(address(paymentRails));
-        DataTypes.ExecutionResult memory result = module.execute(address(otherToken), amount, params, "");
+        DataTypes.ExecutionResult memory result = module.execute(address(otherToken), amount, params);
 
         assertFalse(result.success);
         assertEq(result.failureReason, "Only USDC supported");

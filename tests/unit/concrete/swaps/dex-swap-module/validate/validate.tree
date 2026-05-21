@@ -1,4 +1,4 @@
-DexSwapModule_Validate
+DexSwapModule::validate
 ├── when params are too short
 │   └── it should return false with invalid params encoding
 ├── when target token is zero address
@@ -7,26 +7,25 @@ DexSwapModule_Validate
 │   └── it should return false with same input and output token
 ├── when amount is zero
 │   └── it should return false with zero sell amount
-├── when execution data provided with unwhitelisted router
-│   └── it should return false with router not allowed
-├── when execution data provided with zero min amount out
-│   └── it should return false with zero min amount out
-├── when execution data provided with expired deadline
-│   └── it should return false with deadline expired
+├── when maxSlippageBps is zero or exceeds 10000
+│   └── it should return false with invalid slippage bps
+├── when sell token price feed is zero address
+│   └── it should return false with missing sell token price feed
+├── when buy token price feed is zero address
+│   └── it should return false with missing buy token price feed
+├── when swap deadline seconds is zero
+│   └── it should return false with zero swap deadline
+├── when oracle price is unavailable
+│   └── it should return false with oracle price unavailable
 ├── when caller has insufficient balance
 │   └── it should return false with insufficient balance
-├── when all valid without execution data
+├── when all validations pass
 │   └── it should return true with empty reason
-├── when all valid with execution data
-│   └── it should return true with empty reason
-├── validate and execute should agree on failure reasons (shared validator)
+├── validate and execute should agree on failure reasons
 │   ├── it should agree on params too short
 │   ├── it should agree on zero target token
 │   ├── it should agree on zero sell amount
-│   ├── it should agree on router not allowed
-│   ├── it should agree on zero min amount out
-│   ├── it should agree on deadline expired
 │   ├── it should agree on insufficient balance
 │   └── it should agree on same input and output token
 └── fuzz: validate and execute agreement
-    └── it should produce identical failure reasons for any amount and minAmountOut
+    └── it should produce identical failure reasons for shared validation checks

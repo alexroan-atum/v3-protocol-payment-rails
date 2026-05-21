@@ -52,40 +52,17 @@ library Errors {
                             DEX SWAP MODULE ERRORS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Thrown when a router address is the zero address (addRouter / executionData).
+    /// @notice Thrown when the router address is the zero address in the constructor.
     error DexSwapModule_ZeroRouter();
 
-    /// @notice Thrown when a router address has no deployed code (is an EOA).
+    /// @notice Thrown when the router address has no deployed code in the constructor.
     /// @param router The EOA address that was rejected.
     error DexSwapModule_RouterNotContract(address router);
 
-    /// @notice Thrown when the caller supplies a router that is not whitelisted.
-    /// @param router The disallowed router address.
-    error DexSwapModule_RouterNotAllowed(address router);
-
-    /// @notice Thrown when the router already exists in the whitelist.
-    /// @param router The duplicate router address.
-    error DexSwapModule_RouterAlreadyAdded(address router);
-
-    /// @notice Thrown when actual swap output is below the caller-supplied minimum.
+    /// @notice Thrown when actual swap output is below the oracle-computed floor.
     /// @param amountOut Actual output from the swap.
-    /// @param minAmountOut Minimum acceptable output.
-    error DexSwapModule_InsufficientOutput(uint256 amountOut, uint256 minAmountOut);
-
-    /// @notice Thrown when a Chainlink price feed returns a non-positive answer.
-    /// @param feed The price feed address that returned invalid data.
-    error DexSwapModule_OraclePriceNonPositive(address feed);
-
-    /// @notice Thrown when a Chainlink price feed's data exceeds the configured max staleness.
-    /// @param feed The stale price feed address.
-    /// @param updatedAt Timestamp of the last feed update.
-    /// @param maxStaleness Owner-configured maximum age in seconds.
-    error DexSwapModule_OraclePriceStale(address feed, uint256 updatedAt, uint256 maxStaleness);
-
-    /// @notice Thrown when the caller's `minAmountOut` is below the oracle-enforced floor.
-    /// @param callerMinAmountOut The caller-supplied minimum output.
-    /// @param oracleFloor The oracle-computed minimum after applying `maxSlippageBps`.
-    error DexSwapModule_SlippageExceedsOracleFloor(uint256 callerMinAmountOut, uint256 oracleFloor);
+    /// @param oracleFloor Oracle-computed minimum after applying `maxSlippageBps`.
+    error DexSwapModule_InsufficientOutput(uint256 amountOut, uint256 oracleFloor);
 
     /*//////////////////////////////////////////////////////////////////////////
                             COWSWAP MODULE ERRORS

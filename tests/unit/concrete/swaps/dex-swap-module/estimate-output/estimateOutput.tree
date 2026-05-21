@@ -1,5 +1,9 @@
 DexSwapModule_EstimateOutput
-├── it should return zero as estimated output
-├── it should return target token as output token
-├── it should ignore sell amount
-└── it should ignore sell token address
+├── given oracle feeds are valid
+│   ├── it should return oracle-expected output
+│   ├── it should return target token as output token
+│   └── it should scale output linearly with input
+├── given oracle feeds are invalid (reverts or bad data)
+│   └── it should return zero with target token
+└── fuzz
+    └── it should return consistent estimates for any valid amount

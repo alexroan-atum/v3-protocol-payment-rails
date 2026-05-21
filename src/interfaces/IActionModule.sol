@@ -9,6 +9,10 @@ import { DataTypes } from "../types/DataTypes.sol";
 /// forward, etc.). The PaymentRails validates preconditions, approves tokens to the module, and calls
 /// {execute}. Modules return {DataTypes.ExecutionResult} indicating success or failure.
 ///
+/// All execution parameters are owner-configured in the static `params` — the permissionless
+/// executor supplies nothing beyond `(token, amount)`. This design eliminates caller-controlled
+/// attack surfaces at the architecture level.
+///
 /// Synchronous modules (ForwardModule, DexSwapModule) should remain stateless. Asynchronous modules
 /// (CowSwapModule) may store order metadata for lifecycle tracking.
 ///
@@ -31,13 +35,11 @@ interface IActionModule {
     /// @param token The input token address.
     /// @param amount The amount of tokens to process.
     /// @param params Module-specific parameters (ABI-encoded via the module's `encodeParams`).
-    /// @param executionData Dynamic per-execution data. Static modules ignore this field.
     /// @return result Execution result with success status and output details.
     function execute(
         address token,
         uint256 amount,
-        bytes calldata params,
-        bytes calldata executionData
+        bytes calldata params
     )
         external
         returns (DataTypes.ExecutionResult memory result);
@@ -54,14 +56,12 @@ interface IActionModule {
     /// @param token The input token address.
     /// @param amount The amount of tokens to process.
     /// @param params Module-specific parameters.
-    /// @param executionData Dynamic per-execution data (may be empty for preview).
     /// @return isValid Whether execution would succeed.
     /// @return reason Human-readable reason if invalid (empty string if valid).
     function validate(
         address token,
         uint256 amount,
-        bytes calldata params,
-        bytes calldata executionData
+        bytes calldata params
     )
         external
         view

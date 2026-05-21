@@ -4,57 +4,54 @@ pragma solidity ^0.8.29;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @dev Controllable router mock for DexSwapModule unit tests.
-/// Simulates a whitelisted router that can succeed, fail, partially fill, or steal tokens.
+/// Implements the Uniswap V3 `exactInputSingle` interface that DexSwapModule calls internally.
+/// Simulates a DEX router that can succeed, fail, partially fill, or produce zero output.
 contract MockRouter {
     bool public shouldRevert;
-    bool public shouldReturnFalse;
+    bool public shouldSendNothing;
+    uint256 public outputAmount;
+    uint256 public pullAmountOverride;
+
+    struct ExactInputSingleParams {
+        address tokenIn;
+        address tokenOut;
+        uint24 fee;
+        address recipient;
+        uint256 deadline;
+        uint256 amountIn;
+        uint256 amountOutMinimum;
+        uint160 sqrtPriceLimitX96;
+    }
 
     function setShouldRevert(bool _val) external {
         shouldRevert = _val;
     }
 
-    function setShouldReturnFalse(bool _val) external {
-        shouldReturnFalse = _val;
+    function setShouldSendNothing(bool _val) external {
+        shouldSendNothing = _val;
     }
 
-    /// @dev Standard swap: pulls sellToken from caller (module) and sends buyToken to recipient.
-    function swap(
-        address sellToken,
-        uint256 sellAmount,
-        address buyToken,
-        address recipient,
-        uint256 buyAmount
-    )
-        external
-    {
+    function setOutputAmount(uint256 _amount) external {
+        outputAmount = _amount;
+    }
+
+    function setPullAmountOverride(uint256 _amount) external {
+        pullAmountOverride = _amount;
+    }
+
+    /// @dev Uniswap V3 exactInputSingle — the only function DexSwapModule calls.
+    /// Pulls sellToken from caller (module), sends buyToken to recipient (module, then forwarded).
+    function exactInputSingle(ExactInputSingleParams calldata params) external returns (uint256 amountOut) {
         if (shouldRevert) revert("MockRouter: forced revert");
-        if (shouldReturnFalse) return;
 
-        IERC20(sellToken).transferFrom(msg.sender, address(this), sellAmount);
-        IERC20(buyToken).transfer(recipient, buyAmount);
+        uint256 pullAmount = pullAmountOverride > 0 ? pullAmountOverride : params.amountIn;
+        IERC20(params.tokenIn).transferFrom(msg.sender, address(this), pullAmount);
+
+        if (shouldSendNothing) return 0;
+
+        amountOut = outputAmount;
+        IERC20(params.tokenOut).transfer(params.recipient, amountOut);
     }
-
-    /// @dev Partial-fill swap: pulls less sellToken than approved, sends buyToken to recipient.
-    function partialSwap(
-        address sellToken,
-        uint256 actualSellAmount,
-        address buyToken,
-        address recipient,
-        uint256 buyAmount
-    )
-        external
-    {
-        IERC20(sellToken).transferFrom(msg.sender, address(this), actualSellAmount);
-        IERC20(buyToken).transfer(recipient, buyAmount);
-    }
-
-    /// @dev Theft attempt: takes sellToken but sends nothing back.
-    function stealTokens(address sellToken, uint256 amount) external {
-        IERC20(sellToken).transferFrom(msg.sender, address(this), amount);
-    }
-
-    /// @dev No-op: does nothing (swap succeeds at call level but produces no output).
-    function noop() external pure { }
 
     receive() external payable { }
 }

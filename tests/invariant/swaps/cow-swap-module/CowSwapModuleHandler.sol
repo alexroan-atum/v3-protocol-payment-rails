@@ -26,7 +26,7 @@ contract PaymentRailsProxy is Test {
         returns (DataTypes.ExecutionResult memory)
     {
         IERC20(token).approve(address(module), amount);
-        return module.execute(token, amount, params, "");
+        return module.execute(token, amount, params);
     }
     // cancelOrder intentionally omitted: only the module owner may cancel
 }

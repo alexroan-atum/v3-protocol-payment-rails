@@ -61,8 +61,7 @@ contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase, Ownable2Step {
     function execute(
         address token,
         uint256 amount,
-        bytes calldata params,
-        bytes calldata /* executionData */
+        bytes calldata params
     )
         external
         override(ActionModuleBase, IActionModule)
@@ -183,8 +182,7 @@ contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase, Ownable2Step {
     function validate(
         address token,
         uint256 amount,
-        bytes calldata params,
-        bytes calldata /* executionData */
+        bytes calldata params
     )
         external
         view

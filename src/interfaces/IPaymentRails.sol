@@ -86,6 +86,10 @@ interface IPaymentRails {
     /// @dev Permissionless. Validates preconditions, approves the module for `amount`, calls
     /// {IActionModule.execute}, and emits {ActionExecuted} on success. Revokes approval on failure.
     ///
+    /// All execution parameters come from the owner-configured `moduleParams` — the caller supplies
+    /// only `(token, amount)`. This eliminates caller-controlled attack surfaces at the architecture
+    /// level.
+    ///
     /// Notes:
     /// - The executor's address (`msg.sender`) is recorded in the {ActionExecuted} event.
     /// - Module execution failures return `false` instead of reverting.
@@ -99,16 +103,6 @@ interface IPaymentRails {
     /// @param amount Amount to process.
     /// @return success True if the module execution succeeded.
     function executeAction(address token, uint256 amount) external returns (bool success);
-
-    /// @notice Execute the configured action for a token with dynamic execution data
-    /// @dev Overload of `executeAction(token, amount)` that forwards caller-supplied
-    ///      `executionData` to the module. Use this when the module requires per-execution
-    ///      data (e.g., DEX aggregator calldata). Static modules ignore the extra bytes.
-    /// @param token Token address to execute action for
-    /// @param amount Amount to process (must be >= minBalance and <= balance)
-    /// @param executionData Dynamic data forwarded to the module's execute() function
-    /// @return success True if module execution succeeded, false otherwise
-    function executeAction(address token, uint256 amount, bytes calldata executionData) external returns (bool success);
 
     /*//////////////////////////////////////////////////////////////////////////
                             CONSTANT FUNCTIONS

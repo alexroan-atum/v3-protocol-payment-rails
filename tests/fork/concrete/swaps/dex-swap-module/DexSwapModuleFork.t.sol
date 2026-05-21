@@ -5,41 +5,23 @@ import { Test, console2 } from "forge-std/src/Test.sol";
 import { DexSwapModule } from "../../../../../src/modules/swaps/DexSwapModule.sol";
 import { PaymentRails } from "../../../../../src/core/PaymentRails.sol";
 import { DataTypes } from "../../../../../src/types/DataTypes.sol";
-import { Errors } from "../../../../../src/libraries/Errors.sol";
 import { IChainlinkAggregatorV3 } from "../../../../../src/interfaces/IChainlinkAggregatorV3.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-
-/// @dev Minimal interface for Uniswap V3 SwapRouter `exactInputSingle`.
-interface IUniswapV3Router {
-    struct ExactInputSingleParams {
-        address tokenIn;
-        address tokenOut;
-        uint24 fee;
-        address recipient;
-        uint256 deadline;
-        uint256 amountIn;
-        uint256 amountOutMinimum;
-        uint160 sqrtPriceLimitX96;
-    }
-
-    function exactInputSingle(ExactInputSingleParams calldata params) external payable returns (uint256 amountOut);
-}
 
 /// @title DexSwapModuleForkBase
 /// @notice Shared setup for DexSwapModule fork tests against Ethereum mainnet.
 /// @dev Run with: forge test --match-contract DexSwapModuleFork --fork-url $ETHEREUM_RPC_URL -vvv
+///
+///      Architecture change: DexSwapModule now has an immutable router (set at construction)
+///      and requires oracle feeds for all swaps. There is no executionData — all parameters
+///      are owner-configured in the static DexSwapParams.
 abstract contract DexSwapModuleForkBase is Test {
     /*//////////////////////////////////////////////////////////////////////////
                                     EVENTS
     //////////////////////////////////////////////////////////////////////////*/
 
     event SwapExecuted(
-        address indexed paymentRails,
-        address indexed sellToken,
-        address buyToken,
-        uint256 amountIn,
-        uint256 amountOut,
-        address router
+        address indexed paymentRails, address indexed sellToken, address buyToken, uint256 amountIn, uint256 amountOut
     );
     event TokenConfigured(address indexed token, string actionType, address indexed actionModule);
     event ActionExecuted(
@@ -50,7 +32,6 @@ abstract contract DexSwapModuleForkBase is Test {
         address outputToken,
         address indexed executor
     );
-    event RouterAdded(address indexed router);
 
     /*//////////////////////////////////////////////////////////////////////////
                                 MAINNET CONSTANTS
@@ -67,6 +48,7 @@ abstract contract DexSwapModuleForkBase is Test {
     address internal constant DAI_USD_FEED = 0xAed0c38402a5d19df6E4c03F4E2DceD6e29c1ee9;
 
     uint256 internal constant ORACLE_MAX_STALENESS = 86_400; // 24 hours (matches Chainlink stablecoin heartbeat)
+    uint256 internal constant DEFAULT_DEADLINE_SECONDS = 600; // 10 minutes
 
     uint256 internal constant WETH_SELL_AMOUNT = 1 ether;
     uint256 internal constant USDC_SELL_AMOUNT = 2000e6;
@@ -98,9 +80,8 @@ abstract contract DexSwapModuleForkBase is Test {
         owner = makeAddr("owner");
 
         vm.startPrank(owner);
-        module = new DexSwapModule(owner);
+        module = new DexSwapModule(UNISWAP_V3_ROUTER);
         paymentRails = new PaymentRails(owner);
-        module.addRouter(UNISWAP_V3_ROUTER);
         vm.stopPrank();
 
         deal(WETH, address(paymentRails), WETH_SELL_AMOUNT * 10);
@@ -112,20 +93,10 @@ abstract contract DexSwapModuleForkBase is Test {
                                     HELPERS
     //////////////////////////////////////////////////////////////////////////*/
 
-    function _buildSwapParams(address targetToken) internal view returns (bytes memory) {
-        return module.encodeParams(
-            DataTypes.DexSwapParams({
-                targetToken: targetToken,
-                maxSlippageBps: 0,
-                sellTokenPriceFeed: address(0),
-                buyTokenPriceFeed: address(0),
-                maxStaleness: 0
-            })
-        );
-    }
-
-    function _buildOracleSwapParams(
+    /// @dev Builds DexSwapParams with oracle feeds and slippage.
+    function _buildSwapParams(
         address targetToken,
+        uint24 fee,
         uint16 maxSlippageBps,
         address sellTokenPriceFeed,
         address buyTokenPriceFeed
@@ -137,58 +108,29 @@ abstract contract DexSwapModuleForkBase is Test {
         return module.encodeParams(
             DataTypes.DexSwapParams({
                 targetToken: targetToken,
+                fee: fee,
                 maxSlippageBps: maxSlippageBps,
                 sellTokenPriceFeed: sellTokenPriceFeed,
                 buyTokenPriceFeed: buyTokenPriceFeed,
-                maxStaleness: ORACLE_MAX_STALENESS
+                maxStaleness: ORACLE_MAX_STALENESS,
+                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
             })
         );
     }
 
-    function _buildUniswapCalldata(
-        address tokenIn,
-        address tokenOut,
-        uint24 fee,
-        address recipient,
-        uint256 amountIn,
-        uint256 amountOutMinimum
-    )
-        internal
-        view
-        returns (bytes memory)
-    {
-        return abi.encodeCall(
-            IUniswapV3Router.exactInputSingle,
-            IUniswapV3Router.ExactInputSingleParams({
-                tokenIn: tokenIn,
-                tokenOut: tokenOut,
-                fee: fee,
-                recipient: recipient,
-                deadline: block.timestamp + 300,
-                amountIn: amountIn,
-                amountOutMinimum: amountOutMinimum,
-                sqrtPriceLimitX96: 0
-            })
-        );
+    /// @dev Convenience overload for the common WETH→USDC case with 1% slippage.
+    function _buildDefaultWethToUsdcParams() internal view returns (bytes memory) {
+        return _buildSwapParams(USDC, FEE_MEDIUM, 100, ETH_USD_FEED, USDC_USD_FEED);
     }
 
-    function _buildExecutionData(
-        address router,
-        uint256 minAmountOut,
-        bytes memory routerCalldata
-    )
-        internal
-        view
-        returns (bytes memory)
-    {
-        return module.encodeExecutionData(
-            DataTypes.DexSwapExecutionData({
-                router: router,
-                minAmountOut: minAmountOut,
-                deadline: block.timestamp + 300,
-                routerCalldata: routerCalldata
-            })
-        );
+    /// @dev Convenience overload for USDC→WETH with 1% slippage.
+    function _buildDefaultUsdcToWethParams() internal view returns (bytes memory) {
+        return _buildSwapParams(WETH, FEE_MEDIUM, 100, USDC_USD_FEED, ETH_USD_FEED);
+    }
+
+    /// @dev Convenience overload for DAI→USDC with 0.5% slippage.
+    function _buildDefaultDaiToUsdcParams() internal view returns (bytes memory) {
+        return _buildSwapParams(USDC, FEE_LOW, 50, DAI_USD_FEED, USDC_USD_FEED);
     }
 }
 
@@ -198,8 +140,7 @@ abstract contract DexSwapModuleForkBase is Test {
 
 contract DexSwapModuleForkSetupTest is DexSwapModuleForkBase {
     function test_Setup_ModuleDeployedCorrectly() external view {
-        assertEq(module.owner(), owner);
-        assertTrue(module.isRouterAllowed(UNISWAP_V3_ROUTER));
+        assertEq(module.router(), UNISWAP_V3_ROUTER);
     }
 
     function test_Setup_PaymentRailsFunded() external view {
@@ -218,19 +159,15 @@ contract DexSwapModuleForkSetupTest is DexSwapModuleForkBase {
 
 contract DexSwapModuleForkWethToUsdcTest is DexSwapModuleForkBase {
     function test_Simulate_WethToUsdc_ViaPaymentRails() external {
-        bytes memory swapParams = _buildSwapParams(USDC);
+        bytes memory swapParams = _buildDefaultWethToUsdcParams();
 
         vm.prank(owner);
         paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
 
-        bytes memory routerCalldata =
-            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, 1);
-        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, 1, routerCalldata);
-
         uint256 wethBefore = IERC20(WETH).balanceOf(address(paymentRails));
         uint256 usdcBefore = IERC20(USDC).balanceOf(address(paymentRails));
 
-        bool success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT, executionData);
+        bool success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT);
 
         assertTrue(success, "Swap should succeed");
 
@@ -256,16 +193,13 @@ contract DexSwapModuleForkWethToUsdcTest is DexSwapModuleForkBase {
     }
 
     function test_Simulate_WethToUsdc_DirectModuleCall() external {
-        bytes memory swapParams = _buildSwapParams(USDC);
-        bytes memory routerCalldata =
-            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, 1);
-        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, 1, routerCalldata);
+        bytes memory swapParams = _buildDefaultWethToUsdcParams();
 
         uint256 usdcBefore = IERC20(USDC).balanceOf(address(paymentRails));
 
         vm.startPrank(address(paymentRails));
         IERC20(WETH).approve(address(module), WETH_SELL_AMOUNT);
-        DataTypes.ExecutionResult memory result = module.execute(WETH, WETH_SELL_AMOUNT, swapParams, executionData);
+        DataTypes.ExecutionResult memory result = module.execute(WETH, WETH_SELL_AMOUNT, swapParams);
         vm.stopPrank();
 
         assertTrue(result.success, "Module execute should succeed");
@@ -274,9 +208,6 @@ contract DexSwapModuleForkWethToUsdcTest is DexSwapModuleForkBase {
 
         uint256 usdcReceived = IERC20(USDC).balanceOf(address(paymentRails)) - usdcBefore;
         assertEq(result.amountOut, usdcReceived, "amountOut should match actual balance diff");
-
-        address routerUsed = abi.decode(result.data, (address));
-        assertEq(routerUsed, UNISWAP_V3_ROUTER, "Should report correct router");
     }
 }
 
@@ -286,10 +217,7 @@ contract DexSwapModuleForkWethToUsdcTest is DexSwapModuleForkBase {
 
 contract DexSwapModuleForkUsdcToWethTest is DexSwapModuleForkBase {
     function test_Simulate_UsdcToWeth_ViaPaymentRails() external {
-        bytes memory swapParams = _buildSwapParams(WETH);
-        bytes memory routerCalldata =
-            _buildUniswapCalldata(USDC, WETH, FEE_MEDIUM, address(paymentRails), USDC_SELL_AMOUNT, 1);
-        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, 1, routerCalldata);
+        bytes memory swapParams = _buildDefaultUsdcToWethParams();
 
         vm.prank(owner);
         paymentRails.configureToken(USDC, "SWAP", address(module), USDC_SELL_AMOUNT, swapParams, true);
@@ -297,7 +225,7 @@ contract DexSwapModuleForkUsdcToWethTest is DexSwapModuleForkBase {
         uint256 usdcBefore = IERC20(USDC).balanceOf(address(paymentRails));
         uint256 wethBefore = IERC20(WETH).balanceOf(address(paymentRails));
 
-        bool success = paymentRails.executeAction(USDC, USDC_SELL_AMOUNT, executionData);
+        bool success = paymentRails.executeAction(USDC, USDC_SELL_AMOUNT);
         assertTrue(success, "Swap should succeed");
 
         uint256 wethReceived = IERC20(WETH).balanceOf(address(paymentRails)) - wethBefore;
@@ -317,10 +245,7 @@ contract DexSwapModuleForkUsdcToWethTest is DexSwapModuleForkBase {
 
 contract DexSwapModuleForkDaiToUsdcTest is DexSwapModuleForkBase {
     function test_Simulate_DaiToUsdc_ViaPaymentRails() external {
-        bytes memory swapParams = _buildSwapParams(USDC);
-        bytes memory routerCalldata =
-            _buildUniswapCalldata(DAI, USDC, FEE_LOW, address(paymentRails), DAI_SELL_AMOUNT, 1);
-        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, 1, routerCalldata);
+        bytes memory swapParams = _buildDefaultDaiToUsdcParams();
 
         vm.prank(owner);
         paymentRails.configureToken(DAI, "SWAP", address(module), DAI_SELL_AMOUNT, swapParams, true);
@@ -328,7 +253,7 @@ contract DexSwapModuleForkDaiToUsdcTest is DexSwapModuleForkBase {
         uint256 daiBefore = IERC20(DAI).balanceOf(address(paymentRails));
         uint256 usdcBefore = IERC20(USDC).balanceOf(address(paymentRails));
 
-        bool success = paymentRails.executeAction(DAI, DAI_SELL_AMOUNT, executionData);
+        bool success = paymentRails.executeAction(DAI, DAI_SELL_AMOUNT);
         assertTrue(success, "Swap should succeed");
 
         uint256 usdcReceived = IERC20(USDC).balanceOf(address(paymentRails)) - usdcBefore;
@@ -351,117 +276,57 @@ contract DexSwapModuleForkDaiToUsdcTest is DexSwapModuleForkBase {
 
 contract DexSwapModuleForkValidationTest is DexSwapModuleForkBase {
     function test_Validate_ValidParams_ReturnsTrue() external {
-        bytes memory swapParams = _buildSwapParams(USDC);
-        bytes memory routerCalldata =
-            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, 1);
-        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, 1, routerCalldata);
+        bytes memory swapParams = _buildDefaultWethToUsdcParams();
 
         vm.prank(address(paymentRails));
-        (bool isValid, string memory reason) = module.validate(WETH, WETH_SELL_AMOUNT, swapParams, executionData);
+        (bool isValid, string memory reason) = module.validate(WETH, WETH_SELL_AMOUNT, swapParams);
 
         assertTrue(isValid, string.concat("Validation should pass, got: ", reason));
     }
 
-    function test_Validate_UnwhitelistedRouter_ReturnsFalse() external {
-        address fakeRouter = makeAddr("fakeRouter");
-        bytes memory swapParams = _buildSwapParams(USDC);
-        bytes memory executionData = _buildExecutionData(fakeRouter, 1, "");
+    function test_Validate_ZeroSellAmount_ReturnsFalse() external view {
+        bytes memory swapParams = _buildDefaultWethToUsdcParams();
 
-        vm.prank(address(paymentRails));
-        (bool isValid, string memory reason) = module.validate(WETH, WETH_SELL_AMOUNT, swapParams, executionData);
+        (bool isValid, string memory reason) = module.validate(WETH, 0, swapParams);
 
         assertFalse(isValid);
-        assertEq(reason, "Router not allowed");
+        assertEq(reason, "Zero sell amount");
     }
 
-    function test_Validate_ExpiredDeadline_ReturnsFalse() external {
-        bytes memory swapParams = _buildSwapParams(USDC);
-        bytes memory executionData = module.encodeExecutionData(
-            DataTypes.DexSwapExecutionData({
-                router: UNISWAP_V3_ROUTER, minAmountOut: 1, deadline: block.timestamp - 1, routerCalldata: ""
-            })
-        );
+    function test_Validate_ZeroTargetToken_ReturnsFalse() external view {
+        bytes memory swapParams = _buildSwapParams(address(0), FEE_MEDIUM, 100, ETH_USD_FEED, USDC_USD_FEED);
 
-        vm.prank(address(paymentRails));
-        (bool isValid, string memory reason) = module.validate(WETH, WETH_SELL_AMOUNT, swapParams, executionData);
+        (bool isValid, string memory reason) = module.validate(WETH, WETH_SELL_AMOUNT, swapParams);
 
         assertFalse(isValid);
-        assertEq(reason, "Deadline expired");
-    }
-}
-
-/*//////////////////////////////////////////////////////////////////////////
-                    SECURITY: SLIPPAGE ENFORCEMENT
-//////////////////////////////////////////////////////////////////////////*/
-
-contract DexSwapModuleForkSlippageTest is DexSwapModuleForkBase {
-    function test_Simulate_SlippageExceeded_Reverts() external {
-        bytes memory swapParams = _buildSwapParams(USDC);
-        bytes memory routerCalldata =
-            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, 0);
-        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, type(uint256).max, routerCalldata);
-
-        vm.prank(owner);
-        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
-
-        bool success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT, executionData);
-        assertFalse(success, "Should fail due to slippage protection");
-
-        assertEq(
-            IERC20(WETH).balanceOf(address(paymentRails)),
-            WETH_SELL_AMOUNT * 10,
-            "PaymentRails should retain all WETH after slippage revert"
-        );
+        assertEq(reason, "Zero target token");
     }
 
-    function test_Simulate_ReasonableSlippage_Succeeds() external {
-        bytes memory swapParams = _buildSwapParams(USDC);
-        bytes memory routerCalldata =
-            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, 1);
-        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, 1000e6, routerCalldata);
+    function test_Validate_SameInputAndOutputToken_ReturnsFalse() external view {
+        bytes memory swapParams = _buildSwapParams(WETH, FEE_MEDIUM, 100, ETH_USD_FEED, ETH_USD_FEED);
 
-        vm.prank(owner);
-        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
+        (bool isValid, string memory reason) = module.validate(WETH, WETH_SELL_AMOUNT, swapParams);
 
-        bool success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT, executionData);
-        assertTrue(success, "Swap with reasonable slippage should succeed");
-    }
-}
-
-/*//////////////////////////////////////////////////////////////////////////
-                    SECURITY: ROUTER WHITELIST
-//////////////////////////////////////////////////////////////////////////*/
-
-contract DexSwapModuleForkRouterWhitelistTest is DexSwapModuleForkBase {
-    function test_RouterWhitelist_UnlistedRouter_FailsGracefully() external {
-        address unlisted = makeAddr("unlisted");
-        bytes memory swapParams = _buildSwapParams(USDC);
-        bytes memory routerCalldata =
-            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, 1);
-        bytes memory executionData = _buildExecutionData(unlisted, 1, routerCalldata);
-
-        vm.prank(owner);
-        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
-
-        bool success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT, executionData);
-        assertFalse(success, "Unlisted router should fail");
-
-        assertEq(IERC20(WETH).balanceOf(address(paymentRails)), WETH_SELL_AMOUNT * 10);
+        assertFalse(isValid);
+        assertEq(reason, "Same input and output token");
     }
 
-    function test_RouterWhitelist_AddAndRemove() external {
-        address newRouter = makeAddr("newRouter");
-        vm.etch(newRouter, hex"01");
+    function test_Validate_MissingSellTokenPriceFeed_ReturnsFalse() external view {
+        bytes memory swapParams = _buildSwapParams(USDC, FEE_MEDIUM, 100, address(0), USDC_USD_FEED);
 
-        vm.startPrank(owner);
+        (bool isValid, string memory reason) = module.validate(WETH, WETH_SELL_AMOUNT, swapParams);
 
-        module.addRouter(newRouter);
-        assertTrue(module.isRouterAllowed(newRouter));
+        assertFalse(isValid);
+        assertEq(reason, "Missing sell token price feed");
+    }
 
-        module.removeRouter(newRouter);
-        assertFalse(module.isRouterAllowed(newRouter));
+    function test_Validate_MissingBuyTokenPriceFeed_ReturnsFalse() external view {
+        bytes memory swapParams = _buildSwapParams(USDC, FEE_MEDIUM, 100, ETH_USD_FEED, address(0));
 
-        vm.stopPrank();
+        (bool isValid, string memory reason) = module.validate(WETH, WETH_SELL_AMOUNT, swapParams);
+
+        assertFalse(isValid);
+        assertEq(reason, "Missing buy token price feed");
     }
 }
 
@@ -471,32 +336,25 @@ contract DexSwapModuleForkRouterWhitelistTest is DexSwapModuleForkBase {
 
 contract DexSwapModuleForkResidualStateTest is DexSwapModuleForkBase {
     function test_NoResidualState_AfterSuccessfulSwap() external {
-        bytes memory swapParams = _buildSwapParams(USDC);
-        bytes memory routerCalldata =
-            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, 1);
-        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, 1, routerCalldata);
+        bytes memory swapParams = _buildDefaultWethToUsdcParams();
 
         vm.prank(owner);
         paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
 
-        paymentRails.executeAction(WETH, WETH_SELL_AMOUNT, executionData);
+        paymentRails.executeAction(WETH, WETH_SELL_AMOUNT);
 
         assertEq(IERC20(WETH).balanceOf(address(module)), 0, "No residual WETH");
         assertEq(IERC20(USDC).balanceOf(address(module)), 0, "No residual USDC");
     }
 
     function test_NoResidualState_AfterConsecutiveSwaps() external {
-        bytes memory swapParams = _buildSwapParams(USDC);
+        bytes memory swapParams = _buildDefaultWethToUsdcParams();
 
         vm.prank(owner);
         paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
 
         for (uint256 i = 0; i < 3; i++) {
-            bytes memory routerCalldata =
-                _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, 1);
-            bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, 1, routerCalldata);
-
-            bool success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT, executionData);
+            bool success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT);
             assertTrue(success, "Each swap should succeed");
 
             assertEq(IERC20(WETH).balanceOf(address(module)), 0);
@@ -518,10 +376,10 @@ contract DexSwapModuleForkLifecycleTest is DexSwapModuleForkBase {
 
         console2.log("[1] Module deployed at:", address(module));
         console2.log("[1] PaymentRails deployed at:", address(paymentRails));
-        console2.log("[1] Uniswap V3 Router whitelisted:", UNISWAP_V3_ROUTER);
+        console2.log("[1] Immutable router:", UNISWAP_V3_ROUTER);
         console2.log("");
 
-        bytes memory swapParams = _buildSwapParams(USDC);
+        bytes memory swapParams = _buildDefaultWethToUsdcParams();
         vm.prank(owner);
         paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
 
@@ -535,11 +393,7 @@ contract DexSwapModuleForkLifecycleTest is DexSwapModuleForkBase {
         uint256 wethBefore = IERC20(WETH).balanceOf(address(paymentRails));
         uint256 usdcBefore = IERC20(USDC).balanceOf(address(paymentRails));
 
-        bytes memory routerCalldata =
-            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, 1);
-        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, 1, routerCalldata);
-
-        bool success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT, executionData);
+        bool success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT);
         assertTrue(success, "First swap should succeed");
 
         uint256 usdcReceived1 = IERC20(USDC).balanceOf(address(paymentRails)) - usdcBefore;
@@ -549,10 +403,7 @@ contract DexSwapModuleForkLifecycleTest is DexSwapModuleForkBase {
 
         usdcBefore = IERC20(USDC).balanceOf(address(paymentRails));
 
-        routerCalldata = _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, 1);
-        executionData = _buildExecutionData(UNISWAP_V3_ROUTER, 1, routerCalldata);
-
-        success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT, executionData);
+        success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT);
         assertTrue(success, "Second swap should succeed");
 
         uint256 usdcReceived2 = IERC20(USDC).balanceOf(address(paymentRails)) - usdcBefore;
@@ -607,7 +458,7 @@ contract DexSwapModuleForkOracleSlippageTest is DexSwapModuleForkBase {
     }
 
     function test_Oracle_EstimateOutput_WethToUsdc_RealisticPrice() external view {
-        bytes memory params = _buildOracleSwapParams(USDC, 100, ETH_USD_FEED, USDC_USD_FEED);
+        bytes memory params = _buildDefaultWethToUsdcParams();
 
         (uint256 estimated, address outputToken) = module.estimateOutput(WETH, WETH_SELL_AMOUNT, params);
 
@@ -619,7 +470,7 @@ contract DexSwapModuleForkOracleSlippageTest is DexSwapModuleForkBase {
     }
 
     function test_Oracle_EstimateOutput_UsdcToWeth_RealisticPrice() external view {
-        bytes memory params = _buildOracleSwapParams(WETH, 100, USDC_USD_FEED, ETH_USD_FEED);
+        bytes memory params = _buildDefaultUsdcToWethParams();
 
         (uint256 estimated, address outputToken) = module.estimateOutput(USDC, USDC_SELL_AMOUNT, params);
 
@@ -631,7 +482,7 @@ contract DexSwapModuleForkOracleSlippageTest is DexSwapModuleForkBase {
     }
 
     function test_Oracle_EstimateOutput_DaiToUsdc_NearParity() external view {
-        bytes memory params = _buildOracleSwapParams(USDC, 100, DAI_USD_FEED, USDC_USD_FEED);
+        bytes memory params = _buildDefaultDaiToUsdcParams();
 
         (uint256 estimated, address outputToken) = module.estimateOutput(DAI, DAI_SELL_AMOUNT, params);
 
@@ -644,39 +495,12 @@ contract DexSwapModuleForkOracleSlippageTest is DexSwapModuleForkBase {
     }
 
     function test_Oracle_Validate_WethToUsdc_ReasonableSlippage_Passes() external {
-        bytes memory params = _buildOracleSwapParams(USDC, 100, ETH_USD_FEED, USDC_USD_FEED);
-
-        (uint256 estimated,) = module.estimateOutput(WETH, WETH_SELL_AMOUNT, params);
-        uint256 oracleFloor = estimated * 9900 / 10_000;
-
-        bytes memory routerCalldata =
-            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, 1);
-        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, oracleFloor, routerCalldata);
+        bytes memory params = _buildDefaultWethToUsdcParams();
 
         vm.prank(address(paymentRails));
-        (bool isValid, string memory reason) = module.validate(WETH, WETH_SELL_AMOUNT, params, executionData);
+        (bool isValid, string memory reason) = module.validate(WETH, WETH_SELL_AMOUNT, params);
 
-        assertTrue(isValid, string.concat("Should validate with floor-level slippage, got: ", reason));
-    }
-
-    function test_Oracle_Validate_WethToUsdc_ExcessiveSlippage_Fails() external view {
-        bytes memory params = _buildOracleSwapParams(USDC, 100, ETH_USD_FEED, USDC_USD_FEED);
-
-        (uint256 estimated,) = module.estimateOutput(WETH, WETH_SELL_AMOUNT, params);
-        uint256 oracleFloor = estimated * 9900 / 10_000;
-
-        bytes memory routerCalldata =
-            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, 1);
-        // Set minAmountOut to 1 (attacker-level slippage)
-        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, 1, routerCalldata);
-
-        (bool isValid, string memory reason) = module.validate(WETH, WETH_SELL_AMOUNT, params, executionData);
-
-        assertFalse(isValid, "Should reject minAmountOut=1 with oracle configured");
-        assertEq(reason, "Slippage below oracle floor");
-
-        console2.log("Oracle floor for 1 WETH -> USDC:", oracleFloor / 1e6, "USDC");
-        console2.log("Attacker minAmountOut: 1 wei USDC - REJECTED");
+        assertTrue(isValid, string.concat("Should validate with oracle slippage, got: ", reason));
     }
 }
 
@@ -688,7 +512,7 @@ contract DexSwapModuleForkOracleSlippageTest is DexSwapModuleForkBase {
 contract DexSwapModuleForkOracleSwapTest is DexSwapModuleForkBase {
     function test_Oracle_WethToUsdc_SwapSucceeds_WithOracleProtection() external {
         // Configure with 1% slippage tolerance
-        bytes memory params = _buildOracleSwapParams(USDC, 100, ETH_USD_FEED, USDC_USD_FEED);
+        bytes memory params = _buildDefaultWethToUsdcParams();
 
         (uint256 estimated,) = module.estimateOutput(WETH, WETH_SELL_AMOUNT, params);
         uint256 oracleFloor = estimated * 9900 / 10_000;
@@ -696,13 +520,9 @@ contract DexSwapModuleForkOracleSwapTest is DexSwapModuleForkBase {
         vm.prank(owner);
         paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, params, true);
 
-        bytes memory routerCalldata =
-            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, oracleFloor);
-        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, oracleFloor, routerCalldata);
-
         uint256 usdcBefore = IERC20(USDC).balanceOf(address(paymentRails));
 
-        bool success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT, executionData);
+        bool success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT);
         assertTrue(success, "Oracle-protected swap should succeed");
 
         uint256 usdcReceived = IERC20(USDC).balanceOf(address(paymentRails)) - usdcBefore;
@@ -715,36 +535,8 @@ contract DexSwapModuleForkOracleSwapTest is DexSwapModuleForkBase {
         console2.log("PASSED");
     }
 
-    function test_Oracle_WethToUsdc_SandwichAttack_BlockedByOracle() external {
-        bytes memory params = _buildOracleSwapParams(USDC, 100, ETH_USD_FEED, USDC_USD_FEED);
-
-        (uint256 estimated,) = module.estimateOutput(WETH, WETH_SELL_AMOUNT, params);
-        uint256 oracleFloor = estimated * 9900 / 10_000;
-
-        vm.prank(owner);
-        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, params, true);
-
-        // Attacker calls executeAction with minAmountOut = 1 (sandwich enabler)
-        bytes memory routerCalldata =
-            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, 1);
-        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, 1, routerCalldata);
-
-        // PaymentRails.executeAction catches the revert and returns false
-        bool success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT, executionData);
-        assertFalse(success, "Sandwich attack should be blocked by oracle floor");
-
-        // Verify no tokens were lost
-        assertEq(
-            IERC20(WETH).balanceOf(address(paymentRails)), WETH_SELL_AMOUNT * 10, "PaymentRails should retain all WETH"
-        );
-
-        console2.log("=== Sandwich Attack Blocked ===");
-        console2.log("Oracle floor:", oracleFloor / 1e6, "USDC");
-        console2.log("Attacker minAmountOut: 1 wei - BLOCKED");
-    }
-
     function test_Oracle_DaiToUsdc_SwapSucceeds_WithOracleProtection() external {
-        bytes memory params = _buildOracleSwapParams(USDC, 50, DAI_USD_FEED, USDC_USD_FEED);
+        bytes memory params = _buildDefaultDaiToUsdcParams();
 
         (uint256 estimated,) = module.estimateOutput(DAI, DAI_SELL_AMOUNT, params);
         uint256 oracleFloor = estimated * 9950 / 10_000; // 0.5% slippage
@@ -752,13 +544,9 @@ contract DexSwapModuleForkOracleSwapTest is DexSwapModuleForkBase {
         vm.prank(owner);
         paymentRails.configureToken(DAI, "SWAP", address(module), DAI_SELL_AMOUNT, params, true);
 
-        bytes memory routerCalldata =
-            _buildUniswapCalldata(DAI, USDC, FEE_LOW, address(paymentRails), DAI_SELL_AMOUNT, oracleFloor);
-        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, oracleFloor, routerCalldata);
-
         uint256 usdcBefore = IERC20(USDC).balanceOf(address(paymentRails));
 
-        bool success = paymentRails.executeAction(DAI, DAI_SELL_AMOUNT, executionData);
+        bool success = paymentRails.executeAction(DAI, DAI_SELL_AMOUNT);
         assertTrue(success, "DAI->USDC oracle-protected swap should succeed");
 
         uint256 usdcReceived = IERC20(USDC).balanceOf(address(paymentRails)) - usdcBefore;
@@ -772,42 +560,19 @@ contract DexSwapModuleForkOracleSwapTest is DexSwapModuleForkBase {
     }
 
     function test_Oracle_WethToUsdc_DirectModuleCall_WithOracle() external {
-        bytes memory params = _buildOracleSwapParams(USDC, 100, ETH_USD_FEED, USDC_USD_FEED);
+        bytes memory params = _buildDefaultWethToUsdcParams();
 
         (uint256 estimated,) = module.estimateOutput(WETH, WETH_SELL_AMOUNT, params);
         uint256 oracleFloor = estimated * 9900 / 10_000;
 
-        bytes memory routerCalldata =
-            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, oracleFloor);
-        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, oracleFloor, routerCalldata);
-
         vm.startPrank(address(paymentRails));
         IERC20(WETH).approve(address(module), WETH_SELL_AMOUNT);
-        DataTypes.ExecutionResult memory result = module.execute(WETH, WETH_SELL_AMOUNT, params, executionData);
+        DataTypes.ExecutionResult memory result = module.execute(WETH, WETH_SELL_AMOUNT, params);
         vm.stopPrank();
 
         assertTrue(result.success, "Direct module call with oracle should succeed");
         assertGe(result.amountOut, oracleFloor, "amountOut should be >= oracle floor");
         assertEq(result.outputToken, USDC);
-    }
-
-    function test_Oracle_WethToUsdc_DirectModuleCall_SandwichReverts() external {
-        bytes memory params = _buildOracleSwapParams(USDC, 100, ETH_USD_FEED, USDC_USD_FEED);
-
-        (uint256 estimated,) = module.estimateOutput(WETH, WETH_SELL_AMOUNT, params);
-        uint256 oracleFloor = estimated * 9900 / 10_000;
-
-        bytes memory routerCalldata =
-            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, 1);
-        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, 1, routerCalldata);
-
-        vm.startPrank(address(paymentRails));
-        IERC20(WETH).approve(address(module), WETH_SELL_AMOUNT);
-        vm.expectRevert(
-            abi.encodeWithSelector(Errors.DexSwapModule_SlippageExceedsOracleFloor.selector, 1, oracleFloor)
-        );
-        module.execute(WETH, WETH_SELL_AMOUNT, params, executionData);
-        vm.stopPrank();
     }
 }
 
@@ -830,7 +595,7 @@ contract DexSwapModuleForkOracleLifecycleTest is DexSwapModuleForkBase {
         console2.log("");
 
         // Step 2: Configure WETH→USDC with oracle protection (1% slippage)
-        bytes memory params = _buildOracleSwapParams(USDC, 100, ETH_USD_FEED, USDC_USD_FEED);
+        bytes memory params = _buildDefaultWethToUsdcParams();
         vm.prank(owner);
         paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, params, true);
 
@@ -842,19 +607,15 @@ contract DexSwapModuleForkOracleLifecycleTest is DexSwapModuleForkBase {
         console2.log("");
 
         // Step 4: Validate before executing
-        bytes memory routerCalldata =
-            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, oracleFloor);
-        bytes memory executionData = _buildExecutionData(UNISWAP_V3_ROUTER, oracleFloor, routerCalldata);
-
         vm.prank(address(paymentRails));
-        (bool isValid,) = module.validate(WETH, WETH_SELL_AMOUNT, params, executionData);
+        (bool isValid,) = module.validate(WETH, WETH_SELL_AMOUNT, params);
         assertTrue(isValid, "Pre-execution validation should pass");
         console2.log("[3] Pre-execution validation: PASSED");
         console2.log("");
 
         // Step 5: Execute the swap
         uint256 usdcBefore = IERC20(USDC).balanceOf(address(paymentRails));
-        bool success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT, executionData);
+        bool success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT);
         assertTrue(success, "Oracle-protected swap should succeed");
 
         uint256 usdcReceived = IERC20(USDC).balanceOf(address(paymentRails)) - usdcBefore;
@@ -871,15 +632,6 @@ contract DexSwapModuleForkOracleLifecycleTest is DexSwapModuleForkBase {
 
         // Step 7: Verify oracle floor was respected
         assertGe(usdcReceived, oracleFloor, "Received should be >= oracle floor");
-
-        // Step 8: Show that sandwich attempt would fail
-        bytes memory sandwichCalldata =
-            _buildUniswapCalldata(WETH, USDC, FEE_MEDIUM, address(paymentRails), WETH_SELL_AMOUNT, 1);
-        bytes memory sandwichExecData = _buildExecutionData(UNISWAP_V3_ROUTER, 1, sandwichCalldata);
-
-        bool sandwichSuccess = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT, sandwichExecData);
-        assertFalse(sandwichSuccess, "Sandwich attempt should be blocked");
-        console2.log("[6] Sandwich attack with minAmountOut=1: BLOCKED");
 
         console2.log("");
         console2.log("=============================================");

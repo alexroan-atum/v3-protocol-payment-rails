@@ -9,53 +9,51 @@ contract CCTPBridgeModule_Validate_Test is CCTPBridgeModuleBase {
     //////////////////////////////////////////////////////////////////////////*/
 
     function test_WhenParamsLengthLessThan32() external view {
-        (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_BRIDGE_AMOUNT, hex"00", "");
+        (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_BRIDGE_AMOUNT, hex"00");
         assertFalse(isValid);
         assertEq(reason, "Invalid params encoding");
     }
 
     function test_WhenParamsEmpty() external view {
-        (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_BRIDGE_AMOUNT, "", "");
+        (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_BRIDGE_AMOUNT, "");
         assertFalse(isValid);
         assertEq(reason, "Invalid params encoding");
     }
 
     function test_WhenAmountIsZero() external givenDomainConfigured {
-        (bool isValid, string memory reason) = module.validate(address(usdc), 0, _defaultParams(), "");
+        (bool isValid, string memory reason) = module.validate(address(usdc), 0, _defaultParams());
         assertFalse(isValid);
         assertEq(reason, "Zero bridge amount");
     }
 
     function test_WhenTokenIsNotUSDC() external givenDomainConfigured {
         (bool isValid, string memory reason) =
-            module.validate(address(otherToken), DEFAULT_BRIDGE_AMOUNT, _defaultParams(), "");
+            module.validate(address(otherToken), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
         assertFalse(isValid);
         assertEq(reason, "Only USDC supported");
     }
 
     function test_WhenDomainNotConfigured() external view {
-        (bool isValid, string memory reason) =
-            module.validate(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams(), "");
+        (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
         assertFalse(isValid);
         assertEq(reason, "Domain not configured");
     }
 
     function test_WhenMaxFeeEqualsAmount() external givenDomainConfigured {
-        (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_MAX_FEE, _defaultParams(), "");
+        (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_MAX_FEE, _defaultParams());
         assertFalse(isValid);
         assertEq(reason, "Max fee exceeds amount");
     }
 
     function test_WhenMaxFeeExceedsAmount() external givenDomainConfigured {
-        (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_MAX_FEE - 1, _defaultParams(), "");
+        (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_MAX_FEE - 1, _defaultParams());
         assertFalse(isValid);
         assertEq(reason, "Max fee exceeds amount");
     }
 
     function test_WhenCallerHasInsufficientBalance() external givenDomainConfigured {
         vm.prank(attacker);
-        (bool isValid, string memory reason) =
-            module.validate(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams(), "");
+        (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
         assertFalse(isValid);
         assertEq(reason, "Insufficient balance");
     }
@@ -66,8 +64,7 @@ contract CCTPBridgeModule_Validate_Test is CCTPBridgeModuleBase {
 
     function test_WhenAllChecksPass() external givenDomainConfigured {
         vm.prank(address(paymentRails));
-        (bool isValid, string memory reason) =
-            module.validate(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams(), "");
+        (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
         assertTrue(isValid);
         assertEq(reason, "");
     }
@@ -75,7 +72,7 @@ contract CCTPBridgeModule_Validate_Test is CCTPBridgeModuleBase {
     function testFuzz_WhenAllChecksPass(uint256 amount) external givenDomainConfigured {
         amount = bound(amount, DEFAULT_MAX_FEE + 1, DEFAULT_BRIDGE_AMOUNT * 10);
         vm.prank(address(paymentRails));
-        (bool isValid,) = module.validate(address(usdc), amount, _defaultParams(), "");
+        (bool isValid,) = module.validate(address(usdc), amount, _defaultParams());
         assertTrue(isValid);
     }
 }

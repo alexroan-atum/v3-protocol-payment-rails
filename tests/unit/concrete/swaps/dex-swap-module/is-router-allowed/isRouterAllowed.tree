@@ -1,7 +1,0 @@
-DexSwapModule_IsRouterAllowed
-├── when router is unknown
-│   └── it should return false
-├── when router was added
-│   └── it should return true
-└── when router was added then removed
-    └── it should return false

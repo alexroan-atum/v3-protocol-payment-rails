@@ -63,36 +63,31 @@ library DataTypes {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Static configuration for DEX swaps (stored in PaymentRails.moduleParams).
+    /// @dev All swap parameters are owner-configured — the permissionless executor supplies nothing.
+    ///      The module computes `amountOutMinimum` from Chainlink oracle prices at execution time,
+    ///      so oracle feeds are mandatory (not optional).
     /// @param targetToken Required output token — module rejects any swap producing a different token.
+    /// @param fee Uniswap V3 pool fee tier in hundredths of a basis point (e.g., 500 = 0.05%,
+    ///        3000 = 0.3%, 10000 = 1%). Determines which liquidity pool is used for the swap.
     /// @param maxSlippageBps Owner-configured maximum slippage in basis points (e.g., 200 = 2%).
-    ///        Only enforced when both price feeds are non-zero. Set to 0 to disable oracle enforcement.
+    ///        Applied to the oracle-expected output to compute the minimum acceptable amount.
+    ///        Must be > 0 and <= 10000.
     /// @param sellTokenPriceFeed Chainlink AggregatorV3 address for the sell token's USD price.
-    ///        Set to `address(0)` to disable oracle-based slippage enforcement.
+    ///        Must be non-zero — oracle enforcement is mandatory.
     /// @param buyTokenPriceFeed Chainlink AggregatorV3 address for the buy token's USD price.
-    ///        Set to `address(0)` to disable oracle-based slippage enforcement.
+    ///        Must be non-zero — oracle enforcement is mandatory.
     /// @param maxStaleness Maximum acceptable age (in seconds) for oracle price data.
     ///        Reverts if `block.timestamp - updatedAt > maxStaleness`.
+    /// @param swapDeadlineSeconds Seconds added to `block.timestamp` to form the swap deadline.
+    ///        Typical: 300 (5 minutes). Must be > 0.
     struct DexSwapParams {
         address targetToken;
+        uint24 fee;
         uint16 maxSlippageBps;
         address sellTokenPriceFeed;
         address buyTokenPriceFeed;
         uint256 maxStaleness;
-    }
-
-    /// @notice Per-execution data for DEX swaps (passed as `executionData`).
-    /// @dev Constructed off-chain from a DEX router quote. The module validates every field
-    ///      against the static {DexSwapParams} constraints before executing.
-    /// @param router DEX router contract to call. Must be whitelisted in the module.
-    /// @param minAmountOut Minimum acceptable output (slippage-adjusted amount from the quote).
-    /// @param deadline Transaction deadline — reverts if `block.timestamp > deadline`.
-    /// @param routerCalldata ABI-encoded call to the router. Must route output tokens
-    ///        directly to the PaymentRails (msg.sender in the module's execute context).
-    struct DexSwapExecutionData {
-        address router;
-        uint256 minAmountOut;
-        uint256 deadline;
-        bytes routerCalldata;
+        uint256 swapDeadlineSeconds;
     }
 
     /*//////////////////////////////////////////////////////////////////////////

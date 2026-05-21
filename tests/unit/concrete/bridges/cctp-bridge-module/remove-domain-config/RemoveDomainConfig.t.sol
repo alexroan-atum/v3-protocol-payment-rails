@@ -87,8 +87,7 @@ contract CCTPBridgeModuleRemoveDomainConfigTest is CCTPBridgeModuleBase {
         module.removeDomainConfig(DOMAIN_BASE);
 
         vm.prank(address(paymentRails));
-        DataTypes.ExecutionResult memory result =
-            module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams(), "");
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
         assertFalse(result.success);
         assertEq(result.failureReason, "Domain not configured");
     }

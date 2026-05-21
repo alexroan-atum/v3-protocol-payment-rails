@@ -485,8 +485,7 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
 
         // Execute from paymentRails — triggers transferFrom → _update → reentrant execute()
         vm.prank(address(paymentRails));
-        DataTypes.ExecutionResult memory result =
-            module.execute(address(reentrantToken), DEFAULT_SELL_AMOUNT, params, "");
+        DataTypes.ExecutionResult memory result = module.execute(address(reentrantToken), DEFAULT_SELL_AMOUNT, params);
 
         // Outer call succeeds
         assertTrue(result.success, "outer execute must succeed");
@@ -519,8 +518,7 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
         reentrantToken.approve(address(module), DEFAULT_SELL_AMOUNT);
 
         vm.prank(address(paymentRails));
-        DataTypes.ExecutionResult memory result =
-            module.execute(address(reentrantToken), DEFAULT_SELL_AMOUNT, params, "");
+        DataTypes.ExecutionResult memory result = module.execute(address(reentrantToken), DEFAULT_SELL_AMOUNT, params);
 
         bytes32 orderId = abi.decode(result.data, (bytes32));
 
@@ -561,7 +559,7 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
         crossToken.approve(address(module), DEFAULT_SELL_AMOUNT);
 
         vm.prank(address(paymentRails));
-        DataTypes.ExecutionResult memory result = module.execute(address(crossToken), DEFAULT_SELL_AMOUNT, params, "");
+        DataTypes.ExecutionResult memory result = module.execute(address(crossToken), DEFAULT_SELL_AMOUNT, params);
 
         // Outer execute succeeds
         assertTrue(result.success, "outer execute must succeed");
