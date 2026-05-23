@@ -2,6 +2,7 @@
 pragma solidity ^0.8.29;
 
 import { PaymentRailsBase } from "../PaymentRailsBase.t.sol";
+import { Errors } from "../../../../../src/libraries/Errors.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
 contract PaymentRailsOwnershipTransferTest is PaymentRailsBase {
@@ -88,6 +89,22 @@ contract PaymentRailsOwnershipTransferTest is PaymentRailsBase {
 
         vm.prank(newOwner);
         paymentRails.configureToken(address(token), ACTION_TYPE, address(actionModule), 0, _defaultModuleParams(), true);
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                            renounceOwnership
+    //////////////////////////////////////////////////////////////////////////*/
+
+    function test_RevertWhen_RenounceOwnership_CalledByOwner() external {
+        vm.expectRevert(Errors.PaymentRails_OwnershipCannotBeRenounced.selector);
+        vm.prank(owner);
+        paymentRails.renounceOwnership();
+    }
+
+    function test_RevertWhen_RenounceOwnership_CalledByNonOwner() external {
+        vm.expectRevert(Errors.PaymentRails_OwnershipCannotBeRenounced.selector);
+        vm.prank(nonOwner);
+        paymentRails.renounceOwnership();
     }
 
     /*//////////////////////////////////////////////////////////////////////////

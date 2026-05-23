@@ -27,6 +27,15 @@ contract PaymentRails is IPaymentRails, PaymentRailsState, Ownable2Step, Reentra
     constructor(address initialOwner) Ownable(initialOwner) { }
 
     /*//////////////////////////////////////////////////////////////////////////
+                            OWNERSHIP OVERRIDES
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @dev Disables renounceOwnership() to prevent permanently locking the contract configuration.
+    function renounceOwnership() public pure override {
+        revert Errors.PaymentRails_OwnershipCannotBeRenounced();
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
                         USER-FACING CONSTANT FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
 

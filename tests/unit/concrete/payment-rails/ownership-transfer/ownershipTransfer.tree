@@ -14,6 +14,8 @@ PaymentRails_OwnershipTransfer
 │       ├── it should update owner to pendingOwner
 │       ├── it should reset pendingOwner to zero
 │       └── it should allow new owner to call onlyOwner functions
+├── renounceOwnership
+│   └── it should always revert with PaymentRails_OwnershipCannotBeRenounced
 └── full lifecycle
     ├── it should allow old owner to operate until new owner accepts
     └── it should block old owner after new owner accepts

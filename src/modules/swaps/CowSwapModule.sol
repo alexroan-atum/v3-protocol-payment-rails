@@ -81,6 +81,15 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
     }
 
     /*//////////////////////////////////////////////////////////////////////////
+                            OWNERSHIP OVERRIDES
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @dev Disables renounceOwnership() to prevent permanently locking pending orders' sell tokens.
+    function renounceOwnership() public pure override {
+        revert Errors.CowSwapModule_OwnershipCannotBeRenounced();
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
                             NON-CONSTANT FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
 

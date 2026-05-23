@@ -65,6 +65,14 @@ library Errors {
     error DexSwapModule_InsufficientOutput(uint256 amountOut, uint256 oracleFloor);
 
     /*//////////////////////////////////////////////////////////////////////////
+                            OWNERSHIP ERRORS
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @notice Thrown when renounceOwnership() is called on PaymentRails.
+    /// @dev Ownership renunciation is permanently disabled to prevent locking the contract.
+    error PaymentRails_OwnershipCannotBeRenounced();
+
+    /*//////////////////////////////////////////////////////////////////////////
                             COWSWAP MODULE ERRORS
     //////////////////////////////////////////////////////////////////////////*/
 
@@ -88,6 +96,11 @@ library Errors {
     /// @dev Verified via GPv2Settlement.filledAmounts(orderId) >= meta.sellAmount
     /// @param orderId The order digest
     error CowSwapModule_OrderAlreadyFilled(bytes32 orderId);
+
+    /// @notice Thrown when renounceOwnership() is called on CowSwapModule.
+    /// @dev Ownership renunciation is permanently disabled because it would lock
+    /// all pending orders' sell tokens with no way to cancel them.
+    error CowSwapModule_OwnershipCannotBeRenounced();
 
     /*//////////////////////////////////////////////////////////////////////////
                         CCTP BRIDGE MODULE ERRORS
