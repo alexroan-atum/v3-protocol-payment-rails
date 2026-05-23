@@ -6,6 +6,7 @@ import { CowSwapModule } from "../../../../../src/modules/swaps/CowSwapModule.so
 import { PaymentRails } from "../../../../../src/core/PaymentRails.sol";
 import { DataTypes } from "../../../../../src/types/DataTypes.sol";
 import { Errors } from "../../../../../src/libraries/Errors.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
 import { MockERC20 } from "../../../../shared/mocks/MockERC20.sol";
 import { FeeOnTransferERC20 } from "../../../../shared/mocks/FeeOnTransferERC20.sol";
@@ -615,7 +616,7 @@ contract CowSwapModuleIntegrationTest is Test {
 
         // Attacker CANNOT cancel — only the module owner (address(this)) can cancel
         vm.prank(attacker);
-        vm.expectRevert(abi.encodeWithSelector(Errors.CowSwapModule_NotOwner.selector, attacker, address(this)));
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
         module.cancelOrder(orderId);
 
         // Module owner cancels — sell tokens return to meta.paymentRails (the attacker)

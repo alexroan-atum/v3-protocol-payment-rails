@@ -7,6 +7,7 @@ import { IGPv2Settlement } from "../../../../../src/interfaces/IGPv2Settlement.s
 import { PaymentRails } from "../../../../../src/core/PaymentRails.sol";
 import { DataTypes } from "../../../../../src/types/DataTypes.sol";
 import { Errors } from "../../../../../src/libraries/Errors.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @title CowSwapModuleForkBase
@@ -618,7 +619,7 @@ contract CowSwapModuleForkCancelOrderTest is CowSwapModuleForkBase {
     }
 
     function test_CancelOrder_RevertWhen_CallerIsNotOwner() external givenPendingUsdcOrder {
-        vm.expectRevert(abi.encodeWithSelector(Errors.CowSwapModule_NotOwner.selector, attacker, owner));
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
         vm.prank(attacker);
         module.cancelOrder(_orderId);
     }
@@ -841,7 +842,7 @@ contract CowSwapModuleForkOwnershipTransferTest is CowSwapModuleForkBase {
         module.acceptOwnership();
 
         // Old owner should be rejected
-        vm.expectRevert(abi.encodeWithSelector(Errors.CowSwapModule_NotOwner.selector, owner, newOwner));
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, owner));
         vm.prank(owner);
         module.cancelOrder(_orderId);
     }
@@ -1430,7 +1431,7 @@ contract CowSwapModuleForkSecurityTest is CowSwapModuleForkBase {
     function test_Security_AttackerCannotCancelOrder() external givenPendingUsdcOrder {
         address randomCaller = makeAddr("random");
 
-        vm.expectRevert(abi.encodeWithSelector(Errors.CowSwapModule_NotOwner.selector, randomCaller, owner));
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, randomCaller));
         vm.prank(randomCaller);
         module.cancelOrder(_orderId);
 

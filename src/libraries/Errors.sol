@@ -87,11 +87,6 @@ library Errors {
     /// @param orderId The order digest
     error CowSwapModule_OrderAlreadyCancelled(bytes32 orderId);
 
-    /// @notice Thrown when cancelOrder is called by an address that is not the module owner
-    /// @param caller   Address that attempted cancellation
-    /// @param owner    Module owner address (set at construction via Ownable2Step)
-    error CowSwapModule_NotOwner(address caller, address owner);
-
     /// @notice Thrown when cancelOrder is called on an order already filled by a CowSwap solver
     /// @dev Verified via GPv2Settlement.filledAmounts(orderId) >= meta.sellAmount
     /// @param orderId The order digest

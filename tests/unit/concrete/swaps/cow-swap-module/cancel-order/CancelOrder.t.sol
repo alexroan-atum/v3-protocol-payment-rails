@@ -3,6 +3,7 @@ pragma solidity ^0.8.29;
 
 import { CowSwapModuleBase } from "../CowSwapModuleBase.t.sol";
 import { Errors } from "../../../../../../src/libraries/Errors.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
 /// @notice Unit tests for CowSwapModule.cancelOrder()
 /// @dev Tree: tests/unit/concrete/cow-swap-module/cancel-order/cancelOrder.tree
@@ -30,15 +31,13 @@ contract CowSwapModule_CancelOrder_Test is CowSwapModuleBase {
     // -----------------------------------------------------------------------
 
     function test_RevertWhen_CallerIsNotOwner() external givenPendingOrder {
-        vm.expectRevert(abi.encodeWithSelector(Errors.CowSwapModule_NotOwner.selector, attacker, address(this)));
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
         vm.prank(attacker);
         module.cancelOrder(_orderId);
     }
 
     function test_RevertWhen_CallerIsPaymentRails_NotOwner() external givenPendingOrder {
-        vm.expectRevert(
-            abi.encodeWithSelector(Errors.CowSwapModule_NotOwner.selector, address(paymentRails), address(this))
-        );
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(paymentRails)));
         vm.prank(address(paymentRails));
         module.cancelOrder(_orderId);
     }

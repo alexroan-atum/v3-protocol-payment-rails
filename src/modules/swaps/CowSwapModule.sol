@@ -168,14 +168,11 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
     }
 
     /// @inheritdoc ICowSwapModule
-    function cancelOrder(bytes32 orderId) external nonReentrant {
+    function cancelOrder(bytes32 orderId) external onlyOwner nonReentrant {
         DataTypes.CowOrderMetadata storage meta = _orders[orderId];
 
         if (meta.paymentRails == address(0)) {
             revert Errors.CowSwapModule_UnknownOrder(orderId);
-        }
-        if (msg.sender != owner()) {
-            revert Errors.CowSwapModule_NotOwner(msg.sender, owner());
         }
         if (meta.cancelled) {
             revert Errors.CowSwapModule_OrderAlreadyCancelled(orderId);
