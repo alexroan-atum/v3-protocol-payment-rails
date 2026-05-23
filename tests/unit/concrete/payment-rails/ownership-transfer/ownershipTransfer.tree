@@ -1,0 +1,19 @@
+PaymentRails_OwnershipTransfer
+├── transferOwnership
+│   ├── when caller is not owner
+│   │   └── it should revert with OwnableUnauthorizedAccount
+│   ├── when caller is owner
+│   │   ├── it should set pendingOwner
+│   │   └── it should NOT change current owner
+│   └── when transferring to zero address
+│       └── it should set pendingOwner to zero (cancels transfer)
+├── acceptOwnership
+│   ├── when caller is not pendingOwner
+│   │   └── it should revert with OwnableUnauthorizedAccount
+│   └── when caller is pendingOwner
+│       ├── it should update owner to pendingOwner
+│       ├── it should reset pendingOwner to zero
+│       └── it should allow new owner to call onlyOwner functions
+└── full lifecycle
+    ├── it should allow old owner to operate until new owner accepts
+    └── it should block old owner after new owner accepts
