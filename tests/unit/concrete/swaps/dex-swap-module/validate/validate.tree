@@ -21,11 +21,11 @@ DexSwapModule::validate
 │   └── it should return false with insufficient balance
 ├── when all validations pass
 │   └── it should return true with empty reason
-├── validate and execute should agree on failure reasons
+├── validate and execute should agree on failure reasons (shared _validate)
 │   ├── it should agree on params too short
 │   ├── it should agree on zero target token
 │   ├── it should agree on zero sell amount
-│   ├── it should agree on insufficient balance
-│   └── it should agree on same input and output token
+│   ├── it should agree on same input and output token
+│   └── it should agree when both oracle and balance are bad
 └── fuzz: validate and execute agreement
     └── it should produce identical failure reasons for shared validation checks

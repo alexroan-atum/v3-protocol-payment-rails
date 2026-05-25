@@ -171,26 +171,23 @@ contract DexSwapModule_Validate_Test is DexSwapModuleBase {
     }
 
     /*//////////////////////////////////////////////////////////////////////////
-            VALIDATE vs EXECUTE ORDERING — INTENTIONAL DIVERGENCE
+            VALIDATE vs EXECUTE ORDERING — SHARED _validate() AGREEMENT
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @dev When both oracle AND balance are invalid, execute and validate report different
-    /// first errors because they check these in different order:
-    ///   execute: balance → oracle
-    ///   validate: oracle → balance
-    function test_Oracle_AndBalance_BothBad_IntentionalOrderingDivergence() external {
+    /// @dev When both oracle AND balance are invalid, execute and validate report the same
+    /// first error because both call the single _validate() internal.
+    function test_Oracle_AndBalance_BothBad_AgreesOnReason() external {
         sellFeed.setAnswer(-1);
         uint256 tooMuch = DEFAULT_SELL_AMOUNT * 101;
 
         vm.prank(address(paymentRails));
         (bool isValid, string memory valReason) = module.validate(address(sellToken), tooMuch, _defaultParams());
         assertFalse(isValid);
-        assertEq(valReason, "Oracle price unavailable", "validate checks oracle before balance");
 
         DataTypes.ExecutionResult memory result =
             paymentRails.executeSwap(address(sellToken), tooMuch, _defaultParams());
         assertFalse(result.success);
-        assertEq(result.failureReason, "Insufficient balance", "execute checks balance before oracle");
+        assertEq(valReason, result.failureReason, "both paths report same first error");
     }
 
     /*//////////////////////////////////////////////////////////////////////////

@@ -3,7 +3,6 @@ pragma solidity 0.8.29;
 
 import { IPaymentRails } from "../interfaces/IPaymentRails.sol";
 import { IActionModule } from "../interfaces/IActionModule.sol";
-import { PaymentRailsState } from "../abstracts/PaymentRailsState.sol";
 import { DataTypes } from "../types/DataTypes.sol";
 import { Errors } from "../libraries/Errors.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -14,8 +13,15 @@ import { Ownable2Step, Ownable } from "@openzeppelin/contracts/access/Ownable2St
 /// @title PaymentRails
 /// @author Credit Cooperative
 /// @notice See the documentation in {IPaymentRails}.
-contract PaymentRails is IPaymentRails, PaymentRailsState, Ownable2Step, ReentrancyGuard {
+contract PaymentRails is IPaymentRails, Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
+
+    /*//////////////////////////////////////////////////////////////////////////
+                                    STORAGE
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @dev Maps token addresses to their action configurations
+    mapping(address token => DataTypes.TokenConfig config) internal _tokenConfigs;
 
     /*//////////////////////////////////////////////////////////////////////////
                                   CONSTRUCTOR

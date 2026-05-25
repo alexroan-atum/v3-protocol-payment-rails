@@ -112,7 +112,7 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
         {
             bool valid;
             string memory reason;
-            (valid, reason, swapParams, validTo) = _validateSwapParams(token, amount, params);
+            (valid, reason, swapParams, validTo) = _validate(token, amount, params);
             if (!valid) {
                 return _failedResult(token, reason);
             }
@@ -124,10 +124,6 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
 
         if (_orders[orderId].paymentRails != address(0)) {
             return _failedResult(token, "Order ID collision: use unique appData");
-        }
-
-        if (!_hasSufficientBalance(token, amount)) {
-            return _failedResult(token, "Insufficient balance");
         }
 
         // --- Effects ---
@@ -212,14 +208,7 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
         override(ActionModuleBase, IActionModule)
         returns (bool isValid, string memory reason)
     {
-        (isValid, reason,,) = _validateSwapParams(token, amount, params);
-        if (!isValid) {
-            return (false, reason);
-        }
-        if (!_hasSufficientBalance(token, amount)) {
-            return (false, "Insufficient balance");
-        }
-        return (true, "");
+        (isValid, reason,,) = _validate(token, amount, params);
     }
 
     /// @inheritdoc ICowSwapModule
@@ -294,8 +283,27 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @dev Shared parameter validation for `execute` and `validate`. Decodes and checks all swap
-    ///      parameters without touching storage, so callers avoid duplicated logic.
+    /// @dev Single source of truth for all view-safe validation. Called by both validate() and execute().
+    ///      Wraps _validateSwapParams (param decoding + stateless checks) and adds the balance check.
+    ///      Execution-only guards (collision check) remain in execute().
+    function _validate(
+        address token,
+        uint256 amount,
+        bytes calldata params
+    )
+        private
+        view
+        returns (bool valid, string memory reason, DataTypes.CowSwapParams memory swapParams, uint32 validTo)
+    {
+        (valid, reason, swapParams, validTo) = _validateSwapParams(token, amount, params);
+        if (!valid) return (false, reason, swapParams, 0);
+
+        if (!_hasSufficientBalance(token, amount)) return (false, "Insufficient balance", swapParams, 0);
+
+        return (true, "", swapParams, validTo);
+    }
+
+    /// @dev Decodes and checks all swap parameters without touching storage.
     function _validateSwapParams(
         address token,
         uint256 amount,

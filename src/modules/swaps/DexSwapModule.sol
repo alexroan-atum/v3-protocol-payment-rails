@@ -64,13 +64,9 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, ReentrancyGuard {
         nonReentrant
         returns (DataTypes.ExecutionResult memory)
     {
-        (bool valid, string memory reason, DataTypes.DexSwapParams memory cfg) = _validateParams(token, amount, params);
+        (bool valid, string memory reason, DataTypes.DexSwapParams memory cfg, uint256 oracleFloor) =
+            _validate(token, amount, params);
         if (!valid) return _failedResult(token, reason);
-
-        if (!_hasSufficientBalance(token, amount)) return _failedResult(token, "Insufficient balance");
-
-        (bool oracleOk, uint256 oracleFloor) = _computeOracleFloor(token, amount, cfg);
-        if (!oracleOk) return _failedResult(token, "Oracle price unavailable");
 
         (bool ok, uint256 actualIn, uint256 amountOut) = _executeSwap(token, amount, cfg, oracleFloor);
 
@@ -101,16 +97,7 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, ReentrancyGuard {
         override(ActionModuleBase, IActionModule)
         returns (bool isValid, string memory reason)
     {
-        DataTypes.DexSwapParams memory cfg;
-        (isValid, reason, cfg) = _validateParams(token, amount, params);
-        if (!isValid) return (false, reason);
-
-        (bool oracleOk,) = _computeOracleFloor(token, amount, cfg);
-        if (!oracleOk) return (false, "Oracle price unavailable");
-
-        if (!_hasSufficientBalance(token, amount)) return (false, "Insufficient balance");
-
-        return (true, "");
+        (isValid, reason,,) = _validate(token, amount, params);
     }
 
     /// @inheritdoc IActionModule
@@ -164,6 +151,28 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, ReentrancyGuard {
     /*//////////////////////////////////////////////////////////////////////////
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
+
+    /// @dev Single source of truth for all view-safe validation. Called by both validate() and execute().
+    function _validate(
+        address token,
+        uint256 amount,
+        bytes calldata params
+    )
+        private
+        view
+        returns (bool valid, string memory reason, DataTypes.DexSwapParams memory cfg, uint256 oracleFloor)
+    {
+        (valid, reason, cfg) = _validateParams(token, amount, params);
+        if (!valid) return (false, reason, cfg, 0);
+
+        bool oracleOk;
+        (oracleOk, oracleFloor) = _computeOracleFloor(token, amount, cfg);
+        if (!oracleOk) return (false, "Oracle price unavailable", cfg, 0);
+
+        if (!_hasSufficientBalance(token, amount)) return (false, "Insufficient balance", cfg, 0);
+
+        return (true, "", cfg, oracleFloor);
+    }
 
     /// @dev Validates static params: encoding length, targetToken, amount, oracle config, deadline config.
     // solhint-disable-next-line code-complexity
