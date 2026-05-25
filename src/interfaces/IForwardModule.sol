@@ -26,7 +26,7 @@ interface IForwardModule is IActionModule {
     /// Notes:
     /// - Pure function (no state access).
     /// - Inverse of {encodeParams}.
-    /// - Reverts if the bytes are not valid ABI-encoded `(address, bool, uint256)`.
+    /// - Reverts if the bytes are not valid ABI-encoded `(address, uint256)`.
     ///
     /// @param encoded ABI-encoded parameter bytes.
     /// @return params Decoded ForwardParams struct.

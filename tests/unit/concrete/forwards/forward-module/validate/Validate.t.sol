@@ -9,7 +9,7 @@ contract ForwardModuleValidateTest is ForwardModuleBase {
     //////////////////////////////////////////////////////////////////////////*/
 
     function test_WhenRecipientIsZeroAddress_ReturnsFalse() external whenRecipientIsZeroAddress {
-        bytes memory params = _buildParams(address(0), false, 0);
+        bytes memory params = _buildParams(address(0), 0);
 
         vm.prank(paymentRails);
         (bool isValid, string memory reason) = module.validate(address(token), DEFAULT_AMOUNT, params);
@@ -19,7 +19,7 @@ contract ForwardModuleValidateTest is ForwardModuleBase {
     }
 
     function test_WhenAmountBelowMinimum_ReturnsFalse() external whenAmountBelowMinimum {
-        bytes memory params = _buildParams(recipient, false, DEFAULT_MIN_AMOUNT);
+        bytes memory params = _buildParams(recipient, DEFAULT_MIN_AMOUNT);
         uint256 belowMinAmount = DEFAULT_MIN_AMOUNT - 1;
 
         vm.prank(paymentRails);
@@ -41,7 +41,7 @@ contract ForwardModuleValidateTest is ForwardModuleBase {
     }
 
     function test_WhenMultipleValidationsFail_ReturnsFirstFailure() external {
-        bytes memory params = _buildParams(address(0), false, DEFAULT_AMOUNT + 1);
+        bytes memory params = _buildParams(address(0), DEFAULT_AMOUNT + 1);
 
         vm.prank(paymentRails);
         (bool isValid, string memory reason) = module.validate(address(token), DEFAULT_AMOUNT, params);
@@ -65,7 +65,7 @@ contract ForwardModuleValidateTest is ForwardModuleBase {
     }
 
     function test_WhenAmountEqualsMinimum_ReturnsTrue() external whenAllValidationsPass {
-        bytes memory params = _buildParams(recipient, false, DEFAULT_AMOUNT);
+        bytes memory params = _buildParams(recipient, DEFAULT_AMOUNT);
 
         vm.prank(paymentRails);
         (bool isValid,) = module.validate(address(token), DEFAULT_AMOUNT, params);

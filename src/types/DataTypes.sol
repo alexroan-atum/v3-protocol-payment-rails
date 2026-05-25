@@ -50,11 +50,9 @@ library DataTypes {
     /// @notice Forward configuration parameters
     /// @dev Used by ForwardModule to configure simple token transfers
     /// @param recipient Destination address for tokens
-    /// @param requireSuccessfulReceipt Whether to revert if recipient cannot receive tokens
     /// @param minAmount Minimum amount required to forward (0 = no minimum)
     struct ForwardParams {
         address recipient;
-        bool requireSuccessfulReceipt;
         uint256 minAmount;
     }
 

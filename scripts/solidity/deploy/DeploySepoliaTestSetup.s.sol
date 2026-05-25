@@ -81,11 +81,8 @@ contract DeploySepoliaTestSetup is Script {
             enabled: true
         });
 
-        bytes memory forwardParams = abi.encode(
-            DataTypes.ForwardParams({
-                recipient: FORWARD_RECIPIENT, requireSuccessfulReceipt: false, minAmount: forwardMinBalance
-            })
-        );
+        bytes memory forwardParams =
+            abi.encode(DataTypes.ForwardParams({ recipient: FORWARD_RECIPIENT, minAmount: forwardMinBalance }));
         paymentRails.configureToken({
             token: FORWARD_TOKEN,
             actionType: "FORWARD",

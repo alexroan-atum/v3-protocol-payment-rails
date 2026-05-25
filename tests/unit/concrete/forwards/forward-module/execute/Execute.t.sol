@@ -10,7 +10,7 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
     //////////////////////////////////////////////////////////////////////////*/
 
     function test_WhenRecipientIsZeroAddress_ReturnsFailedResult() external whenRecipientIsZeroAddress {
-        bytes memory params = _buildParams(address(0), false, 0);
+        bytes memory params = _buildParams(address(0), 0);
 
         vm.prank(paymentRails);
         DataTypes.ExecutionResult memory result = module.execute(address(token), DEFAULT_AMOUNT, params);
@@ -23,7 +23,7 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
     }
 
     function test_WhenAmountBelowMinimum_ReturnsFailedResult() external whenAmountBelowMinimum {
-        bytes memory params = _buildParams(recipient, false, DEFAULT_MIN_AMOUNT);
+        bytes memory params = _buildParams(recipient, DEFAULT_MIN_AMOUNT);
         uint256 belowMinAmount = DEFAULT_MIN_AMOUNT - 1;
 
         vm.prank(paymentRails);
@@ -65,7 +65,7 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
     }
 
     function test_WhenMultipleValidationsFail_ReturnsFirstFailure() external {
-        bytes memory params = _buildParams(address(0), false, DEFAULT_AMOUNT + 1);
+        bytes memory params = _buildParams(address(0), DEFAULT_AMOUNT + 1);
 
         vm.prank(paymentRails);
         DataTypes.ExecutionResult memory result = module.execute(address(token), DEFAULT_AMOUNT, params);
@@ -129,7 +129,7 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
     }
 
     function test_WhenAmountEqualsMinimum_Succeeds() external whenAllValidationsPass {
-        bytes memory params = _buildParams(recipient, false, DEFAULT_AMOUNT);
+        bytes memory params = _buildParams(recipient, DEFAULT_AMOUNT);
 
         vm.prank(paymentRails);
         DataTypes.ExecutionResult memory result = module.execute(address(token), DEFAULT_AMOUNT, params);
@@ -139,7 +139,7 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
     }
 
     function test_WhenAllValidationsPass_WorksWithZeroMinAmount() external whenAllValidationsPass {
-        bytes memory params = _buildParams(recipient, false, 0);
+        bytes memory params = _buildParams(recipient, 0);
         uint256 tinyAmount = 1;
 
         token.mint(paymentRails, tinyAmount);
@@ -152,7 +152,7 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
     }
 
     function test_WhenFeeOnTransferToken_ReportsAmountOutEqualToInput() external whenAllValidationsPass {
-        bytes memory params = _buildParams(recipient, false, 0);
+        bytes memory params = _buildParams(recipient, 0);
         uint256 recipientBefore = feeToken.balanceOf(recipient);
 
         vm.prank(paymentRails);
@@ -168,7 +168,7 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
     /// @dev Regression test for Certora finding: non-standard ERC20 tokens (e.g. USDT) that return
     /// no data from transferFrom must be treated as successful, not failed.
     function test_WhenNoReturnToken_TransfersSuccessfully() external whenAllValidationsPass {
-        bytes memory params = _buildParams(recipient, false, 0);
+        bytes memory params = _buildParams(recipient, 0);
         uint256 paymentRailsBefore = noReturnToken.balanceOf(paymentRails);
         uint256 recipientBefore = noReturnToken.balanceOf(recipient);
 
@@ -189,7 +189,7 @@ contract ForwardModuleExecuteTest is ForwardModuleBase {
         minAmount = bound(minAmount, 0, DEFAULT_AMOUNT * 50);
         amount = bound(amount, minAmount, DEFAULT_AMOUNT * 50);
 
-        bytes memory params = _buildParams(recipient, false, minAmount);
+        bytes memory params = _buildParams(recipient, minAmount);
         uint256 recipientBefore = token.balanceOf(recipient);
 
         vm.prank(paymentRails);

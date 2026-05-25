@@ -81,18 +81,10 @@ abstract contract ForwardModuleBase is Test {
     }
 
     function _defaultParams() internal view returns (bytes memory) {
-        return _buildParams(recipient, false, DEFAULT_MIN_AMOUNT);
+        return _buildParams(recipient, DEFAULT_MIN_AMOUNT);
     }
 
-    function _buildParams(
-        address _recipient,
-        bool _requireSuccessfulReceipt,
-        uint256 _minAmount
-    )
-        internal
-        pure
-        returns (bytes memory)
-    {
-        return abi.encode(_recipient, _requireSuccessfulReceipt, _minAmount);
+    function _buildParams(address _recipient, uint256 _minAmount) internal pure returns (bytes memory) {
+        return abi.encode(_recipient, _minAmount);
     }
 }
