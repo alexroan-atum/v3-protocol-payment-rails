@@ -473,7 +473,9 @@ contract DexSwapModule_Execute_Test is DexSwapModuleBase {
     function testFuzz_WhenAllValid_HandlesAnyValidAmounts(uint256 sellAmount, uint256 _buyAmount) external {
         sellAmount = bound(sellAmount, 1, DEFAULT_SELL_AMOUNT * 50);
         uint256 oracleFloor = _computeOracleFloor(sellAmount);
-        _buyAmount = bound(_buyAmount, oracleFloor > 0 ? oracleFloor : 1, type(uint128).max);
+        // Skip dust amounts where oracle floor rounds to zero — the module now rejects these.
+        vm.assume(oracleFloor > 0);
+        _buyAmount = bound(_buyAmount, oracleFloor, type(uint128).max);
 
         sellToken.mint(address(paymentRails), sellAmount);
         buyToken.mint(address(router), _buyAmount);
@@ -485,5 +487,18 @@ contract DexSwapModule_Execute_Test is DexSwapModuleBase {
         assertTrue(result.success, "success");
         assertEq(result.amountOut, _buyAmount, "amountOut");
         assertEq(sellToken.balanceOf(address(module)), 0, "no residual");
+    }
+
+    function test_WhenOracleFloorRoundsToZero_RejectsSwap() external {
+        // 1 wei with equal prices and 1% slippage → oracleFloor = mulDiv(1, 9900, 10000) = 0
+        uint256 dustAmount = 1;
+        sellToken.mint(address(paymentRails), dustAmount);
+        buyToken.mint(address(router), 1);
+        router.setOutputAmount(1);
+
+        DataTypes.ExecutionResult memory result =
+            paymentRails.executeSwap(address(sellToken), dustAmount, _defaultParams());
+
+        assertFalse(result.success, "should reject dust swap");
     }
 }

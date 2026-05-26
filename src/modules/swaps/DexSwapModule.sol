@@ -168,6 +168,7 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, ReentrancyGuard {
         bool oracleOk;
         (oracleOk, oracleFloor) = _computeOracleFloor(token, amount, cfg);
         if (!oracleOk) return (false, "Oracle price unavailable", cfg, 0);
+        if (oracleFloor == 0) return (false, "Amount too small for safe swap", cfg, 0);
 
         if (!_hasSufficientBalance(token, amount)) return (false, "Insufficient balance", cfg, 0);
 
