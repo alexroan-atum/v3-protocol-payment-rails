@@ -17,6 +17,11 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 /// @notice Async action module that submits sell orders to the CowSwap order-book protocol.
 /// @dev See {ICowSwapModule} for the full lifecycle, deployment model, and security model.
 /// Each PaymentRails must deploy its own private instance — do NOT share across PaymentRails.
+///
+/// Fee-on-transfer / deflationary tokens are NOT supported. The module records the nominal
+/// `sellAmount` in order metadata but receives fewer tokens after the fee deduction. The
+/// CowSwap solver will be unable to pull the full `sellAmount` via VaultRelayer, causing the
+/// order to be permanently unsettleable.
 contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 

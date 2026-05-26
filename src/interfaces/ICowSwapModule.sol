@@ -41,6 +41,8 @@ import { DataTypes } from "../types/DataTypes.sol";
 ///   - Max approval to GPv2VaultRelayer is set once per token and never revoked. The relayer is
 ///     immutable, so ERC-20 balance is the hard ceiling on what it can pull.
 ///   - `cancelOrder()` caps the returned amount at `meta.sellAmount` to protect concurrent orders.
+///   - Fee-on-transfer / deflationary tokens are NOT supported. The module records the nominal
+///     `sellAmount` but receives fewer tokens, making the order permanently unsettleable.
 interface ICowSwapModule is IActionModule {
     /*//////////////////////////////////////////////////////////////////////////
                                     EVENTS

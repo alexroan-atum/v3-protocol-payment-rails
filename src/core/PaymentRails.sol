@@ -197,6 +197,7 @@ contract PaymentRails is IPaymentRails, Ownable2Step, ReentrancyGuard {
             DataTypes.ExecutionResult memory result
         ) {
             if (result.success) {
+                IERC20(token).forceApprove(config.actionModule, 0);
                 emit ActionExecuted(token, config.actionType, amount, result.amountOut, result.outputToken, msg.sender);
                 return true;
             } else {
