@@ -3,7 +3,7 @@ pragma solidity ^0.8.29;
 
 import { Test } from "forge-std/src/Test.sol";
 import { CCTPBridgeModule } from "../../../../src/modules/bridges/CCTPBridgeModule.sol";
-import { DataTypes } from "../../../../src/types/DataTypes.sol";
+
 import { CCTPBridgeModuleHandler, BridgePaymentRailsProxy } from "./CCTPBridgeModuleHandler.sol";
 import { MockERC20 } from "../../../shared/mocks/MockERC20.sol";
 import { MockTokenMessengerV2 } from "../../../shared/mocks/MockTokenMessengerV2.sol";
@@ -16,17 +16,15 @@ contract CCTPBridgeModuleInvariant is Test {
     MockERC20 internal otherToken;
     MockTokenMessengerV2 internal tokenMessenger;
 
-    address internal moduleOwner;
-
     function setUp() public {
-        moduleOwner = makeAddr("moduleOwner");
         tokenMessenger = new MockTokenMessengerV2();
         usdc = new MockERC20("USD Coin", "USDC");
         otherToken = new MockERC20("Other Token", "OTH");
-        module = new CCTPBridgeModule(address(tokenMessenger), address(usdc), moduleOwner);
+
+        module = new CCTPBridgeModule(address(tokenMessenger), address(usdc));
         paymentRails = new BridgePaymentRailsProxy(address(module));
 
-        handler = new CCTPBridgeModuleHandler(module, paymentRails, usdc, otherToken, tokenMessenger, moduleOwner);
+        handler = new CCTPBridgeModuleHandler(module, paymentRails, usdc, otherToken, tokenMessenger);
 
         targetContract(address(handler));
         excludeContract(address(module));
@@ -34,28 +32,6 @@ contract CCTPBridgeModuleInvariant is Test {
         excludeContract(address(usdc));
         excludeContract(address(otherToken));
         excludeContract(address(tokenMessenger));
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                    INV-1: DOMAIN CONFIG INTEGRITY
-    //////////////////////////////////////////////////////////////////////////*/
-
-    function invariant_DomainConfigIntegrity() public view {
-        uint256 len = handler.ghost_configuredDomainsLength();
-
-        for (uint256 i = 0; i < len; i++) {
-            uint32 domain = handler.ghost_configuredDomains(i);
-            bool ghostConfigured = handler.ghost_domainIsConfigured(domain);
-            DataTypes.CCTPDomainConfig memory config = module.getDomainConfig(domain);
-
-            assertEq(
-                config.isValid, ghostConfigured, "INV-1: on-chain isValid must match ghost domain configured state"
-            );
-
-            if (ghostConfigured) {
-                assertEq(config.maxFee, handler.ghost_domainMaxFee(domain), "INV-1: on-chain maxFee must match ghost");
-            }
-        }
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -88,24 +64,16 @@ contract CCTPBridgeModuleInvariant is Test {
                     INV-5: USDC CONSERVATION
     //////////////////////////////////////////////////////////////////////////*/
 
+    // MockTokenMessengerV2 does not burn tokens, so USDC stays in the module after bridge.
     function invariant_USDCConservation() public view {
         uint256 totalMinted = handler.ghost_totalMintedToPaymentRails();
-        uint256 nodeBalance = usdc.balanceOf(address(paymentRails));
+        uint256 paymentRailsBalance = usdc.balanceOf(address(paymentRails));
         uint256 moduleBalance = usdc.balanceOf(address(module));
 
         assertEq(
             totalMinted,
-            nodeBalance + moduleBalance,
+            paymentRailsBalance + moduleBalance,
             "INV-5: total minted must equal paymentRails balance + module balance (mock does not burn)"
         );
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                    INV-6: OWNERSHIP CONSISTENCY
-    //////////////////////////////////////////////////////////////////////////*/
-
-    function invariant_OwnershipConsistency() public view {
-        assertEq(module.owner(), handler.ghost_currentOwner(), "INV-6: on-chain owner must match ghost");
-        assertEq(module.pendingOwner(), handler.ghost_pendingOwner(), "INV-6: on-chain pendingOwner must match ghost");
     }
 }

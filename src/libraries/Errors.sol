@@ -106,15 +106,4 @@ library Errors {
 
     /// @notice Thrown when the USDC address is the zero address in the constructor.
     error CCTPBridgeModule_ZeroUSDC();
-
-    /// @notice Thrown when the mint recipient is `bytes32(0)` in `setDomainConfig()`.
-    error CCTPBridgeModule_ZeroMintRecipient();
-
-    /// @notice Thrown when `minFinalityThreshold` is not 1000 or 2000.
-    /// @param threshold The invalid finality threshold value.
-    error CCTPBridgeModule_InvalidFinalityThreshold(uint32 threshold);
-
-    /// @notice Thrown when attempting to remove a domain config that does not exist.
-    /// @param destinationDomain The CCTP domain ID that is not configured.
-    error CCTPBridgeModule_DomainNotConfigured(uint32 destinationDomain);
 }

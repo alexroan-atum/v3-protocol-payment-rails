@@ -8,8 +8,6 @@ import { Errors } from "../../../../../src/libraries/Errors.sol";
 import { MockERC20 } from "../../../../shared/mocks/MockERC20.sol";
 import { MockTokenMessengerV2 } from "../../../../shared/mocks/MockTokenMessengerV2.sol";
 
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
-
 contract CCTPBridgeModuleIntegrationTest is Test {
     /*//////////////////////////////////////////////////////////////////////////
                                     EVENTS
@@ -55,7 +53,6 @@ contract CCTPBridgeModuleIntegrationTest is Test {
     MockERC20 internal usdc;
 
     address internal paymentRailsOwner;
-    address internal moduleOwner;
     address internal executor;
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -64,20 +61,16 @@ contract CCTPBridgeModuleIntegrationTest is Test {
 
     function setUp() public {
         paymentRailsOwner = makeAddr("paymentRailsOwner");
-        moduleOwner = makeAddr("moduleOwner");
         executor = makeAddr("executor");
 
         tokenMessenger = new MockTokenMessengerV2();
         usdc = new MockERC20("USD Coin", "USDC");
 
-        bridgeModule = new CCTPBridgeModule(address(tokenMessenger), address(usdc), moduleOwner);
-
-        vm.prank(moduleOwner);
-        bridgeModule.setDomainConfig(DOMAIN_BASE, MINT_RECIPIENT, bytes32(0), MAX_FEE, FINALITY_FAST, "");
+        bridgeModule = new CCTPBridgeModule(address(tokenMessenger), address(usdc));
 
         paymentRailsContract = new PaymentRails(paymentRailsOwner);
 
-        bytes memory moduleParams = abi.encode(uint32(DOMAIN_BASE));
+        bytes memory moduleParams = _buildModuleParams(DOMAIN_BASE, MINT_RECIPIENT, MAX_FEE, FINALITY_FAST, "");
         vm.prank(paymentRailsOwner);
         paymentRailsContract.configureToken(
             address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, moduleParams, true
@@ -201,8 +194,8 @@ contract CCTPBridgeModuleIntegrationTest is Test {
     }
 
     function test_RevertWhen_TokenNotEnabled() external {
+        bytes memory moduleParams = _buildModuleParams(DOMAIN_BASE, MINT_RECIPIENT, MAX_FEE, FINALITY_FAST, "");
         vm.prank(paymentRailsOwner);
-        bytes memory moduleParams = abi.encode(uint32(DOMAIN_BASE));
         paymentRailsContract.configureToken(
             address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, moduleParams, false
         );
@@ -213,16 +206,19 @@ contract CCTPBridgeModuleIntegrationTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////////////////
-                    DOMAIN CONFIG CHANGE — IMMEDIATE EFFECT
+                    RECONFIGURE — IMMEDIATE EFFECT
     //////////////////////////////////////////////////////////////////////////*/
 
-    function test_DomainConfigChangeAffectsNextExecution() external {
+    function test_ReconfigureChangesNextExecution() external {
         vm.prank(executor);
         paymentRailsContract.executeAction(address(usdc), BRIDGE_AMOUNT / 2);
 
         bytes32 newRecipient = bytes32(uint256(uint160(0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC)));
-        vm.prank(moduleOwner);
-        bridgeModule.setDomainConfig(DOMAIN_BASE, newRecipient, bytes32(0), 0, FINALITY_FAST, "");
+        bytes memory newParams = _buildModuleParams(DOMAIN_BASE, newRecipient, 0, FINALITY_FAST, "");
+        vm.prank(paymentRailsOwner);
+        paymentRailsContract.configureToken(
+            address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, newParams, true
+        );
 
         vm.prank(executor);
         paymentRailsContract.executeAction(address(usdc), BRIDGE_AMOUNT / 2);
@@ -233,21 +229,6 @@ contract CCTPBridgeModuleIntegrationTest is Test {
         assertEq(recipient1, MINT_RECIPIENT);
         assertEq(recipient2, newRecipient);
         assertEq(fee2, 0);
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                    DOMAIN REMOVAL — EXECUTION FAILS GRACEFULLY
-    //////////////////////////////////////////////////////////////////////////*/
-
-    function test_WhenDomainRemoved_ExecutionReturnsFalse() external {
-        vm.prank(moduleOwner);
-        bridgeModule.removeDomainConfig(DOMAIN_BASE);
-
-        vm.prank(executor);
-        bool success = paymentRailsContract.executeAction(address(usdc), BRIDGE_AMOUNT);
-        assertFalse(success);
-
-        assertEq(usdc.balanceOf(address(paymentRailsContract)), BRIDGE_AMOUNT);
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -284,8 +265,11 @@ contract CCTPBridgeModuleIntegrationTest is Test {
     //////////////////////////////////////////////////////////////////////////*/
 
     function test_WithHookData_UsesDepositForBurnWithHook() external {
-        vm.prank(moduleOwner);
-        bridgeModule.setDomainConfig(DOMAIN_BASE, MINT_RECIPIENT, bytes32(0), MAX_FEE, FINALITY_FAST, hex"cafebabe");
+        bytes memory hookParams = _buildModuleParams(DOMAIN_BASE, MINT_RECIPIENT, MAX_FEE, FINALITY_FAST, hex"cafebabe");
+        vm.prank(paymentRailsOwner);
+        paymentRailsContract.configureToken(
+            address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, hookParams, true
+        );
 
         vm.prank(executor);
         bool success = paymentRailsContract.executeAction(address(usdc), BRIDGE_AMOUNT);
@@ -299,15 +283,16 @@ contract CCTPBridgeModuleIntegrationTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////////////////
-                    MULTI-NODE — SHARED MODULE
+                    MULTI-NODE — SHARED MODULE, INDEPENDENT ROUTING
     //////////////////////////////////////////////////////////////////////////*/
 
-    function test_MultiPaymentRails_TwoPaymentRailsShareOneModule_BothSucceed() external {
+    function test_MultiPaymentRails_TwoPaymentRailsShareOneModule_DifferentRecipients() external {
+        bytes32 recipientB = bytes32(uint256(uint160(0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa)));
+
         PaymentRails nodeB = new PaymentRails(paymentRailsOwner);
+        bytes memory paramsB = _buildModuleParams(DOMAIN_BASE, recipientB, MAX_FEE, FINALITY_FAST, "");
         vm.prank(paymentRailsOwner);
-        nodeB.configureToken(
-            address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, abi.encode(uint32(DOMAIN_BASE)), true
-        );
+        nodeB.configureToken(address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, paramsB, true);
         usdc.mint(address(nodeB), BRIDGE_AMOUNT);
 
         vm.prank(executor);
@@ -319,22 +304,22 @@ contract CCTPBridgeModuleIntegrationTest is Test {
         assertTrue(successA);
         assertTrue(successB);
         assertEq(tokenMessenger.getDepositCallCount(), 2);
-        assertEq(usdc.balanceOf(address(paymentRailsContract)), 0);
-        assertEq(usdc.balanceOf(address(nodeB)), 0);
+
+        (,, bytes32 recipient1,,,,,) = tokenMessenger.depositCalls(0);
+        (,, bytes32 recipient2,,,,,) = tokenMessenger.depositCalls(1);
+
+        assertEq(recipient1, MINT_RECIPIENT);
+        assertEq(recipient2, recipientB);
     }
 
     function test_MultiPaymentRails_DifferentDomains_RoutesCorrectly() external {
         uint32 domainArbitrum = 3;
         bytes32 recipientArb = bytes32(uint256(uint160(0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa)));
 
-        vm.prank(moduleOwner);
-        bridgeModule.setDomainConfig(domainArbitrum, recipientArb, bytes32(0), 0, FINALITY_FAST, "");
-
         PaymentRails nodeB = new PaymentRails(paymentRailsOwner);
+        bytes memory paramsB = _buildModuleParams(domainArbitrum, recipientArb, 0, FINALITY_FAST, "");
         vm.prank(paymentRailsOwner);
-        nodeB.configureToken(
-            address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, abi.encode(domainArbitrum), true
-        );
+        nodeB.configureToken(address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, paramsB, true);
         usdc.mint(address(nodeB), BRIDGE_AMOUNT);
 
         vm.prank(executor);
@@ -352,35 +337,11 @@ contract CCTPBridgeModuleIntegrationTest is Test {
         assertEq(recipient2, recipientArb);
     }
 
-    function test_MultiPaymentRails_DomainRemoval_AffectsBothPaymentRails() external {
-        PaymentRails nodeB = new PaymentRails(paymentRailsOwner);
-        vm.prank(paymentRailsOwner);
-        nodeB.configureToken(
-            address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, abi.encode(uint32(DOMAIN_BASE)), true
-        );
-        usdc.mint(address(nodeB), BRIDGE_AMOUNT);
-
-        vm.prank(moduleOwner);
-        bridgeModule.removeDomainConfig(DOMAIN_BASE);
-
-        vm.prank(executor);
-        bool successA = paymentRailsContract.executeAction(address(usdc), BRIDGE_AMOUNT);
-
-        vm.prank(executor);
-        bool successB = nodeB.executeAction(address(usdc), BRIDGE_AMOUNT);
-
-        assertFalse(successA);
-        assertFalse(successB);
-        assertEq(usdc.balanceOf(address(paymentRailsContract)), BRIDGE_AMOUNT);
-        assertEq(usdc.balanceOf(address(nodeB)), BRIDGE_AMOUNT);
-    }
-
     function test_MultiPaymentRails_InterleavedExecutions() external {
         PaymentRails nodeB = new PaymentRails(paymentRailsOwner);
+        bytes memory paramsB = _buildModuleParams(DOMAIN_BASE, MINT_RECIPIENT, MAX_FEE, FINALITY_FAST, "");
         vm.prank(paymentRailsOwner);
-        nodeB.configureToken(
-            address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, abi.encode(uint32(DOMAIN_BASE)), true
-        );
+        nodeB.configureToken(address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, paramsB, true);
         usdc.mint(address(nodeB), BRIDGE_AMOUNT);
 
         uint256 half = BRIDGE_AMOUNT / 2;
@@ -412,12 +373,11 @@ contract CCTPBridgeModuleIntegrationTest is Test {
 
         uint32 domainArbitrum = 3;
         bytes32 recipientArb = bytes32(uint256(uint160(0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa)));
-        vm.prank(moduleOwner);
-        bridgeModule.setDomainConfig(domainArbitrum, recipientArb, bytes32(0), 0, FINALITY_FAST, "");
+        bytes memory arbParams = _buildModuleParams(domainArbitrum, recipientArb, 0, FINALITY_FAST, "");
 
         vm.prank(paymentRailsOwner);
         paymentRailsContract.configureToken(
-            address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, abi.encode(domainArbitrum), true
+            address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, arbParams, true
         );
 
         vm.prank(executor);
@@ -430,71 +390,15 @@ contract CCTPBridgeModuleIntegrationTest is Test {
     }
 
     /*//////////////////////////////////////////////////////////////////////////
-                    MODULE OWNERSHIP — INTEGRATION
-    //////////////////////////////////////////////////////////////////////////*/
-
-    function test_ModuleOwnershipTransfer_NewOwnerCanReconfigure() external {
-        address newModuleOwner = makeAddr("newModuleOwner");
-
-        vm.prank(moduleOwner);
-        bridgeModule.transferOwnership(newModuleOwner);
-
-        vm.prank(newModuleOwner);
-        bridgeModule.acceptOwnership();
-
-        bytes32 newRecipient = bytes32(uint256(uint160(0xDDdDddDdDdddDDddDDddDDDDdDdDDdDDdDDDDDDd)));
-        vm.prank(newModuleOwner);
-        bridgeModule.setDomainConfig(DOMAIN_BASE, newRecipient, bytes32(0), 0, FINALITY_FAST, "");
-
-        vm.prank(executor);
-        bool success = paymentRailsContract.executeAction(address(usdc), BRIDGE_AMOUNT);
-        assertTrue(success);
-
-        (,, bytes32 recipient,,,,,) = tokenMessenger.depositCalls(0);
-        assertEq(recipient, newRecipient);
-    }
-
-    function test_ModuleOwnershipTransfer_OldOwnerBlocked() external {
-        address newModuleOwner = makeAddr("newModuleOwner");
-
-        vm.prank(moduleOwner);
-        bridgeModule.transferOwnership(newModuleOwner);
-
-        vm.prank(newModuleOwner);
-        bridgeModule.acceptOwnership();
-
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, moduleOwner));
-        vm.prank(moduleOwner);
-        bridgeModule.setDomainConfig(DOMAIN_BASE, MINT_RECIPIENT, bytes32(0), MAX_FEE, FINALITY_FAST, "");
-    }
-
-    function test_ModuleOwnershipRenounce_ExistingDomainsStillWork() external {
-        vm.prank(moduleOwner);
-        bridgeModule.renounceOwnership();
-
-        vm.prank(executor);
-        bool success = paymentRailsContract.executeAction(address(usdc), BRIDGE_AMOUNT);
-        assertTrue(success);
-        assertEq(tokenMessenger.getDepositCallCount(), 1);
-    }
-
-    function test_ModuleOwnershipRenounce_CannotAddNewDomains() external {
-        vm.prank(moduleOwner);
-        bridgeModule.renounceOwnership();
-
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, moduleOwner));
-        vm.prank(moduleOwner);
-        bridgeModule.setDomainConfig(uint32(3), MINT_RECIPIENT, bytes32(0), MAX_FEE, FINALITY_FAST, "");
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
                     NODE RECONFIGURATION — DISABLE / RE-ENABLE
     //////////////////////////////////////////////////////////////////////////*/
 
     function test_PaymentRailsDisableThenReEnable_BridgeWorks() external {
+        bytes memory moduleParams = _buildModuleParams(DOMAIN_BASE, MINT_RECIPIENT, MAX_FEE, FINALITY_FAST, "");
+
         vm.prank(paymentRailsOwner);
         paymentRailsContract.configureToken(
-            address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, abi.encode(uint32(DOMAIN_BASE)), false
+            address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, moduleParams, false
         );
 
         vm.prank(executor);
@@ -503,7 +407,7 @@ contract CCTPBridgeModuleIntegrationTest is Test {
 
         vm.prank(paymentRailsOwner);
         paymentRailsContract.configureToken(
-            address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, abi.encode(uint32(DOMAIN_BASE)), true
+            address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, moduleParams, true
         );
 
         vm.prank(executor);
@@ -513,14 +417,12 @@ contract CCTPBridgeModuleIntegrationTest is Test {
 
     function test_PaymentRailsSwapToNewModule() external {
         MockTokenMessengerV2 tokenMessenger2 = new MockTokenMessengerV2();
-        CCTPBridgeModule moduleB = new CCTPBridgeModule(address(tokenMessenger2), address(usdc), moduleOwner);
+        CCTPBridgeModule moduleB = new CCTPBridgeModule(address(tokenMessenger2), address(usdc));
 
-        vm.prank(moduleOwner);
-        moduleB.setDomainConfig(DOMAIN_BASE, MINT_RECIPIENT, bytes32(0), 0, FINALITY_FAST, "");
-
+        bytes memory moduleParams = _buildModuleParams(DOMAIN_BASE, MINT_RECIPIENT, 0, FINALITY_FAST, "");
         vm.prank(paymentRailsOwner);
         paymentRailsContract.configureToken(
-            address(usdc), "CCTP_BRIDGE", address(moduleB), MIN_BALANCE, abi.encode(uint32(DOMAIN_BASE)), true
+            address(usdc), "CCTP_BRIDGE", address(moduleB), MIN_BALANCE, moduleParams, true
         );
 
         vm.prank(executor);
@@ -529,5 +431,23 @@ contract CCTPBridgeModuleIntegrationTest is Test {
 
         assertEq(tokenMessenger.getDepositCallCount(), 0);
         assertEq(tokenMessenger2.getDepositCallCount(), 1);
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                                    HELPERS
+    //////////////////////////////////////////////////////////////////////////*/
+
+    function _buildModuleParams(
+        uint32 domain,
+        bytes32 recipient,
+        uint256 maxFee,
+        uint32 finality,
+        bytes memory hookData
+    )
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encode(domain, recipient, bytes32(0), maxFee, finality, hookData);
     }
 }

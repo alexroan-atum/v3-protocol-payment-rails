@@ -131,32 +131,17 @@ library DataTypes {
                         CCTP BRIDGE MODULE TYPES
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Parameters stored in PaymentRails's moduleParams for a CCTP bridge action.
-    /// @dev Intentionally minimal — just a domain pointer. All routing details live in the
-    ///      module's per-domain config ({CCTPDomainConfig}).
-    /// @param destinationDomain CCTP domain ID of the destination chain (NOT an EVM chain ID).
+    /// @notice Routing parameters for a CCTP bridge action, stored in PaymentRails's moduleParams.
+    /// @param destinationDomain CCTP domain ID (NOT EVM chain ID).
     ///        Ethereum = 0, Avalanche = 1, OP Mainnet = 2, Arbitrum = 3, Base = 6, Polygon = 7.
+    /// @param mintRecipient Recipient on destination chain, left-padded to bytes32.
+    ///        For EVM chains: `bytes32(uint256(uint160(addr)))`.
+    /// @param destinationCaller Who may call `receiveMessage` on destination. `bytes32(0)` = anyone.
+    /// @param maxFee Maximum USDC fee per transfer. 0 = standard (free). > 0 = fast transfer.
+    /// @param minFinalityThreshold 1000 = fast (confirmed), 2000 = standard (finalized).
+    /// @param hookData Empty = `depositForBurn()`. Non-empty = `depositForBurnWithHook()`.
     struct CCTPBridgeParams {
         uint32 destinationDomain;
-    }
-
-    /// @notice Per-domain routing configuration stored in the CCTPBridgeModule.
-    /// @dev Set by the module owner via `setDomainConfig()`. Looked up during `execute()` using the
-    ///      `destinationDomain` decoded from the PaymentRails's moduleParams.
-    /// @param isValid        Whether this domain config is active. Set to true by `setDomainConfig()`,
-    ///                       cleared by `removeDomainConfig()`.
-    /// @param mintRecipient  Recipient address on the destination chain, left-padded to bytes32.
-    ///                       For EVM chains: `bytes32(uint256(uint160(addr)))`. Typically another PaymentRails.
-    /// @param destinationCaller Who may call `receiveMessage` on the destination chain.
-    ///                          `bytes32(0)` = anyone can relay (recommended).
-    /// @param maxFee         Maximum USDC fee the module is willing to pay per transfer.
-    ///                       0 = standard transfer only (free, ~15-19 min).
-    ///                       > 0 = enables fast transfer (~8-20 s); fee is deducted on destination.
-    /// @param minFinalityThreshold 1000 = fast (confirmed), 2000 = standard (finalized).
-    /// @param hookData       Optional bytes for destination-chain post-mint automation (CCTP V2 hooks).
-    ///                       Empty = `depositForBurn()`. Non-empty = `depositForBurnWithHook()`.
-    struct CCTPDomainConfig {
-        bool isValid;
         bytes32 mintRecipient;
         bytes32 destinationCaller;
         uint256 maxFee;

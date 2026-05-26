@@ -10,8 +10,9 @@ import { DataTypes } from "../../../src/types/DataTypes.sol";
 
 /// @title DeploySepoliaTestSetup
 /// @author Credit Cooperative
-/// @notice One-shot Sepolia bring-up: deploys PaymentRails + ForwardModule + CCTPBridgeModule, whitelists
-///         Base Sepolia on the bridge module, and configures USDC -> BRIDGE and TEST_TOKEN -> FORWARD.
+/// @notice One-shot Sepolia bring-up: deploys PaymentRails + ForwardModule + CCTPBridgeModule,
+///         and configures USDC -> BRIDGE and TEST_TOKEN -> FORWARD.
+///         CCTPBridgeModule is stateless — all routing info lives in PaymentRails's moduleParams.
 ///
 ///      Usage:
 ///        source .env && forge script scripts/solidity/deploy/DeploySepoliaTestSetup.s.sol \
@@ -60,18 +61,17 @@ contract DeploySepoliaTestSetup is Script {
 
         paymentRails = new PaymentRails(deployer);
         forwardModule = new ForwardModule();
-        bridgeModule = new CCTPBridgeModule(TOKEN_MESSENGER_V2, USDC_SEPOLIA, deployer);
+        bridgeModule = new CCTPBridgeModule(TOKEN_MESSENGER_V2, USDC_SEPOLIA);
 
-        bridgeModule.setDomainConfig({
-            destinationDomain: BASE_SEPOLIA_DOMAIN,
-            mintRecipient: bytes32(uint256(uint160(CCTP_MINT_RECIPIENT))),
-            destinationCaller: bytes32(uint256(uint160(CCTP_DESTINATION_CALLER))),
-            maxFee: cctpMaxFee,
-            minFinalityThreshold: cctpFinality,
-            hookData: ""
-        });
-
-        bytes memory bridgeParams = abi.encode(DataTypes.CCTPBridgeParams({ destinationDomain: BASE_SEPOLIA_DOMAIN }));
+        // All routing info is now in moduleParams (CCTPBridgeModule is stateless).
+        bytes memory bridgeParams = abi.encode(
+            uint32(BASE_SEPOLIA_DOMAIN),
+            bytes32(uint256(uint160(CCTP_MINT_RECIPIENT))),
+            bytes32(uint256(uint160(CCTP_DESTINATION_CALLER))),
+            cctpMaxFee,
+            cctpFinality,
+            bytes("")
+        );
         paymentRails.configureToken({
             token: USDC_SEPOLIA,
             actionType: "BRIDGE",

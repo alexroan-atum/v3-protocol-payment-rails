@@ -1,9 +1,13 @@
 CCTPBridgeModule_EstimateOutput
-├── when params length is less than 32 bytes
+├── when params length is less than minimum encoding size
 │   └── it should return (0, token)
-├── when domain is not configured
+├── when mint recipient is zero
 │   └── it should return (0, token)
-├── when maxFee is greater than or equal to amount
+├── when maxFee equals amount
+│   └── it should return (0, token)
+├── when maxFee exceeds amount
 │   └── it should return (0, token)
 └── when all checks pass
-    └── it should return (amount - maxFee, token)
+    ├── it should return (amount - maxFee, token)
+    ├── it should return full amount when maxFee is zero
+    └── it should return correct estimate for any valid amount [fuzz]

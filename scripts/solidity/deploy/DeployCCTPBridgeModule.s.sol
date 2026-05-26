@@ -11,24 +11,15 @@ import { BaseScript } from "../Base.s.sol";
 ///
 ///      Usage:
 ///        source .env && forge script scripts/solidity/deploy/DeployCCTPBridgeModule.s.sol \
-///          --sig "run(address,address,address)" <TOKEN_MESSENGER_V2> <USDC> <OWNER> \
+///          --sig "run(address,address)" <TOKEN_MESSENGER_V2> <USDC> \
 ///          --rpc-url $SOURCE_RPC_URL --broadcast -vvvv
 contract DeployCCTPBridgeModule is BaseScript {
-    function run(
-        address tokenMessengerV2,
-        address usdc,
-        address owner
-    )
-        public
-        broadcast
-        returns (CCTPBridgeModule module)
-    {
-        module = new CCTPBridgeModule(tokenMessengerV2, usdc, owner);
+    function run(address tokenMessengerV2, address usdc) public broadcast returns (CCTPBridgeModule module) {
+        module = new CCTPBridgeModule(tokenMessengerV2, usdc);
 
         console2.log("=============================================================");
         console2.log("  DeployCCTPBridgeModule");
         console2.log("=============================================================");
-        console2.log("Owner:             ", owner);
         console2.log("CCTPBridgeModule:  ", address(module));
         console2.log("TokenMessengerV2:  ", tokenMessengerV2);
         console2.log("USDC:              ", usdc);

@@ -10,20 +10,21 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 /// @author Credit Cooperative
 /// @notice Smoke test against deployed PaymentRails + CCTPBridgeModule. Configures, funds, and executes
 ///         a CCTP bridge in a single broadcast. Prints the bash command to poll attestation and relay.
+///         CCTPBridgeModule is stateless — all routing params are in PaymentRails's moduleParams.
 ///
 ///      REQUIRED env vars:
 ///        PAYMENT_RAILS_ADDRESS, BRIDGE_MODULE
 ///
 ///      OPTIONAL env vars (defaults = Ethereum Sepolia -> Base Sepolia):
 ///        SOURCE_USDC, DEST_DOMAIN, BRIDGE_AMOUNT, MIN_BALANCE, MINT_RECIPIENT,
-///        MAX_FEE, FINALITY, SKIP_CONFIGURE, SKIP_DOMAIN_CONFIG, SKIP_FUND
+///        MAX_FEE, FINALITY, SKIP_CONFIGURE, SKIP_FUND
 ///
-///      Usage (testnet, first run - deploys domain config + paymentRails config + funds + executes):
+///      Usage (testnet, first run - deploys paymentRails config + funds + executes):
 ///        source .env && forge script scripts/solidity/test/cctp/CCTPBridgeSmoke.s.sol \
 ///          --rpc-url $SOURCE_RPC_URL --broadcast -vvvv
 ///
 ///      Usage (subsequent runs - skip config, just fund and execute):
-///        source .env && SKIP_CONFIGURE=true SKIP_DOMAIN_CONFIG=true \
+///        source .env && SKIP_CONFIGURE=true \
 ///          forge script scripts/solidity/test/cctp/CCTPBridgeSmoke.s.sol \
 ///            --rpc-url $SOURCE_RPC_URL --broadcast -vvvv
 contract CCTPBridgeSmoke is Script {
@@ -47,7 +48,6 @@ contract CCTPBridgeSmoke is Script {
         uint256 maxFee;
         address mintRecipient;
         bool skipConfigure;
-        bool skipDomainConfig;
         bool skipFund;
     }
 
@@ -72,14 +72,13 @@ contract CCTPBridgeSmoke is Script {
         console2.log("=============================================================");
         console2.log("Chain ID:          ", block.chainid);
         console2.log("Deployer:          ", deployer);
-        console2.log("PaymentRails:              ", paymentRailsAddr);
+        console2.log("PaymentRails:      ", paymentRailsAddr);
         console2.log("Module:            ", moduleAddr);
         console2.log("USDC:              ", cfg.usdc);
         console2.log("Dest domain:       ", uint256(cfg.destDomain));
         console2.log("Bridge amount:     ", cfg.bridgeAmount);
         console2.log("Mint recipient:    ", cfg.mintRecipient);
-        console2.log("Skip domain cfg:   ", cfg.skipDomainConfig);
-        console2.log("Skip paymentRails cfg:     ", cfg.skipConfigure);
+        console2.log("Skip paymentRails cfg: ", cfg.skipConfigure);
         console2.log("Skip fund:         ", cfg.skipFund);
         console2.log("=============================================================");
 
@@ -87,14 +86,15 @@ contract CCTPBridgeSmoke is Script {
 
         vm.startBroadcast(deployerKey);
 
-        if (!cfg.skipDomainConfig) {
-            bytes32 recipient = bytes32(uint256(uint160(cfg.mintRecipient)));
-            module.setDomainConfig(cfg.destDomain, recipient, bytes32(0), cfg.maxFee, cfg.finality, "");
-            console2.log("[DOMAIN] Configured domain %s", vm.toString(uint256(cfg.destDomain)));
-        }
-
         if (!cfg.skipConfigure) {
-            bytes memory moduleParams = abi.encode(cfg.destDomain);
+            bytes memory moduleParams = abi.encode(
+                cfg.destDomain,
+                bytes32(uint256(uint160(cfg.mintRecipient))),
+                bytes32(0),
+                cfg.maxFee,
+                cfg.finality,
+                bytes("")
+            );
             paymentRails.configureToken(cfg.usdc, "CCTP_BRIDGE", address(module), cfg.minBalance, moduleParams, true);
             console2.log("[NODE] Configured USDC -> CCTP_BRIDGE");
         }
@@ -133,14 +133,9 @@ contract CCTPBridgeSmoke is Script {
         console2.log("[OK] Module USDC:          ", module.usdc());
         console2.log("[OK] TokenMessengerV2:     ", module.tokenMessenger());
 
-        if (!cfg.skipDomainConfig || !cfg.skipConfigure) {
+        if (!cfg.skipConfigure) {
             require(paymentRails.owner() == deployer, "Deployer is not PaymentRails owner");
             console2.log("[OK] Deployer is PaymentRails owner");
-        }
-
-        if (!cfg.skipDomainConfig) {
-            require(module.owner() == deployer, "Deployer is not Module owner");
-            console2.log("[OK] Deployer is Module owner");
         }
 
         if (!cfg.skipFund) {
@@ -150,7 +145,7 @@ contract CCTPBridgeSmoke is Script {
         } else {
             uint256 paymentRailsBalance = IERC20(cfg.usdc).balanceOf(address(paymentRails));
             require(paymentRailsBalance >= cfg.bridgeAmount, "PaymentRails USDC insufficient");
-            console2.log("[OK] PaymentRails USDC:            ", paymentRailsBalance);
+            console2.log("[OK] PaymentRails USDC:    ", paymentRailsBalance);
         }
     }
 
@@ -188,7 +183,6 @@ contract CCTPBridgeSmoke is Script {
 
         string memory f = "false";
         cfg.skipConfigure = keccak256(bytes(vm.envOr("SKIP_CONFIGURE", f))) == keccak256("true");
-        cfg.skipDomainConfig = keccak256(bytes(vm.envOr("SKIP_DOMAIN_CONFIG", f))) == keccak256("true");
         cfg.skipFund = keccak256(bytes(vm.envOr("SKIP_FUND", f))) == keccak256("true");
     }
 

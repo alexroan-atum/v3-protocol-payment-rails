@@ -12,28 +12,20 @@ CCTPBridgeModuleIntegration
 │   ├── it should revert when amount is below minBalance
 │   ├── it should revert when amount exceeds balance
 │   └── it should revert when token is not enabled
-├── domain config change
-│   └── it should use the new config on the next execution
-├── domain removal
-│   └── it should return false (graceful failure)
+├── reconfigure moduleParams
+│   └── it should use the new recipient and fee on the next execution
 ├── consecutive executions
 │   └── it should succeed on both and drain the paymentRails
 ├── preview execution
 │   └── it should return (amount - maxFee, usdc)
 ├── hook data
 │   └── it should call depositForBurnWithHook with hookData
-├── multi-paymentRails — shared module
-│   ├── it should bridge from two nodes sharing one module
+├── multi-paymentRails — shared module, independent routing
+│   ├── it should bridge from two paymentRails with different recipients via one module
 │   ├── it should route to different domains per paymentRails
-│   ├── it should fail both nodes when domain is removed
-│   └── it should handle interleaved executions from multiple nodes
+│   └── it should handle interleaved executions from multiple paymentRails
 ├── multi-domain — paymentRails reconfiguration
 │   └── it should bridge to domain A then reconfigure and bridge to domain B
-├── module ownership — integration
-│   ├── it should allow new owner to reconfigure after transfer
-│   ├── it should block old owner after transfer
-│   ├── it should keep existing domains working after renounce
-│   └── it should block new domain config after renounce
 └── paymentRails reconfiguration
     ├── it should work after disable then re-enable
     └── it should work after swapping to a new module

@@ -1,15 +1,30 @@
 CCTPBridgeModule_Validate
-├── when params length is less than 32 bytes
+├── when params length is less than minimum encoding size
+│   └── it should return (false, "Invalid params encoding")
+├── when params are empty
 │   └── it should return (false, "Invalid params encoding")
 ├── when amount is zero
 │   └── it should return (false, "Zero bridge amount")
 ├── when token is not USDC
 │   └── it should return (false, "Only USDC supported")
-├── when destination domain is not configured
-│   └── it should return (false, "Domain not configured")
-├── when maxFee is greater than or equal to amount
+├── when mint recipient is zero
+│   └── it should return (false, "Zero mint recipient")
+├── when finality threshold is invalid
+│   └── it should return (false, "Invalid finality threshold")
+├── when maxFee equals amount
+│   └── it should return (false, "Max fee exceeds amount")
+├── when maxFee exceeds amount
 │   └── it should return (false, "Max fee exceeds amount")
 ├── when caller has insufficient balance
 │   └── it should return (false, "Insufficient balance")
-└── when all checks pass
-    └── it should return (true, "")
+├── when all checks pass
+│   ├── it should return (true, "")
+│   └── it should return true for any valid amount above maxFee [fuzz]
+├── validate and execute should agree on failure reasons
+│   ├── it should agree on invalid params
+│   ├── it should agree on zero bridge amount
+│   ├── it should agree on wrong token
+│   ├── it should agree on zero mint recipient
+│   └── it should agree on maxFee exceeds amount
+└── fuzz: validate and execute agreement
+    └── it should produce identical failure reasons for shared validation checks [fuzz]

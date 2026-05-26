@@ -6,22 +6,8 @@ import { CCTPBridgeModule } from "../../../../../src/modules/bridges/CCTPBridgeM
 import { PaymentRails } from "../../../../../src/core/PaymentRails.sol";
 import { DataTypes } from "../../../../../src/types/DataTypes.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
-/// @title CCTPBridgeModuleForkBase
-/// @notice Shared setup for all CCTPBridgeModule fork tests against Ethereum mainnet.
-/// @dev Forks Ethereum mainnet and interacts with the real TokenMessengerV2 and USDC contracts.
-///
-///      FORK vs UNIT vs INTEGRATION — scope boundaries:
-///        - Unit tests:        MockTokenMessengerV2, MockERC20, MockBridgePaymentRails — logic in isolation.
-///        - Integration tests: Real PaymentRails + real module, but mocked external deps.
-///        - Fork tests (here): Real TokenMessengerV2, real USDC, real burn lifecycle.
-///
-///      What fork tests uniquely verify:
-///        1. ABI compatibility — our ITokenMessengerV2 interface matches the deployed bytecode.
-///        2. Real USDC behavior — 6 decimals, approval semantics, actual burn mechanics.
-///        3. Full burn lifecycle — USDC is actually burned by TokenMessengerV2 + TokenMinter.
-///        4. Full lifecycle through PaymentRails — configure → executeAction → bridge → verify balances.
+/// @notice Shared setup for CCTPBridgeModule fork tests against Ethereum mainnet.
 abstract contract CCTPBridgeModuleForkBase is Test {
     /*//////////////////////////////////////////////////////////////////////////
                                     EVENTS
@@ -36,16 +22,6 @@ abstract contract CCTPBridgeModuleForkBase is Test {
         uint32 minFinalityThreshold,
         bytes hookData
     );
-
-    event DomainConfigSet(
-        uint32 indexed destinationDomain,
-        bytes32 mintRecipient,
-        bytes32 destinationCaller,
-        uint256 maxFee,
-        uint32 minFinalityThreshold
-    );
-
-    event DomainConfigRemoved(uint32 indexed destinationDomain);
 
     event TokenConfigured(address indexed token, string actionType, address indexed actionModule);
 
@@ -62,17 +38,11 @@ abstract contract CCTPBridgeModuleForkBase is Test {
                                 MAINNET CONSTANTS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @dev Ethereum mainnet Circle TokenMessengerV2 (CCTP V2)
     address internal constant TOKEN_MESSENGER_V2 = 0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d;
-
-    /// @dev Ethereum mainnet USDC (FiatTokenV2_2 behind proxy)
     address internal constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
 
-    /// @dev CCTP domain IDs
     uint32 internal constant DOMAIN_ARBITRUM = 3;
     uint32 internal constant DOMAIN_BASE = 6;
-
-    /// @dev Default bridge parameters
     uint256 internal constant BRIDGE_AMOUNT = 10_000e6;
     uint256 internal constant SMALL_BRIDGE_AMOUNT = 100e6;
     bytes32 internal constant DEFAULT_MINT_RECIPIENT =
@@ -106,34 +76,12 @@ abstract contract CCTPBridgeModuleForkBase is Test {
         owner = makeAddr("owner");
         attacker = makeAddr("attacker");
 
-        vm.startPrank(owner);
-        module = new CCTPBridgeModule(TOKEN_MESSENGER_V2, USDC, owner);
+        module = new CCTPBridgeModule(TOKEN_MESSENGER_V2, USDC);
+
+        vm.prank(owner);
         paymentRails = new PaymentRails(owner);
-        vm.stopPrank();
 
         deal(USDC, address(paymentRails), BRIDGE_AMOUNT * 10);
-
-        vm.prank(owner);
-        module.setDomainConfig(
-            DOMAIN_BASE, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE, FINALITY_STANDARD, ""
-        );
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                                LIFECYCLE MODIFIERS
-    //////////////////////////////////////////////////////////////////////////*/
-
-    modifier givenDomainConfiguredWithHookData() {
-        vm.prank(owner);
-        module.setDomainConfig(
-            DOMAIN_BASE,
-            DEFAULT_MINT_RECIPIENT,
-            DEFAULT_DESTINATION_CALLER,
-            DEFAULT_MAX_FEE,
-            FINALITY_STANDARD,
-            hex"deadbeef"
-        );
-        _;
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -141,7 +89,30 @@ abstract contract CCTPBridgeModuleForkBase is Test {
     //////////////////////////////////////////////////////////////////////////*/
 
     function _buildParams(uint32 domain) internal pure returns (bytes memory) {
-        return abi.encode(domain);
+        return abi.encode(
+            domain, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE, FINALITY_STANDARD, bytes("")
+        );
+    }
+
+    function _buildParamsWithHook(uint32 domain) internal pure returns (bytes memory) {
+        return abi.encode(
+            domain,
+            DEFAULT_MINT_RECIPIENT,
+            DEFAULT_DESTINATION_CALLER,
+            DEFAULT_MAX_FEE,
+            FINALITY_STANDARD,
+            hex"deadbeef"
+        );
+    }
+
+    function _buildParamsWithFee(uint32 domain, uint256 maxFee) internal pure returns (bytes memory) {
+        return
+            abi.encode(domain, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, maxFee, FINALITY_STANDARD, bytes(""));
+    }
+
+    function _buildParamsWithFinality(uint32 domain, uint32 finality) internal pure returns (bytes memory) {
+        return
+            abi.encode(domain, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE, finality, bytes(""));
     }
 
     function _executeBridge(uint256 amount) internal returns (DataTypes.ExecutionResult memory) {
@@ -182,10 +153,6 @@ contract CCTPBridgeModuleForkConstructorTest is CCTPBridgeModuleForkBase {
         assertEq(module.usdc(), USDC);
     }
 
-    function test_Constructor_SetsOwner() external view {
-        assertEq(module.owner(), owner);
-    }
-
     function test_Constructor_ModuleTypeIsConstant() external view {
         assertEq(module.moduleType(), "CCTP_BRIDGE");
     }
@@ -195,8 +162,6 @@ contract CCTPBridgeModuleForkConstructorTest is CCTPBridgeModuleForkBase {
                         ABI COMPATIBILITY TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-/// @dev These tests verify our ITokenMessengerV2 interface matches the real deployed bytecode.
-///      If the function selectors or parameter types differ, the calls revert.
 contract CCTPBridgeModuleForkABICompatibilityTest is CCTPBridgeModuleForkBase {
     function test_ABI_TokenMessengerV2_IsDeployedAtForkBlock() external view {
         assertTrue(TOKEN_MESSENGER_V2.code.length > 0, "TokenMessengerV2 must be deployed at fork block");
@@ -207,8 +172,14 @@ contract CCTPBridgeModuleForkABICompatibilityTest is CCTPBridgeModuleForkBase {
         assertTrue(result.success, "depositForBurn ABI must be compatible with real TokenMessengerV2");
     }
 
-    function test_ABI_DepositForBurnWithHook_MatchesRealTokenMessengerV2() external givenDomainConfiguredWithHookData {
-        DataTypes.ExecutionResult memory result = _executeBridge(BRIDGE_AMOUNT);
+    function test_ABI_DepositForBurnWithHook_MatchesRealTokenMessengerV2() external {
+        bytes memory params = _buildParamsWithHook(DOMAIN_BASE);
+
+        vm.startPrank(address(paymentRails));
+        IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
+        DataTypes.ExecutionResult memory result = module.execute(USDC, BRIDGE_AMOUNT, params);
+        vm.stopPrank();
+
         assertTrue(result.success, "depositForBurnWithHook ABI must be compatible with real TokenMessengerV2");
     }
 }
@@ -217,8 +188,6 @@ contract CCTPBridgeModuleForkABICompatibilityTest is CCTPBridgeModuleForkBase {
                             EXECUTE TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-/// @dev Execute tests verify real USDC is burned by the TokenMessengerV2 + TokenMinter pipeline.
-///      Unlike unit tests (where MockTokenMessengerV2 just records calls), here USDC is destroyed.
 contract CCTPBridgeModuleForkExecuteTest is CCTPBridgeModuleForkBase {
     function test_Execute_BurnsRealUSDC_PaymentRailsBalanceDecreases() external {
         uint256 nodeBefore = IERC20(USDC).balanceOf(address(paymentRails));
@@ -270,15 +239,20 @@ contract CCTPBridgeModuleForkExecuteTest is CCTPBridgeModuleForkBase {
         assertEq(result.outputToken, USDC);
     }
 
-    function test_Execute_WithHookData_BurnsUSDCSuccessfully() external givenDomainConfiguredWithHookData {
-        DataTypes.ExecutionResult memory result = _executeBridge(BRIDGE_AMOUNT);
+    function test_Execute_WithHookData_BurnsUSDCSuccessfully() external {
+        bytes memory params = _buildParamsWithHook(DOMAIN_BASE);
+
+        vm.startPrank(address(paymentRails));
+        IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
+        DataTypes.ExecutionResult memory result = module.execute(USDC, BRIDGE_AMOUNT, params);
+        vm.stopPrank();
 
         assertTrue(result.success);
         assertEq(IERC20(USDC).balanceOf(address(module)), 0);
     }
 
-    function test_Execute_WithHookData_EmitsBridgeInitiatedWithHookData() external givenDomainConfiguredWithHookData {
-        bytes memory params = _buildParams(DOMAIN_BASE);
+    function test_Execute_WithHookData_EmitsBridgeInitiatedWithHookData() external {
+        bytes memory params = _buildParamsWithHook(DOMAIN_BASE);
 
         vm.startPrank(address(paymentRails));
         IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
@@ -315,12 +289,12 @@ contract CCTPBridgeModuleForkExecuteTest is CCTPBridgeModuleForkBase {
     }
 
     function test_Execute_WithFastFinality_Succeeds() external {
-        vm.prank(owner);
-        module.setDomainConfig(
-            DOMAIN_BASE, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE, FINALITY_FAST, ""
-        );
+        bytes memory params = _buildParamsWithFinality(DOMAIN_BASE, FINALITY_FAST);
 
-        DataTypes.ExecutionResult memory result = _executeBridge(BRIDGE_AMOUNT);
+        vm.startPrank(address(paymentRails));
+        IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
+        DataTypes.ExecutionResult memory result = module.execute(USDC, BRIDGE_AMOUNT, params);
+        vm.stopPrank();
 
         assertTrue(result.success);
     }
@@ -360,13 +334,45 @@ contract CCTPBridgeModuleForkValidateTest is CCTPBridgeModuleForkBase {
         assertEq(reason, "Zero bridge amount");
     }
 
-    function test_Validate_UnconfiguredDomain_ReturnsFalse() external view {
-        bytes memory params = _buildParams(uint32(99));
+    function test_Validate_ZeroMintRecipient_ReturnsFalse() external view {
+        bytes memory params = abi.encode(
+            DOMAIN_BASE,
+            bytes32(0), // zero mint recipient
+            DEFAULT_DESTINATION_CALLER,
+            DEFAULT_MAX_FEE,
+            FINALITY_STANDARD,
+            bytes("")
+        );
 
         (bool isValid, string memory reason) = module.validate(USDC, BRIDGE_AMOUNT, params);
 
         assertFalse(isValid);
-        assertEq(reason, "Domain not configured");
+        assertEq(reason, "Zero mint recipient");
+    }
+
+    function test_Validate_InvalidFinalityThreshold_ReturnsFalse() external view {
+        bytes memory params = abi.encode(
+            DOMAIN_BASE,
+            DEFAULT_MINT_RECIPIENT,
+            DEFAULT_DESTINATION_CALLER,
+            DEFAULT_MAX_FEE,
+            uint32(9999), // invalid finality threshold
+            bytes("")
+        );
+
+        (bool isValid, string memory reason) = module.validate(USDC, BRIDGE_AMOUNT, params);
+
+        assertFalse(isValid);
+        assertEq(reason, "Invalid finality threshold");
+    }
+
+    function test_Validate_MaxFeeExceedsAmount_ReturnsFalse() external view {
+        bytes memory params = _buildParamsWithFee(DOMAIN_BASE, BRIDGE_AMOUNT + 1);
+
+        (bool isValid, string memory reason) = module.validate(USDC, BRIDGE_AMOUNT, params);
+
+        assertFalse(isValid);
+        assertEq(reason, "Max fee exceeds amount");
     }
 
     function test_Validate_InsufficientBalance_ReturnsFalse() external {
@@ -379,6 +385,15 @@ contract CCTPBridgeModuleForkValidateTest is CCTPBridgeModuleForkBase {
         assertFalse(isValid);
         assertEq(reason, "Insufficient balance");
     }
+
+    function test_Validate_InvalidParamsEncoding_ReturnsFalse() external view {
+        bytes memory params = hex"deadbeef"; // too short to decode
+
+        (bool isValid, string memory reason) = module.validate(USDC, BRIDGE_AMOUNT, params);
+
+        assertFalse(isValid);
+        assertEq(reason, "Invalid params encoding");
+    }
 }
 
 /*//////////////////////////////////////////////////////////////////////////
@@ -386,9 +401,10 @@ contract CCTPBridgeModuleForkValidateTest is CCTPBridgeModuleForkBase {
 //////////////////////////////////////////////////////////////////////////*/
 
 contract CCTPBridgeModuleForkEstimateOutputTest is CCTPBridgeModuleForkBase {
-    function test_EstimateOutput_ZeroMaxFee_ReturnsFullAmount() external view {
+    function test_EstimateOutput_ZeroMaxFee_ReturnsFullAmount() external {
         bytes memory params = _buildParams(DOMAIN_BASE);
 
+        vm.prank(address(paymentRails));
         (uint256 estimatedOutput, address outputToken) = module.estimateOutput(USDC, BRIDGE_AMOUNT, params);
 
         assertEq(estimatedOutput, BRIDGE_AMOUNT);
@@ -397,21 +413,17 @@ contract CCTPBridgeModuleForkEstimateOutputTest is CCTPBridgeModuleForkBase {
 
     function test_EstimateOutput_WithMaxFee_ReturnsAmountMinusFee() external {
         uint256 maxFee = 1e6;
-        vm.prank(owner);
-        module.setDomainConfig(
-            DOMAIN_BASE, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, maxFee, FINALITY_STANDARD, ""
-        );
+        bytes memory params = _buildParamsWithFee(DOMAIN_BASE, maxFee);
 
-        bytes memory params = _buildParams(DOMAIN_BASE);
-
+        vm.prank(address(paymentRails));
         (uint256 estimatedOutput, address outputToken) = module.estimateOutput(USDC, BRIDGE_AMOUNT, params);
 
         assertEq(estimatedOutput, BRIDGE_AMOUNT - maxFee);
         assertEq(outputToken, USDC);
     }
 
-    function test_EstimateOutput_UnconfiguredDomain_ReturnsZero() external view {
-        bytes memory params = _buildParams(uint32(99));
+    function test_EstimateOutput_InvalidParams_ReturnsZero() external view {
+        bytes memory params = hex"deadbeef"; // too short to decode
 
         (uint256 estimatedOutput, address outputToken) = module.estimateOutput(USDC, BRIDGE_AMOUNT, params);
 
@@ -421,77 +433,9 @@ contract CCTPBridgeModuleForkEstimateOutputTest is CCTPBridgeModuleForkBase {
 }
 
 /*//////////////////////////////////////////////////////////////////////////
-                        DOMAIN CONFIG TESTS
-//////////////////////////////////////////////////////////////////////////*/
-
-contract CCTPBridgeModuleForkDomainConfigTest is CCTPBridgeModuleForkBase {
-    function test_SetDomainConfig_StoresCorrectValues() external view {
-        DataTypes.CCTPDomainConfig memory config = module.getDomainConfig(DOMAIN_BASE);
-
-        assertTrue(config.isValid);
-        assertEq(config.mintRecipient, DEFAULT_MINT_RECIPIENT);
-        assertEq(config.destinationCaller, DEFAULT_DESTINATION_CALLER);
-        assertEq(config.maxFee, DEFAULT_MAX_FEE);
-        assertEq(config.minFinalityThreshold, FINALITY_STANDARD);
-    }
-
-    function test_SetDomainConfig_MultipleDomains() external {
-        vm.prank(owner);
-        module.setDomainConfig(
-            DOMAIN_ARBITRUM, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE, FINALITY_FAST, ""
-        );
-
-        DataTypes.CCTPDomainConfig memory baseConfig = module.getDomainConfig(DOMAIN_BASE);
-        DataTypes.CCTPDomainConfig memory arbConfig = module.getDomainConfig(DOMAIN_ARBITRUM);
-
-        assertTrue(baseConfig.isValid);
-        assertTrue(arbConfig.isValid);
-        assertEq(baseConfig.minFinalityThreshold, FINALITY_STANDARD);
-        assertEq(arbConfig.minFinalityThreshold, FINALITY_FAST);
-    }
-
-    function test_SetDomainConfig_EmitsDomainConfigSet() external {
-        vm.expectEmit(true, false, false, true, address(module));
-        emit DomainConfigSet(
-            DOMAIN_ARBITRUM, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE, FINALITY_FAST
-        );
-
-        vm.prank(owner);
-        module.setDomainConfig(
-            DOMAIN_ARBITRUM, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE, FINALITY_FAST, ""
-        );
-    }
-
-    function test_RemoveDomainConfig_ClearsDomain() external {
-        vm.prank(owner);
-        module.removeDomainConfig(DOMAIN_BASE);
-
-        DataTypes.CCTPDomainConfig memory config = module.getDomainConfig(DOMAIN_BASE);
-        assertFalse(config.isValid);
-    }
-
-    function test_Execute_AfterDomainRemoval_ReturnsFalse() external {
-        vm.prank(owner);
-        module.removeDomainConfig(DOMAIN_BASE);
-
-        bytes memory params = _buildParams(DOMAIN_BASE);
-
-        vm.startPrank(address(paymentRails));
-        IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
-        DataTypes.ExecutionResult memory result = module.execute(USDC, BRIDGE_AMOUNT, params);
-        vm.stopPrank();
-
-        assertFalse(result.success);
-        assertEq(result.failureReason, "Domain not configured");
-    }
-}
-
-/*//////////////////////////////////////////////////////////////////////////
                     NODE INTEGRATION LIFECYCLE TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-/// @dev These tests exercise the full production path: PaymentRails.configureToken → PaymentRails.executeAction →
-///      CCTPBridgeModule.execute → TokenMessengerV2.depositForBurn → USDC burned.
 contract CCTPBridgeModuleForkPaymentRailsIntegrationTest is CCTPBridgeModuleForkBase {
     function test_PaymentRailsIntegration_FullLifecycle_BridgesSuccessfully() external {
         bytes memory params = _buildParams(DOMAIN_BASE);
@@ -564,78 +508,9 @@ contract CCTPBridgeModuleForkPaymentRailsIntegrationTest is CCTPBridgeModuleFork
 }
 
 /*//////////////////////////////////////////////////////////////////////////
-                        OWNERSHIP TESTS
-//////////////////////////////////////////////////////////////////////////*/
-
-contract CCTPBridgeModuleForkOwnershipTest is CCTPBridgeModuleForkBase {
-    function test_OwnershipTransfer_FullOwnable2StepFlow() external {
-        address newOwner = makeAddr("newOwner");
-
-        vm.prank(owner);
-        module.transferOwnership(newOwner);
-
-        assertEq(module.pendingOwner(), newOwner);
-        assertEq(module.owner(), owner);
-
-        vm.prank(newOwner);
-        module.acceptOwnership();
-
-        assertEq(module.owner(), newOwner);
-        assertEq(module.pendingOwner(), address(0));
-    }
-
-    function test_OwnershipTransfer_NewOwnerCanReconfigure() external {
-        address newOwner = makeAddr("newOwner");
-
-        vm.prank(owner);
-        module.transferOwnership(newOwner);
-        vm.prank(newOwner);
-        module.acceptOwnership();
-
-        vm.prank(newOwner);
-        module.setDomainConfig(
-            DOMAIN_ARBITRUM, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE, FINALITY_FAST, ""
-        );
-
-        DataTypes.CCTPDomainConfig memory config = module.getDomainConfig(DOMAIN_ARBITRUM);
-        assertTrue(config.isValid);
-    }
-
-    function test_OwnershipTransfer_OldOwnerBlockedAfterTransfer() external {
-        address newOwner = makeAddr("newOwner");
-
-        vm.prank(owner);
-        module.transferOwnership(newOwner);
-        vm.prank(newOwner);
-        module.acceptOwnership();
-
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, owner));
-        vm.prank(owner);
-        module.setDomainConfig(
-            DOMAIN_ARBITRUM, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE, FINALITY_FAST, ""
-        );
-    }
-
-    function test_OwnershipTransfer_BridgeStillWorksAfterTransfer() external {
-        address newOwner = makeAddr("newOwner");
-
-        vm.prank(owner);
-        module.transferOwnership(newOwner);
-        vm.prank(newOwner);
-        module.acceptOwnership();
-
-        DataTypes.ExecutionResult memory result = _executeBridge(BRIDGE_AMOUNT);
-        assertTrue(result.success, "Bridge should work after ownership transfer");
-    }
-}
-
-/*//////////////////////////////////////////////////////////////////////////
                     SECURITY / EDGE CASE TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-/// @dev These tests verify security properties that are only meaningful with real USDC
-///      and the real TokenMessengerV2 — things like actual burn mechanics, total supply
-///      changes, approval semantics, and permissionless execution with real tokens.
 contract CCTPBridgeModuleForkSecurityTest is CCTPBridgeModuleForkBase {
     function test_Security_ApprovalAlwaysZeroAfterExecute() external {
         _executeBridge(BRIDGE_AMOUNT);
@@ -667,14 +542,6 @@ contract CCTPBridgeModuleForkSecurityTest is CCTPBridgeModuleForkBase {
         vm.stopPrank();
 
         assertTrue(result.success, "Any address should be able to execute");
-    }
-
-    function test_Security_NonOwnerCannotSetDomainConfig() external {
-        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
-        vm.prank(attacker);
-        module.setDomainConfig(
-            DOMAIN_ARBITRUM, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE, FINALITY_STANDARD, ""
-        );
     }
 
     function test_Security_RealUSDCDecimalsAre6() external view {

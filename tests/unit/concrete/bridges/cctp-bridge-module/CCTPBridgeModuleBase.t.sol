@@ -9,8 +9,6 @@ import { MockTokenMessengerV2 } from "../../../../shared/mocks/MockTokenMessenge
 import { FailingTransferERC20 } from "../../../../shared/mocks/FailingTransferERC20.sol";
 import { NoReturnERC20 } from "../../../../shared/mocks/NoReturnERC20.sol";
 
-/// @dev Base test contract for CCTPBridgeModule unit tests.
-///      Provides shared state, constants, mocks, modifiers, and helpers following Sablier BTT style.
 abstract contract CCTPBridgeModuleBase is Test {
     /*//////////////////////////////////////////////////////////////////////////
                                     EVENTS
@@ -25,16 +23,6 @@ abstract contract CCTPBridgeModuleBase is Test {
         uint32 minFinalityThreshold,
         bytes hookData
     );
-
-    event DomainConfigSet(
-        uint32 indexed destinationDomain,
-        bytes32 mintRecipient,
-        bytes32 destinationCaller,
-        uint256 maxFee,
-        uint32 minFinalityThreshold
-    );
-
-    event DomainConfigRemoved(uint32 indexed destinationDomain);
 
     /*//////////////////////////////////////////////////////////////////////////
                                     CONSTANTS
@@ -66,7 +54,6 @@ abstract contract CCTPBridgeModuleBase is Test {
     FailingTransferERC20 internal failToken;
     NoReturnERC20 internal noReturnToken;
 
-    address internal owner;
     address internal attacker;
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -74,7 +61,6 @@ abstract contract CCTPBridgeModuleBase is Test {
     //////////////////////////////////////////////////////////////////////////*/
 
     function setUp() public virtual {
-        owner = address(this);
         attacker = makeAddr("attacker");
 
         tokenMessenger = new MockTokenMessengerV2();
@@ -83,7 +69,7 @@ abstract contract CCTPBridgeModuleBase is Test {
         failToken = new FailingTransferERC20();
         noReturnToken = new NoReturnERC20();
 
-        module = new CCTPBridgeModule(address(tokenMessenger), address(usdc), owner);
+        module = new CCTPBridgeModule(address(tokenMessenger), address(usdc));
         paymentRails = new MockBridgePaymentRails(address(module));
 
         usdc.mint(address(paymentRails), DEFAULT_BRIDGE_AMOUNT * 10);
@@ -93,11 +79,26 @@ abstract contract CCTPBridgeModuleBase is Test {
     }
 
     /*//////////////////////////////////////////////////////////////////////////
-                                    MODIFIERS
+                                    HELPERS
     //////////////////////////////////////////////////////////////////////////*/
 
-    modifier givenDomainConfigured() {
-        module.setDomainConfig(
+    function _encodeParams(
+        uint32 destinationDomain,
+        bytes32 mintRecipient,
+        bytes32 destinationCaller,
+        uint256 maxFee,
+        uint32 minFinalityThreshold,
+        bytes memory hookData
+    )
+        internal
+        pure
+        returns (bytes memory)
+    {
+        return abi.encode(destinationDomain, mintRecipient, destinationCaller, maxFee, minFinalityThreshold, hookData);
+    }
+
+    function _defaultParams() internal pure returns (bytes memory) {
+        return _encodeParams(
             DOMAIN_BASE,
             DEFAULT_MINT_RECIPIENT,
             DEFAULT_DESTINATION_CALLER,
@@ -105,11 +106,10 @@ abstract contract CCTPBridgeModuleBase is Test {
             FINALITY_FAST,
             DEFAULT_HOOK_DATA
         );
-        _;
     }
 
-    modifier givenDomainConfiguredWithHook() {
-        module.setDomainConfig(
+    function _defaultParamsWithHook() internal pure returns (bytes memory) {
+        return _encodeParams(
             DOMAIN_BASE,
             DEFAULT_MINT_RECIPIENT,
             DEFAULT_DESTINATION_CALLER,
@@ -117,24 +117,5 @@ abstract contract CCTPBridgeModuleBase is Test {
             FINALITY_FAST,
             hex"deadbeef"
         );
-        _;
-    }
-
-    modifier whenCallerIsNotOwner() {
-        vm.startPrank(attacker);
-        _;
-        vm.stopPrank();
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                                    HELPERS
-    //////////////////////////////////////////////////////////////////////////*/
-
-    function _encodeParams(uint32 destinationDomain) internal pure returns (bytes memory) {
-        return abi.encode(destinationDomain);
-    }
-
-    function _defaultParams() internal pure returns (bytes memory) {
-        return _encodeParams(DOMAIN_BASE);
     }
 }
