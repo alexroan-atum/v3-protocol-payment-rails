@@ -5,9 +5,11 @@ CowSwapModule_IsValidSignature
 │   └── it should return EIP1271 failure value
 ├── when order is unknown
 │   └── it should return EIP1271 failure value
-├── given order status is settled
+├── given order is already filled by solver
 │   └── it should return EIP1271 failure value
-├── given order status is cancelled
+├── given order is partially filled
+│   └── it should return EIP1271 magic value
+├── given order is cancelled
 │   └── it should return EIP1271 failure value
 ├── when order has expired
 │   └── it should return EIP1271 failure value

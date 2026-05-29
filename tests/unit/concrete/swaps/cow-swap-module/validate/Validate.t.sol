@@ -8,11 +8,11 @@ import { DataTypes } from "../../../../../../src/types/DataTypes.sol";
 /// @dev Tree: tests/unit/concrete/cow-swap-module/validate/validate.tree
 contract CowSwapModule_Validate_Test is CowSwapModuleBase {
     // -----------------------------------------------------------------------
-    // when params are malformed (L-1 fix — mirrors execute)
+    // when params are malformed
     // -----------------------------------------------------------------------
 
     function test_WhenParamsAreMalformed_ReturnsFalse() external view {
-        bytes memory malformedParams = abi.encode(address(buyToken)); // only 1 word instead of 4
+        bytes memory malformedParams = abi.encode(address(buyToken));
         (bool isValid, string memory reason) = module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, malformedParams);
         assertFalse(isValid);
         assertEq(reason, "Invalid params encoding");
@@ -37,7 +37,6 @@ contract CowSwapModule_Validate_Test is CowSwapModuleBase {
     }
 
     function test_WhenAmountIsZero_ReasonMatchesExecute() external {
-        // validate() and execute() must agree: both reject zero amounts
         (, string memory validateReason) = module.validate(address(sellToken), 0, _buildDefaultParams());
         DataTypes.ExecutionResult memory result =
             paymentRails.initiateSwap(address(sellToken), 0, _buildDefaultParams());
@@ -49,7 +48,15 @@ contract CowSwapModule_Validate_Test is CowSwapModuleBase {
     // -----------------------------------------------------------------------
 
     function test_WhenTargetTokenIsZero_ReturnsFalse() external view {
-        bytes memory params = _buildParams(address(0), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(0),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
         (bool isValid, string memory reason) = module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, params);
         assertFalse(isValid);
         assertEq(reason, "Zero target token");
@@ -60,22 +67,77 @@ contract CowSwapModule_Validate_Test is CowSwapModuleBase {
     // -----------------------------------------------------------------------
 
     function test_WhenTargetTokenEqualsSellToken_ReturnsFalse() external view {
-        bytes memory params =
-            _buildParams(address(sellToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(sellToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
         (bool isValid, string memory reason) = module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, params);
         assertFalse(isValid);
         assertEq(reason, "Same sell and buy token");
     }
 
     // -----------------------------------------------------------------------
-    // when min buy amount is zero
+    // when slippage bps is zero (invalid)
     // -----------------------------------------------------------------------
 
-    function test_WhenMinBuyAmountIsZero_ReturnsFalse() external view {
-        bytes memory params = _buildParams(address(buyToken), 0, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+    function test_WhenSlippageBpsIsZero_ReturnsFalse() external view {
+        bytes memory params = _buildParams(
+            address(buyToken),
+            0,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
         (bool isValid, string memory reason) = module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, params);
         assertFalse(isValid);
-        assertEq(reason, "Zero minimum buy amount");
+        assertEq(reason, "Invalid slippage bps");
+    }
+
+    // -----------------------------------------------------------------------
+    // when sell token price feed is missing
+    // -----------------------------------------------------------------------
+
+    function test_WhenSellTokenPriceFeedIsZero_ReturnsFalse() external {
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(0),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
+        vm.prank(address(paymentRails));
+        (bool isValid, string memory reason) = module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, params);
+        assertFalse(isValid);
+        assertEq(reason, "Missing sell token price feed");
+    }
+
+    // -----------------------------------------------------------------------
+    // when buy token price feed is missing
+    // -----------------------------------------------------------------------
+
+    function test_WhenBuyTokenPriceFeedIsZero_ReturnsFalse() external {
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(0),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
+        vm.prank(address(paymentRails));
+        (bool isValid, string memory reason) = module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, params);
+        assertFalse(isValid);
+        assertEq(reason, "Missing buy token price feed");
     }
 
     // -----------------------------------------------------------------------
@@ -83,19 +145,34 @@ contract CowSwapModule_Validate_Test is CowSwapModuleBase {
     // -----------------------------------------------------------------------
 
     function test_WhenValidityDurationIsZero_ReturnsFalse() external view {
-        bytes memory params = _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, 0, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            0,
+            DEFAULT_APP_DATA
+        );
         (bool isValid, string memory reason) = module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, params);
         assertFalse(isValid);
         assertEq(reason, "Zero validity duration");
     }
 
     // -----------------------------------------------------------------------
-    // when validity duration overflows uint32 (M-2 fix)
+    // when validity duration overflows uint32
     // -----------------------------------------------------------------------
 
     function test_WhenValidityDurationOverflows_ReturnsFalse() external {
-        bytes memory params =
-            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, type(uint32).max, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            type(uint32).max,
+            DEFAULT_APP_DATA
+        );
         vm.prank(address(paymentRails));
         (bool isValid, string memory reason) = module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, params);
         assertFalse(isValid);
@@ -103,8 +180,15 @@ contract CowSwapModule_Validate_Test is CowSwapModuleBase {
     }
 
     function test_WhenValidityDurationOverflows_ReasonMatchesExecute() external {
-        bytes memory params =
-            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, type(uint32).max, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            type(uint32).max,
+            DEFAULT_APP_DATA
+        );
         vm.prank(address(paymentRails));
         (, string memory validateReason) = module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, params);
         DataTypes.ExecutionResult memory result =
@@ -113,11 +197,63 @@ contract CowSwapModule_Validate_Test is CowSwapModuleBase {
     }
 
     // -----------------------------------------------------------------------
+    // when oracle price is unavailable
+    // -----------------------------------------------------------------------
+
+    function test_WhenSellOracleReverts_ReturnsFalse() external {
+        sellFeed.setShouldRevert(true);
+        vm.prank(address(paymentRails));
+        (bool isValid, string memory reason) =
+            module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, _buildDefaultParams());
+        assertFalse(isValid);
+        assertEq(reason, "Oracle price unavailable");
+    }
+
+    function test_WhenBuyOracleReverts_ReturnsFalse() external {
+        buyFeed.setShouldRevert(true);
+        vm.prank(address(paymentRails));
+        (bool isValid, string memory reason) =
+            module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, _buildDefaultParams());
+        assertFalse(isValid);
+        assertEq(reason, "Oracle price unavailable");
+    }
+
+    function test_WhenOraclePriceIsStale_ReturnsFalse() external {
+        sellFeed.setUpdatedAt(block.timestamp - DEFAULT_MAX_STALENESS - 1);
+        vm.prank(address(paymentRails));
+        (bool isValid, string memory reason) =
+            module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, _buildDefaultParams());
+        assertFalse(isValid);
+        assertEq(reason, "Oracle price unavailable");
+    }
+
+    function test_WhenOraclePriceIsNegative_ReturnsFalse() external {
+        sellFeed.setAnswer(-1);
+        vm.prank(address(paymentRails));
+        (bool isValid, string memory reason) =
+            module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, _buildDefaultParams());
+        assertFalse(isValid);
+        assertEq(reason, "Oracle price unavailable");
+    }
+
+    // -----------------------------------------------------------------------
+    // when oracle floor rounds to zero
+    // -----------------------------------------------------------------------
+
+    function test_WhenOracleFloorRoundsToZero_ReturnsFalse() external {
+        sellFeed.setAnswer(1);
+        buyFeed.setAnswer(1e8);
+        vm.prank(address(paymentRails));
+        (bool isValid, string memory reason) = module.validate(address(sellToken), 1, _buildDefaultParams());
+        assertFalse(isValid);
+        assertEq(reason, "Amount too small for safe swap");
+    }
+
+    // -----------------------------------------------------------------------
     // when caller has insufficient balance
     // -----------------------------------------------------------------------
 
     function test_WhenCallerHasInsufficientBalance_ReturnsFalse() external view {
-        // The test contract (msg.sender here) holds no sell tokens
         bytes memory params = _buildDefaultParams();
         (bool isValid, string memory reason) = module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, params);
         assertFalse(isValid);
@@ -130,7 +266,6 @@ contract CowSwapModule_Validate_Test is CowSwapModuleBase {
 
     function test_WhenAllParametersAreValid_ReturnsTrue() external {
         bytes memory params = _buildDefaultParams();
-        // PaymentRails holds 10x DEFAULT_SELL_AMOUNT, so balance check passes
         vm.prank(address(paymentRails));
         (bool isValid, string memory reason) = module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, params);
         assertTrue(isValid);

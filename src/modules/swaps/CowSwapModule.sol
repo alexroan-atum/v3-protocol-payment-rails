@@ -4,24 +4,21 @@ pragma solidity 0.8.29;
 import { ICowSwapModule } from "../../interfaces/ICowSwapModule.sol";
 import { IGPv2Settlement } from "../../interfaces/IGPv2Settlement.sol";
 import { IActionModule } from "../../interfaces/IActionModule.sol";
+import { IChainlinkAggregatorV3 } from "../../interfaces/IChainlinkAggregatorV3.sol";
 import { ActionModuleBase } from "../../abstracts/ActionModuleBase.sol";
 import { DataTypes } from "../../types/DataTypes.sol";
 import { Errors } from "../../libraries/Errors.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { Ownable2Step, Ownable } from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @title CowSwapModule
 /// @author Credit Cooperative
 /// @notice Async action module that submits sell orders to the CowSwap order-book protocol.
-/// @dev See {ICowSwapModule} for the full lifecycle, deployment model, and security model.
-/// Each PaymentRails must deploy its own private instance — do NOT share across PaymentRails.
-///
-/// Fee-on-transfer / deflationary tokens are NOT supported. The module records the nominal
-/// `sellAmount` in order metadata but receives fewer tokens after the fee deduction. The
-/// CowSwap solver will be unable to pull the full `sellAmount` via VaultRelayer, causing the
-/// order to be permanently unsettleable.
+/// @dev See {ICowSwapModule} for lifecycle and security model. Fee-on-transfer tokens are NOT supported.
 contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -46,7 +43,7 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
     /// @dev CowSwap order kind: sell an exact amount of sellToken.
     bytes32 internal constant KIND_SELL = keccak256("sell");
 
-    /// @dev CowSwap balance type: standard ERC-20 balances (not Balancer vault).
+    /// @dev CowSwap balance type: standard ERC-20 balances.
     bytes32 internal constant BALANCE_ERC20 = keccak256("erc20");
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -73,10 +70,7 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
                                     CONSTRUCTOR
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @dev Emits no events. Reverts with {Errors.CowSwapModule_ZeroCowSettlement} if
-    /// `_cowSettlement` is the zero address.
-    /// @param _cowSettlement Address of the GPv2Settlement contract on this chain.
-    /// @param _owner Address that will own this module (can call `cancelOrder`).
+    /// @dev Reverts with {Errors.CowSwapModule_ZeroCowSettlement} if `_cowSettlement` is zero.
     constructor(address _cowSettlement, address _owner) Ownable(_owner) {
         if (_cowSettlement == address(0)) revert Errors.CowSwapModule_ZeroCowSettlement();
 
@@ -111,20 +105,21 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
     {
         DataTypes.CowSwapParams memory swapParams;
         uint32 validTo;
+        uint256 oracleFloor;
 
         // --- Checks ---
 
         {
             bool valid;
             string memory reason;
-            (valid, reason, swapParams, validTo) = _validate(token, amount, params);
+            (valid, reason, swapParams, validTo, oracleFloor) = _validate(token, amount, params);
             if (!valid) {
                 return _failedResult(token, reason);
             }
         }
 
         bytes32 orderId = _computeOrderDigest(
-            token, swapParams.targetToken, msg.sender, amount, swapParams.minBuyAmount, validTo, swapParams.appData
+            token, swapParams.targetToken, msg.sender, amount, oracleFloor, validTo, swapParams.appData
         );
 
         if (_orders[orderId].paymentRails != address(0)) {
@@ -155,14 +150,7 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
         }
 
         emit OrderCreated(
-            orderId,
-            msg.sender,
-            token,
-            swapParams.targetToken,
-            amount,
-            swapParams.minBuyAmount,
-            validTo,
-            swapParams.appData
+            orderId, msg.sender, token, swapParams.targetToken, amount, oracleFloor, validTo, swapParams.appData
         );
 
         return _successResult(0, swapParams.targetToken, abi.encode(orderId));
@@ -213,7 +201,7 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
         override(ActionModuleBase, IActionModule)
         returns (bool isValid, string memory reason)
     {
-        (isValid, reason,,) = _validate(token, amount, params);
+        (isValid, reason,,,) = _validate(token, amount, params);
     }
 
     /// @inheritdoc ICowSwapModule
@@ -255,17 +243,19 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
 
     /// @inheritdoc IActionModule
     function estimateOutput(
-        address, /* token */
-        uint256, /* amount */
+        address token,
+        uint256 amount,
         bytes calldata params
     )
         external
-        pure
+        view
         override(ActionModuleBase, IActionModule)
         returns (uint256 estimatedOutput, address outputToken)
     {
         DataTypes.CowSwapParams memory swapParams = decodeParams(params);
-        return (swapParams.minBuyAmount, swapParams.targetToken);
+        (bool oracleOk, uint256 expected) = _computeExpectedOutput(token, amount, swapParams);
+        if (oracleOk) return (expected, swapParams.targetToken);
+        return (0, swapParams.targetToken);
     }
 
     /// @inheritdoc IActionModule
@@ -275,22 +265,35 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
 
     /// @inheritdoc ICowSwapModule
     function encodeParams(DataTypes.CowSwapParams calldata params) external pure returns (bytes memory encoded) {
-        return abi.encode(params.targetToken, params.minBuyAmount, params.validityDuration, params.appData);
+        return abi.encode(
+            params.targetToken,
+            params.maxSlippageBps,
+            params.sellTokenPriceFeed,
+            params.buyTokenPriceFeed,
+            params.maxStaleness,
+            params.validityDuration,
+            params.appData
+        );
     }
 
     /// @inheritdoc ICowSwapModule
     function decodeParams(bytes calldata encoded) public pure returns (DataTypes.CowSwapParams memory params) {
-        (params.targetToken, params.minBuyAmount, params.validityDuration, params.appData) =
-            abi.decode(encoded, (address, uint256, uint32, bytes32));
+        (
+            params.targetToken,
+            params.maxSlippageBps,
+            params.sellTokenPriceFeed,
+            params.buyTokenPriceFeed,
+            params.maxStaleness,
+            params.validityDuration,
+            params.appData
+        ) = abi.decode(encoded, (address, uint16, address, address, uint256, uint32, bytes32));
     }
 
     /*//////////////////////////////////////////////////////////////////////////
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @dev Single source of truth for all view-safe validation. Called by both validate() and execute().
-    ///      Wraps _validateSwapParams (param decoding + stateless checks) and adds the balance check.
-    ///      Execution-only guards (collision check) remain in execute().
+    /// @dev Shared validation for validate() and execute(). Collision check remains in execute().
     function _validate(
         address token,
         uint256 amount,
@@ -298,17 +301,29 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
     )
         private
         view
-        returns (bool valid, string memory reason, DataTypes.CowSwapParams memory swapParams, uint32 validTo)
+        returns (
+            bool valid,
+            string memory reason,
+            DataTypes.CowSwapParams memory swapParams,
+            uint32 validTo,
+            uint256 oracleFloor
+        )
     {
         (valid, reason, swapParams, validTo) = _validateSwapParams(token, amount, params);
-        if (!valid) return (false, reason, swapParams, 0);
+        if (!valid) return (false, reason, swapParams, 0, 0);
 
-        if (!_hasSufficientBalance(token, amount)) return (false, "Insufficient balance", swapParams, 0);
+        bool oracleOk;
+        (oracleOk, oracleFloor) = _computeOracleFloor(token, amount, swapParams);
+        if (!oracleOk) return (false, "Oracle price unavailable", swapParams, 0, 0);
+        if (oracleFloor == 0) return (false, "Amount too small for safe swap", swapParams, 0, 0);
 
-        return (true, "", swapParams, validTo);
+        if (!_hasSufficientBalance(token, amount)) return (false, "Insufficient balance", swapParams, 0, 0);
+
+        return (true, "", swapParams, validTo, oracleFloor);
     }
 
     /// @dev Decodes and checks all swap parameters without touching storage.
+    // solhint-disable-next-line code-complexity
     function _validateSwapParams(
         address token,
         uint256 amount,
@@ -318,7 +333,7 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
         view
         returns (bool valid, string memory reason, DataTypes.CowSwapParams memory swapParams, uint32 validTo)
     {
-        if (params.length < 128) {
+        if (params.length < 224) {
             return (false, "Invalid params encoding", swapParams, 0);
         }
 
@@ -333,8 +348,14 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
         if (swapParams.targetToken == token) {
             return (false, "Same sell and buy token", swapParams, 0);
         }
-        if (swapParams.minBuyAmount == 0) {
-            return (false, "Zero minimum buy amount", swapParams, 0);
+        if (swapParams.maxSlippageBps == 0 || swapParams.maxSlippageBps > 10_000) {
+            return (false, "Invalid slippage bps", swapParams, 0);
+        }
+        if (swapParams.sellTokenPriceFeed == address(0)) {
+            return (false, "Missing sell token price feed", swapParams, 0);
+        }
+        if (swapParams.buyTokenPriceFeed == address(0)) {
+            return (false, "Missing buy token price feed", swapParams, 0);
         }
         if (swapParams.validityDuration == 0) {
             return (false, "Zero validity duration", swapParams, 0);
@@ -348,9 +369,104 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
         return (true, "", swapParams, uint32(rawValidTo));
     }
 
-    /// @dev Computes the EIP-712 GPv2Order digest used as orderId throughout this module.
-    /// Fixed fields: receiver=paymentRails, feeAmount=0, kind=SELL, partiallyFillable=false,
-    /// sellTokenBalance=erc20, buyTokenBalance=erc20.
+    /// @dev Reads a Chainlink price feed and validates freshness, positivity, and magnitude.
+    function _getOraclePrice(
+        address feed,
+        uint256 maxStaleness
+    )
+        private
+        view
+        returns (bool ok, uint256 price, uint8 feedDecimals)
+    {
+        try IChainlinkAggregatorV3(feed).latestRoundData() returns (
+            uint80, int256 answer, uint256, uint256 updatedAt, uint80
+        ) {
+            if (answer <= 0) return (false, 0, 0);
+            if (uint256(answer) > type(uint128).max) return (false, 0, 0);
+            if (block.timestamp - updatedAt > maxStaleness) return (false, 0, 0);
+            try IChainlinkAggregatorV3(feed).decimals() returns (uint8 dec) {
+                return (true, uint256(answer), dec);
+            } catch {
+                return (false, 0, 0);
+            }
+        } catch {
+            return (false, 0, 0);
+        }
+    }
+
+    /// @dev Computes oracle-expected output: amount * sellPrice / buyPrice, decimal-adjusted.
+    function _computeExpectedOutput(
+        address token,
+        uint256 amount,
+        DataTypes.CowSwapParams memory cfg
+    )
+        private
+        view
+        returns (bool ok, uint256 expectedOutput)
+    {
+        uint256 sellPrice;
+        uint256 buyPrice;
+        uint256 sellExp;
+        uint256 buyExp;
+
+        {
+            uint8 sellFeedDec;
+            uint8 buyFeedDec;
+            bool oracleOk;
+            (oracleOk, sellPrice, sellFeedDec) = _getOraclePrice(cfg.sellTokenPriceFeed, cfg.maxStaleness);
+            if (!oracleOk) return (false, 0);
+            (oracleOk, buyPrice, buyFeedDec) = _getOraclePrice(cfg.buyTokenPriceFeed, cfg.maxStaleness);
+            if (!oracleOk) return (false, 0);
+
+            (bool sellDecOk, uint8 sellTokenDec) = _getTokenDecimals(token);
+            if (!sellDecOk) return (false, 0);
+            (bool buyDecOk, uint8 buyTokenDec) = _getTokenDecimals(cfg.targetToken);
+            if (!buyDecOk) return (false, 0);
+
+            sellExp = uint256(sellTokenDec) + uint256(sellFeedDec);
+            buyExp = uint256(buyTokenDec) + uint256(buyFeedDec);
+        }
+
+        if (buyExp >= sellExp) {
+            uint256 scale = 10 ** (buyExp - sellExp);
+            if (sellPrice > type(uint256).max / scale) return (false, 0);
+            expectedOutput = Math.mulDiv(amount, sellPrice * scale, buyPrice);
+        } else {
+            uint256 scale = 10 ** (sellExp - buyExp);
+            if (buyPrice > type(uint256).max / scale) return (false, 0);
+            expectedOutput = Math.mulDiv(amount, sellPrice, buyPrice * scale);
+        }
+
+        return (true, expectedOutput);
+    }
+
+    /// @dev Applies maxSlippageBps to oracle-expected output to get the minimum floor.
+    function _computeOracleFloor(
+        address token,
+        uint256 amount,
+        DataTypes.CowSwapParams memory cfg
+    )
+        private
+        view
+        returns (bool ok, uint256 floor)
+    {
+        (bool oracleOk, uint256 expected) = _computeExpectedOutput(token, amount, cfg);
+        if (!oracleOk) return (false, 0);
+
+        floor = Math.mulDiv(expected, 10_000 - uint256(cfg.maxSlippageBps), 10_000);
+        return (true, floor);
+    }
+
+    /// @dev Safe wrapper for IERC20Metadata.decimals().
+    function _getTokenDecimals(address token) private view returns (bool ok, uint8 tokenDecimals) {
+        try IERC20Metadata(token).decimals() returns (uint8 dec) {
+            return (true, dec);
+        } catch {
+            return (false, 0);
+        }
+    }
+
+    /// @dev Computes the EIP-712 GPv2Order digest used as orderId.
     function _computeOrderDigest(
         address sellToken,
         address buyToken,

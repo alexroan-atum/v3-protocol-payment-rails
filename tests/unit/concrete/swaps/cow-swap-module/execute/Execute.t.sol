@@ -62,7 +62,15 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
     // -----------------------------------------------------------------------
 
     function test_WhenTargetTokenIsZero_ReturnsFailedResult() external {
-        bytes memory params = _buildParams(address(0), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(0),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
         DataTypes.ExecutionResult memory result =
             paymentRails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
         assertFalse(result.success);
@@ -70,7 +78,15 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
     }
 
     function test_WhenTargetTokenIsZero_ReturnsZeroAmountOut() external {
-        bytes memory params = _buildParams(address(0), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(0),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
         DataTypes.ExecutionResult memory result =
             paymentRails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
         assertEq(result.amountOut, 0);
@@ -81,8 +97,15 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
     // -----------------------------------------------------------------------
 
     function test_WhenTargetTokenEqualsSellToken_ReturnsFailedResult() external {
-        bytes memory params =
-            _buildParams(address(sellToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(sellToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
         DataTypes.ExecutionResult memory result =
             paymentRails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
         assertFalse(result.success);
@@ -90,15 +113,83 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
     }
 
     // -----------------------------------------------------------------------
-    // when min buy amount is zero
+    // when slippage bps is invalid (zero)
     // -----------------------------------------------------------------------
 
-    function test_WhenMinBuyAmountIsZero_ReturnsFailedResult() external {
-        bytes memory params = _buildParams(address(buyToken), 0, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+    function test_WhenZeroSlippageBps_ReturnsFailedResult() external {
+        bytes memory params = _buildParams(
+            address(buyToken),
+            0,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
         DataTypes.ExecutionResult memory result =
             paymentRails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
         assertFalse(result.success);
-        assertEq(result.failureReason, "Zero minimum buy amount");
+        assertEq(result.failureReason, "Invalid slippage bps");
+    }
+
+    // -----------------------------------------------------------------------
+    // when slippage bps is invalid (zero or > 10000)
+    // -----------------------------------------------------------------------
+
+    function test_WhenSlippageBpsExceeds10000_ReturnsFailedResult() external {
+        bytes memory params = _buildParams(
+            address(buyToken),
+            10_001,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
+        DataTypes.ExecutionResult memory result =
+            paymentRails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
+        assertFalse(result.success);
+        assertEq(result.failureReason, "Invalid slippage bps");
+    }
+
+    // -----------------------------------------------------------------------
+    // when sell token price feed is missing
+    // -----------------------------------------------------------------------
+
+    function test_WhenSellTokenPriceFeedIsZero_ReturnsFailedResult() external {
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(0),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
+        DataTypes.ExecutionResult memory result =
+            paymentRails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
+        assertFalse(result.success);
+        assertEq(result.failureReason, "Missing sell token price feed");
+    }
+
+    // -----------------------------------------------------------------------
+    // when buy token price feed is missing
+    // -----------------------------------------------------------------------
+
+    function test_WhenBuyTokenPriceFeedIsZero_ReturnsFailedResult() external {
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(0),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
+        DataTypes.ExecutionResult memory result =
+            paymentRails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
+        assertFalse(result.success);
+        assertEq(result.failureReason, "Missing buy token price feed");
     }
 
     // -----------------------------------------------------------------------
@@ -106,7 +197,15 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
     // -----------------------------------------------------------------------
 
     function test_WhenValidityDurationIsZero_ReturnsFailedResult() external {
-        bytes memory params = _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, 0, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            0,
+            DEFAULT_APP_DATA
+        );
         DataTypes.ExecutionResult memory result =
             paymentRails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
         assertFalse(result.success);
@@ -119,8 +218,15 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
 
     function test_WhenValidityDurationOverflows_ReturnsFailedResult() external {
         uint32 overflowDuration = type(uint32).max;
-        bytes memory params =
-            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, overflowDuration, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            overflowDuration,
+            DEFAULT_APP_DATA
+        );
         DataTypes.ExecutionResult memory result =
             paymentRails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
         assertFalse(result.success);
@@ -129,10 +235,75 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
 
     function test_WhenValidityDurationOverflows_DoesNotLockTokens() external {
         uint32 overflowDuration = type(uint32).max;
-        bytes memory params =
-            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, overflowDuration, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            overflowDuration,
+            DEFAULT_APP_DATA
+        );
         paymentRails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
         assertEq(sellToken.balanceOf(address(module)), 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // when oracle price is unavailable
+    // -----------------------------------------------------------------------
+
+    function test_WhenSellOracleReverts_ReturnsFailedResult() external {
+        sellFeed.setShouldRevert(true);
+        DataTypes.ExecutionResult memory result =
+            paymentRails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _buildDefaultParams());
+        assertFalse(result.success);
+        assertEq(result.failureReason, "Oracle price unavailable");
+    }
+
+    function test_WhenBuyOracleReverts_ReturnsFailedResult() external {
+        buyFeed.setShouldRevert(true);
+        DataTypes.ExecutionResult memory result =
+            paymentRails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _buildDefaultParams());
+        assertFalse(result.success);
+        assertEq(result.failureReason, "Oracle price unavailable");
+    }
+
+    function test_WhenOraclePriceIsStale_ReturnsFailedResult() external {
+        sellFeed.setUpdatedAt(block.timestamp - DEFAULT_MAX_STALENESS - 1);
+        DataTypes.ExecutionResult memory result =
+            paymentRails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _buildDefaultParams());
+        assertFalse(result.success);
+        assertEq(result.failureReason, "Oracle price unavailable");
+    }
+
+    function test_WhenOraclePriceIsNegative_ReturnsFailedResult() external {
+        sellFeed.setAnswer(-1);
+        DataTypes.ExecutionResult memory result =
+            paymentRails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _buildDefaultParams());
+        assertFalse(result.success);
+        assertEq(result.failureReason, "Oracle price unavailable");
+    }
+
+    function test_WhenOraclePriceIsZero_ReturnsFailedResult() external {
+        sellFeed.setAnswer(0);
+        DataTypes.ExecutionResult memory result =
+            paymentRails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _buildDefaultParams());
+        assertFalse(result.success);
+        assertEq(result.failureReason, "Oracle price unavailable");
+    }
+
+    // -----------------------------------------------------------------------
+    // when oracle floor rounds to zero (amount too small for safe swap)
+    // -----------------------------------------------------------------------
+
+    function test_WhenOracleFloorRoundsToZero_ReturnsFailedResult() external {
+        // Extreme price disparity: sellPrice=1e-8, buyPrice=1.0 → floor rounds to 0
+        sellFeed.setAnswer(1);
+        buyFeed.setAnswer(1e8);
+        DataTypes.ExecutionResult memory result =
+            paymentRails.initiateSwap(address(sellToken), 1, _buildDefaultParams());
+        assertFalse(result.success);
+        assertEq(result.failureReason, "Amount too small for safe swap");
     }
 
     // -----------------------------------------------------------------------
@@ -161,8 +332,15 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
         FailingTransferERC20 failToken = new FailingTransferERC20();
         failToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 10);
 
-        bytes memory params =
-            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
         DataTypes.ExecutionResult memory result =
             paymentRails.initiateSwap(address(failToken), DEFAULT_SELL_AMOUNT, params);
         assertFalse(result.success);
@@ -173,24 +351,37 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
         FailingTransferERC20 failToken = new FailingTransferERC20();
         failToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 10);
 
-        bytes memory params =
-            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
         DataTypes.ExecutionResult memory result =
             paymentRails.initiateSwap(address(failToken), DEFAULT_SELL_AMOUNT, params);
         assertEq(result.data.length, 0);
     }
 
-    /// @dev CEI rollback: metadata is written before transfer (effects before interactions),
-    ///      then cleaned up via `delete _orders[orderId]` when transfer fails.
+    /// @dev CEI rollback: delete _orders[orderId] when transfer fails, preventing stale collisions.
     function test_WhenTokenTransferFails_CleansUpOrderMetadata_CEIRollback() external {
         FailingTransferERC20 failToken = new FailingTransferERC20();
         failToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 10);
 
-        bytes memory params =
-            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
         paymentRails.initiateSwap(address(failToken), DEFAULT_SELL_AMOUNT, params);
 
-        // After the failed transfer, the same params should NOT collide — metadata was cleaned up
+        // Same params must NOT collide — metadata was cleaned up
         DataTypes.ExecutionResult memory result2 =
             paymentRails.initiateSwap(address(failToken), DEFAULT_SELL_AMOUNT, params);
         assertFalse(result2.success, "still fails (transfer always fails)");
@@ -217,8 +408,15 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
         _initiateDefaultOrder();
         assertEq(sellToken.allowance(address(module), module.vaultRelayer()), type(uint256).max);
 
-        bytes memory params2 =
-            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, keccak256("order-2"));
+        bytes memory params2 = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            keccak256("order-2")
+        );
         paymentRails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params2);
         assertEq(sellToken.allowance(address(module), module.vaultRelayer()), type(uint256).max);
     }
@@ -302,19 +500,20 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
         assertNotEq(id1, id2);
     }
 
-    function testFuzz_WhenAllParamsValid_OrderIsStoredCorrectly(
-        uint256 sellAmount,
-        uint256 minBuyAmount,
-        uint32 validity
-    )
-        external
-    {
-        sellAmount = bound(sellAmount, 1, DEFAULT_SELL_AMOUNT * 9);
-        minBuyAmount = bound(minBuyAmount, 1, type(uint256).max / 2);
+    function testFuzz_WhenAllParamsValid_OrderIsStoredCorrectly(uint256 sellAmount, uint32 validity) external {
+        sellAmount = bound(sellAmount, 1e6, DEFAULT_SELL_AMOUNT * 9);
         uint256 maxValidity = type(uint32).max - block.timestamp;
         validity = uint32(bound(uint256(validity), 1, maxValidity));
 
-        bytes memory params = _buildParams(address(buyToken), minBuyAmount, validity, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            validity,
+            DEFAULT_APP_DATA
+        );
         DataTypes.ExecutionResult memory result = paymentRails.initiateSwap(address(sellToken), sellAmount, params);
 
         assertTrue(result.success);
@@ -347,8 +546,15 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
     function test_Execute_TwiceSameBlock_DifferentAppData_ProducesDifferentOrderIds() external {
         bytes32 id1 = _initiateDefaultOrder();
 
-        bytes memory params2 =
-            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, keccak256("different-app-data"));
+        bytes memory params2 = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            keccak256("different-app-data")
+        );
         DataTypes.ExecutionResult memory result2 =
             paymentRails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params2);
 
@@ -366,8 +572,15 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
         _initiateDefaultOrder();
         assertEq(sellToken.allowance(address(module), module.vaultRelayer()), type(uint256).max);
 
-        bytes memory params2 =
-            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, keccak256("order-2"));
+        bytes memory params2 = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            keccak256("order-2")
+        );
         DataTypes.ExecutionResult memory r2 =
             paymentRails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params2);
         assertTrue(r2.success);
@@ -376,8 +589,15 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
 
     function test_ConcurrentSameToken_CancelOrder1_Order2ApprovalUnaffected() external {
         bytes32 id1 = _initiateDefaultOrder();
-        bytes memory params2 =
-            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, keccak256("order-2"));
+        bytes memory params2 = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            keccak256("order-2")
+        );
         bytes32 id2 =
             abi.decode(paymentRails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params2).data, (bytes32));
 
@@ -391,11 +611,17 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
     // no-return sellToken (e.g. USDT)
     // -----------------------------------------------------------------------
 
-    /// @dev Regression test for Certora finding: non-standard ERC20 tokens that return no data
-    /// from transferFrom must be treated as successful, not failed.
+    /// @dev Non-standard ERC20 tokens returning no data from transferFrom must succeed.
     function test_Execute_NoReturnSellToken_SucceedsAndStoresOrder() external {
-        bytes memory params =
-            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
 
         uint256 paymentRailsBefore = noReturnSellToken.balanceOf(address(paymentRails));
 
@@ -427,14 +653,20 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
     function test_Execute_FeeOnTransferSellToken_ModuleReceivesLessThanAmount() external {
         uint256 expectedReceived = DEFAULT_SELL_AMOUNT - (DEFAULT_SELL_AMOUNT * 100 / 10_000);
 
-        bytes memory params =
-            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
         DataTypes.ExecutionResult memory result =
             paymentRails.initiateSwap(address(fotSellToken), DEFAULT_SELL_AMOUNT, params);
 
         assertTrue(result.success);
 
-        // module balance < recorded sellAmount due to transfer fee
         uint256 moduleBalance = fotSellToken.balanceOf(address(module));
         assertEq(moduleBalance, expectedReceived);
 
@@ -445,8 +677,15 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
     }
 
     function test_Execute_FeeOnTransferSellToken_CowSwapCannotPullFullSellAmount() external {
-        bytes memory params =
-            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
         DataTypes.ExecutionResult memory result =
             paymentRails.initiateSwap(address(fotSellToken), DEFAULT_SELL_AMOUNT, params);
 
@@ -465,52 +704,56 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
     // reentrancy guard: ERC-777-style reentrant sell token
     // -----------------------------------------------------------------------
 
-    /// @dev Simulates an ERC-777 tokensToSend hook that re-enters execute() during transferFrom.
-    ///      The ReentrancyGuard blocks the inner call; the outer call succeeds normally.
+    /// @dev ERC-777-style hook re-enters execute() during transferFrom; ReentrancyGuard blocks it.
     function test_Execute_ReentrantSellToken_InnerCallBlockedByReentrancyGuard() external {
         ReentrantExecuteSellToken reentrantToken = new ReentrantExecuteSellToken(address(module));
         reentrantToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 5);
-        // Mint tokens to the reentrant token contract itself (it will be msg.sender for the inner call)
+        // Token contract itself is msg.sender for the inner reentrant call
         reentrantToken.mint(address(reentrantToken), DEFAULT_SELL_AMOUNT * 5);
 
-        bytes memory params =
-            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
 
-        // Arm the reentrancy hook
         reentrantToken.setReentryConfig(DEFAULT_SELL_AMOUNT, params);
 
-        // Approve from paymentRails
         vm.prank(address(paymentRails));
         reentrantToken.approve(address(module), DEFAULT_SELL_AMOUNT);
 
-        // Execute from paymentRails — triggers transferFrom → _update → reentrant execute()
         vm.prank(address(paymentRails));
         DataTypes.ExecutionResult memory result = module.execute(address(reentrantToken), DEFAULT_SELL_AMOUNT, params);
 
-        // Outer call succeeds
         assertTrue(result.success, "outer execute must succeed");
-
-        // Confirm the hook actually fired (not silently skipped)
+        // Confirm the hook fired and was blocked (not silently skipped)
         assertTrue(reentrantToken.reentryAttempted(), "hook must have fired");
-
-        // Inner reentrant call was blocked by nonReentrant
         assertTrue(reentrantToken.reentrancyBlocked(), "reentrant execute must be blocked");
 
-        // Only one order created, only 1x tokens locked
         bytes32 orderId = abi.decode(result.data, (bytes32));
         assertEq(module.getOrder(orderId).sellAmount, DEFAULT_SELL_AMOUNT, "exactly 1x sell amount recorded");
         assertEq(reentrantToken.balanceOf(address(module)), DEFAULT_SELL_AMOUNT, "module holds exactly 1x");
     }
 
-    /// @dev Verifies that after a reentrant call is blocked, the module state is clean:
-    ///      no phantom orders, no stuck tokens, module balance matches the single order.
+    /// @dev After blocked reentry: no phantom orders, no stuck tokens, cancel works normally.
     function test_Execute_ReentrantSellToken_ModuleStateCleanAfterBlockedReentry() external {
         ReentrantExecuteSellToken reentrantToken = new ReentrantExecuteSellToken(address(module));
         reentrantToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 5);
         reentrantToken.mint(address(reentrantToken), DEFAULT_SELL_AMOUNT * 5);
 
-        bytes memory params =
-            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
 
         reentrantToken.setReentryConfig(DEFAULT_SELL_AMOUNT, params);
 
@@ -521,13 +764,10 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
         DataTypes.ExecutionResult memory result = module.execute(address(reentrantToken), DEFAULT_SELL_AMOUNT, params);
 
         bytes32 orderId = abi.decode(result.data, (bytes32));
-
-        // The order is valid and can be cancelled normally
         DataTypes.CowOrderMetadata memory meta = module.getOrder(orderId);
         assertEq(meta.paymentRails, address(paymentRails));
         assertFalse(meta.cancelled);
 
-        // Cancel the order — tokens return cleanly
         module.cancelOrder(orderId);
         assertTrue(module.getOrder(orderId).cancelled);
         assertEq(reentrantToken.balanceOf(address(module)), 0, "all tokens returned after cancel");
@@ -538,22 +778,25 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
     // cross-function reentrancy: execute → cancelOrder
     // -----------------------------------------------------------------------
 
-    /// @dev During execute()'s transferFrom, a hook-enabled token attempts cancelOrder() on
-    ///      a pre-existing order. The shared ReentrancyGuard lock blocks the cross-function call.
+    /// @dev Hook-enabled token attempts cancelOrder() during execute()'s transferFrom; shared lock blocks it.
     function test_Execute_CrossFunctionReentrancy_CancelOrderBlockedDuringExecute() external {
-        // Step 1: create a pre-existing order with normal sellToken
         bytes32 existingOrderId = _initiateDefaultOrder();
         assertFalse(module.getOrder(existingOrderId).cancelled, "pre-existing order is pending");
 
-        // Step 2: set up the cross-function reentrant token
         ReentrantCancelDuringExecuteSellToken crossToken = new ReentrantCancelDuringExecuteSellToken(address(module));
         crossToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT);
-
-        // Arm: during transferFrom, token will try cancelOrder(existingOrderId)
+        // During transferFrom, token will try cancelOrder(existingOrderId)
         crossToken.setReentryConfig(existingOrderId);
 
-        bytes memory params =
-            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, keccak256("cross-func-test"));
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            keccak256("cross-func-test")
+        );
 
         vm.prank(address(paymentRails));
         crossToken.approve(address(module), DEFAULT_SELL_AMOUNT);
@@ -561,14 +804,9 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
         vm.prank(address(paymentRails));
         DataTypes.ExecutionResult memory result = module.execute(address(crossToken), DEFAULT_SELL_AMOUNT, params);
 
-        // Outer execute succeeds
         assertTrue(result.success, "outer execute must succeed");
-
-        // Cross-function reentrancy was attempted and blocked
         assertTrue(crossToken.reentryAttempted(), "hook must have fired");
         assertTrue(crossToken.cancelBlocked(), "cross-function cancelOrder must be blocked by shared nonReentrant");
-
-        // Pre-existing order is NOT cancelled (the reentrant cancel was blocked)
         assertFalse(module.getOrder(existingOrderId).cancelled, "pre-existing order must remain pending");
         assertEq(sellToken.balanceOf(address(module)), DEFAULT_SELL_AMOUNT, "pre-existing order tokens intact");
     }
@@ -577,14 +815,20 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
     // CEI cleanup: reverting transferFrom (not just false-return)
     // -----------------------------------------------------------------------
 
-    /// @dev RevertingTransferERC20's transferFrom reverts (vs FailingTransferERC20 which returns false).
-    ///      Both paths go through trySafeTransferFrom → return false → delete _orders[orderId].
+    /// @dev Reverts (not false-return) also trigger CEI cleanup via trySafeTransferFrom.
     function test_WhenTokenTransferReverts_CleansUpOrderMetadata() external {
         RevertingTransferERC20 revertToken = new RevertingTransferERC20();
         revertToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 10);
 
-        bytes memory params =
-            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
 
         DataTypes.ExecutionResult memory result =
             paymentRails.initiateSwap(address(revertToken), DEFAULT_SELL_AMOUNT, params);
@@ -592,7 +836,7 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
         assertFalse(result.success, "must fail");
         assertEq(result.failureReason, "Token transfer failed");
 
-        // Retry with same params: must fail with "transfer failed", NOT "collision"
+        // Retry: must fail with "transfer failed", NOT "collision"
         DataTypes.ExecutionResult memory result2 =
             paymentRails.initiateSwap(address(revertToken), DEFAULT_SELL_AMOUNT, params);
         assertFalse(result2.success);
@@ -603,19 +847,23 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
     // CEI cleanup: explicit struct zeroing and isValidSignature verification
     // -----------------------------------------------------------------------
 
-    /// @dev After a failed transfer, `delete _orders[orderId]` must zero ALL struct fields.
-    ///      Computes the actual orderId that was written during the effects phase and verifies
-    ///      every field is zeroed after the cleanup.
+    /// @dev Verifies `delete _orders[orderId]` zeros ALL struct fields after failed transfer.
     function test_WhenTokenTransferFails_AllStructFieldsZeroed() external {
         FailingTransferERC20 failToken = new FailingTransferERC20();
         failToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 10);
 
-        bytes memory params =
-            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
         paymentRails.initiateSwap(address(failToken), DEFAULT_SELL_AMOUNT, params);
 
-        // Compute the actual orderId that was written then deleted.
-        // msg.sender inside module.execute() is address(paymentRails) (MockPaymentRails calls execute).
+        // msg.sender inside module.execute() is address(paymentRails) via MockPaymentRails
         uint32 expectedValidTo = uint32(block.timestamp + DEFAULT_VALIDITY);
         bytes32 orderId = _computeTestOrderDigest(
             address(failToken),
@@ -636,14 +884,19 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
         assertFalse(meta.cancelled, "cancelled must be false after cleanup");
     }
 
-    /// @dev After a failed transfer, isValidSignature must return FAILURE for the exact orderId
-    ///      that was transiently written during the CEI effects phase then cleaned up.
     function test_WhenTokenTransferFails_IsValidSignatureReturnsFailureForCleanedUpOrderId() external {
         FailingTransferERC20 failToken = new FailingTransferERC20();
         failToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 10);
 
-        bytes memory params =
-            _buildParams(address(buyToken), DEFAULT_MIN_BUY_AMOUNT, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
+        bytes memory params = _buildParams(
+            address(buyToken),
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_VALIDITY,
+            DEFAULT_APP_DATA
+        );
         paymentRails.initiateSwap(address(failToken), DEFAULT_SELL_AMOUNT, params);
 
         uint32 expectedValidTo = uint32(block.timestamp + DEFAULT_VALIDITY);
@@ -657,7 +910,6 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
             DEFAULT_APP_DATA
         );
 
-        // isValidSignature for the exact cleaned-up orderId must return FAILURE
         assertEq(
             module.isValidSignature(orderId, abi.encode(orderId)),
             EIP1271_FAILURE,

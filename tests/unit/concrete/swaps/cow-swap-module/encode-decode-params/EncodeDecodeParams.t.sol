@@ -25,9 +25,24 @@ contract CowSwapModule_EncodeDecodeParams_Test is CowSwapModuleBase {
         assertEq(decoded.targetToken, address(buyToken));
     }
 
-    function test_WhenDecodingEncodedParams_DecodesMinBuyAmountCorrectly() external view {
+    function test_WhenDecodingEncodedParams_DecodesMaxSlippageBpsCorrectly() external view {
         DataTypes.CowSwapParams memory decoded = module.decodeParams(_buildDefaultParams());
-        assertEq(decoded.minBuyAmount, DEFAULT_MIN_BUY_AMOUNT);
+        assertEq(decoded.maxSlippageBps, DEFAULT_SLIPPAGE_BPS);
+    }
+
+    function test_WhenDecodingEncodedParams_DecodesSellTokenPriceFeedCorrectly() external view {
+        DataTypes.CowSwapParams memory decoded = module.decodeParams(_buildDefaultParams());
+        assertEq(decoded.sellTokenPriceFeed, address(sellFeed));
+    }
+
+    function test_WhenDecodingEncodedParams_DecodesBuyTokenPriceFeedCorrectly() external view {
+        DataTypes.CowSwapParams memory decoded = module.decodeParams(_buildDefaultParams());
+        assertEq(decoded.buyTokenPriceFeed, address(buyFeed));
+    }
+
+    function test_WhenDecodingEncodedParams_DecodesMaxStalenessCorrectly() external view {
+        DataTypes.CowSwapParams memory decoded = module.decodeParams(_buildDefaultParams());
+        assertEq(decoded.maxStaleness, DEFAULT_MAX_STALENESS);
     }
 
     function test_WhenDecodingEncodedParams_DecodesValidityDurationCorrectly() external view {
@@ -47,20 +62,29 @@ contract CowSwapModule_EncodeDecodeParams_Test is CowSwapModuleBase {
     function test_GivenRoundTripEncodeDecodeCycle_ReconstructsIdenticalParamsStruct() external view {
         DataTypes.CowSwapParams memory original = DataTypes.CowSwapParams({
             targetToken: address(buyToken),
-            minBuyAmount: DEFAULT_MIN_BUY_AMOUNT,
+            maxSlippageBps: DEFAULT_SLIPPAGE_BPS,
+            sellTokenPriceFeed: address(sellFeed),
+            buyTokenPriceFeed: address(buyFeed),
+            maxStaleness: DEFAULT_MAX_STALENESS,
             validityDuration: DEFAULT_VALIDITY,
             appData: DEFAULT_APP_DATA
         });
         DataTypes.CowSwapParams memory decoded = module.decodeParams(module.encodeParams(original));
         assertEq(decoded.targetToken, original.targetToken);
-        assertEq(decoded.minBuyAmount, original.minBuyAmount);
+        assertEq(decoded.maxSlippageBps, original.maxSlippageBps);
+        assertEq(decoded.sellTokenPriceFeed, original.sellTokenPriceFeed);
+        assertEq(decoded.buyTokenPriceFeed, original.buyTokenPriceFeed);
+        assertEq(decoded.maxStaleness, original.maxStaleness);
         assertEq(decoded.validityDuration, original.validityDuration);
         assertEq(decoded.appData, original.appData);
     }
 
     function testFuzz_RoundTrip(
         address targetToken,
-        uint256 minBuyAmount,
+        uint16 maxSlippageBps,
+        address _sellFeed,
+        address _buyFeed,
+        uint256 maxStaleness,
         uint32 validity,
         bytes32 appData
     )
@@ -68,11 +92,20 @@ contract CowSwapModule_EncodeDecodeParams_Test is CowSwapModuleBase {
         view
     {
         DataTypes.CowSwapParams memory original = DataTypes.CowSwapParams({
-            targetToken: targetToken, minBuyAmount: minBuyAmount, validityDuration: validity, appData: appData
+            targetToken: targetToken,
+            maxSlippageBps: maxSlippageBps,
+            sellTokenPriceFeed: _sellFeed,
+            buyTokenPriceFeed: _buyFeed,
+            maxStaleness: maxStaleness,
+            validityDuration: validity,
+            appData: appData
         });
         DataTypes.CowSwapParams memory decoded = module.decodeParams(module.encodeParams(original));
         assertEq(decoded.targetToken, original.targetToken);
-        assertEq(decoded.minBuyAmount, original.minBuyAmount);
+        assertEq(decoded.maxSlippageBps, original.maxSlippageBps);
+        assertEq(decoded.sellTokenPriceFeed, original.sellTokenPriceFeed);
+        assertEq(decoded.buyTokenPriceFeed, original.buyTokenPriceFeed);
+        assertEq(decoded.maxStaleness, original.maxStaleness);
         assertEq(decoded.validityDuration, original.validityDuration);
         assertEq(decoded.appData, original.appData);
     }
