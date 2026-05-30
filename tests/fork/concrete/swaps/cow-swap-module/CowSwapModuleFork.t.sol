@@ -102,8 +102,8 @@ abstract contract CowSwapModuleForkBase is Test {
         realDomainSeparator = IGPv2Settlement(GPV2_SETTLEMENT).domainSeparator();
 
         vm.startPrank(owner);
-        module = new CowSwapModule(GPV2_SETTLEMENT, owner);
         paymentRails = new PaymentRails(owner);
+        module = new CowSwapModule(GPV2_SETTLEMENT, owner, address(paymentRails));
         vm.stopPrank();
 
         deal(USDC, address(paymentRails), USDC_SELL_AMOUNT * 10);
@@ -1423,8 +1423,8 @@ contract CowSwapModuleForkSecurityTest is CowSwapModuleForkBase {
         assertEq(module.isValidSignature(_orderId, abi.encode(_orderId)), EIP1271_MAGIC);
     }
 
-    /// @dev receiver=msg.sender in EIP-712 digest ensures different callers produce different orderIds.
-    function test_Security_DifferentPaymentRails_ProduceDifferentOrderIds() external {
+    /// @dev M-02 fix: only the authorized paymentRails can call execute(). Other callers get _failedResult.
+    function test_Security_UnauthorizedPaymentRails_ExecuteBlocked() external {
         vm.prank(owner);
         PaymentRails paymentRails2 = new PaymentRails(owner);
         deal(USDC, address(paymentRails2), USDC_SELL_AMOUNT * 10);
@@ -1432,21 +1432,22 @@ contract CowSwapModuleForkSecurityTest is CowSwapModuleForkBase {
         bytes memory params =
             _buildParams(WETH, USDC_USD_FEED, ETH_USD_FEED, SLIPPAGE_BPS, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
+        // Authorized paymentRails succeeds
         vm.startPrank(address(paymentRails));
         IERC20(USDC).approve(address(module), USDC_SELL_AMOUNT);
         DataTypes.ExecutionResult memory result1 = module.execute(USDC, USDC_SELL_AMOUNT, params);
         vm.stopPrank();
 
+        assertTrue(result1.success, "authorized paymentRails must succeed");
+
+        // Unauthorized paymentRails is blocked
         vm.startPrank(address(paymentRails2));
         IERC20(USDC).approve(address(module), USDC_SELL_AMOUNT);
         DataTypes.ExecutionResult memory result2 = module.execute(USDC, USDC_SELL_AMOUNT, params);
         vm.stopPrank();
 
-        bytes32 orderId1 = abi.decode(result1.data, (bytes32));
-        bytes32 orderId2 = abi.decode(result2.data, (bytes32));
-
-        assertTrue(orderId1 != orderId2, "Orders from different nodes must have different orderIds");
-        assertEq(module.isValidSignature(orderId1, abi.encode(orderId1)), EIP1271_MAGIC);
-        assertEq(module.isValidSignature(orderId2, abi.encode(orderId2)), EIP1271_MAGIC);
+        assertFalse(result2.success, "unauthorized paymentRails must fail");
+        assertEq(result2.failureReason, "Caller is not authorized PaymentRails");
+        assertEq(IERC20(USDC).balanceOf(address(module)), USDC_SELL_AMOUNT, "only authorized order tokens in module");
     }
 }

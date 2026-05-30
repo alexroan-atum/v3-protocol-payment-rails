@@ -15,28 +15,36 @@ contract CowSwapModule_Constructor_Test is CowSwapModuleBase {
 
     function test_RevertWhen_CowSettlementIsZeroAddress() external {
         vm.expectRevert(Errors.CowSwapModule_ZeroCowSettlement.selector);
-        new CowSwapModule(address(0), address(this));
+        new CowSwapModule(address(0), address(this), address(paymentRails));
     }
 
     function test_RevertWhen_OwnerIsZeroAddress() external {
-        // OZ Ownable rejects address(0) before our constructor body with OwnableInvalidOwner
         vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableInvalidOwner.selector, address(0)));
-        new CowSwapModule(address(cowSettlement), address(0));
+        new CowSwapModule(address(cowSettlement), address(0), address(paymentRails));
+    }
+
+    function test_RevertWhen_PaymentRailsIsZeroAddress() external {
+        vm.expectRevert(Errors.CowSwapModule_ZeroPaymentRails.selector);
+        new CowSwapModule(address(cowSettlement), address(this), address(0));
     }
 
     // -----------------------------------------------------------------------
-    // when cow settlement is valid
+    // when all parameters are valid
     // -----------------------------------------------------------------------
 
-    function test_WhenCowSettlementIsValid_StoresCowSettlement() external view {
+    function test_WhenAllParamsValid_StoresCowSettlement() external view {
         assertEq(module.cowSettlement(), address(cowSettlement));
     }
 
-    function test_WhenCowSettlementIsValid_CachesCowDomainSeparator() external view {
+    function test_WhenAllParamsValid_CachesCowDomainSeparator() external view {
         assertEq(module.cowDomainSeparator(), DOMAIN_SEPARATOR);
     }
 
-    function test_WhenOwnerIsValid_SetsOwner() external view {
+    function test_WhenAllParamsValid_SetsOwner() external view {
         assertEq(module.owner(), address(this));
+    }
+
+    function test_WhenAllParamsValid_StoresPaymentRails() external view {
+        assertEq(module.paymentRails(), address(paymentRails));
     }
 }

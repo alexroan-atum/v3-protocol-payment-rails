@@ -8,7 +8,8 @@ import { DataTypes } from "../types/DataTypes.sol";
 /// @author Credit Cooperative
 /// @notice Interface for the async CowSwap order-book swap module.
 /// @dev Direct-receiver design: buyToken flows from solver directly to PaymentRails (never staged).
-/// Each PaymentRails MUST deploy its own private instance. Fee-on-transfer tokens are NOT supported.
+/// Each PaymentRails deploys its own instance; `execute()` is restricted to the immutable `paymentRails`.
+/// Fee-on-transfer tokens are NOT supported.
 interface ICowSwapModule is IActionModule {
     /*//////////////////////////////////////////////////////////////////////////
                                     EVENTS
@@ -33,9 +34,14 @@ interface ICowSwapModule is IActionModule {
                             NON-CONSTANT FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Cancels a pending order and returns the locked sellToken to the PaymentRails.
-    /// @dev Owner-only. Blocked if already filled or cancelled. Returns at most `meta.sellAmount`
-    /// to protect concurrent orders. Post-expiry slot liberation makes cancel a harmless no-op.
+    /// @notice Cancels a pending order and returns locked sellToken to PaymentRails.
+    /// @dev Owner-only. Blocked if filled or cancelled. Returns at most `meta.sellAmount`.
+    ///
+    /// Post-expiry edge cases (non-exploitable):
+    /// - Filled order whose `filledAmount` slot was liberated by solvers: cancel succeeds
+    ///   but returnAmount is 0 (solver already pulled tokens). No financial impact.
+    /// - Concurrent same-token orders: cancel may return another order's tokens to the
+    ///   same PaymentRails. Internal accounting issue only — `execute()` restricts callers.
     function cancelOrder(bytes32 orderId) external;
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -49,6 +55,10 @@ interface ICowSwapModule is IActionModule {
     /// @dev Returns MAGIC iff signature is 32-byte orderId matching hash, order is pending, not expired, and not
     /// filled. Must never revert (EIP-1271 requirement).
     function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4 magicValue);
+
+    /// @notice The authorized PaymentRails — only caller allowed to invoke `execute()`.
+    /// @dev Set once at construction. Enforces one-module-per-PaymentRails.
+    function paymentRails() external view returns (address);
 
     /// @notice Address of the CowSwap GPv2Settlement contract (immutable).
     function cowSettlement() external view returns (address);

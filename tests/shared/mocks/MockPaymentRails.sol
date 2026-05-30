@@ -6,10 +6,11 @@ import { DataTypes } from "../../../src/types/DataTypes.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @dev Simulates a PaymentRails: holds tokens, approves module, and forwards execute() calls.
+/// Deploy first, then pass its address to CowSwapModule constructor, then call setModule().
 contract MockPaymentRails {
-    CowSwapModule public immutable module;
+    CowSwapModule public module;
 
-    constructor(address _module) {
+    function setModule(address _module) external {
         module = CowSwapModule(_module);
     }
 

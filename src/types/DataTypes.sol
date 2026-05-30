@@ -76,7 +76,7 @@ library DataTypes {
 
     /// @notice On-chain metadata stored per CowSwap order, keyed by orderId (GPv2Order digest).
     /// @dev validTo stored directly to avoid uint32 recomputation overflow.
-    /// SETTLED state is derived live from GPv2Settlement.filledAmounts().
+    /// SETTLED state is derived live from GPv2Settlement.filledAmount().
     struct CowOrderMetadata {
         address paymentRails;
         address sellToken;

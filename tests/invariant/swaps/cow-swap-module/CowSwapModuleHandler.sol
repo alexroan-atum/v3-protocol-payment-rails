@@ -10,11 +10,12 @@ import { MockERC20 } from "../../../shared/mocks/MockERC20.sol";
 import { MockCowSettlement } from "../../../shared/mocks/MockCowSettlement.sol";
 import { MockChainlinkAggregator } from "../../../shared/mocks/MockChainlinkAggregator.sol";
 
-/// @dev Minimal PaymentRails proxy — holds sell tokens and delegates to module
+/// @dev Minimal PaymentRails proxy — holds sell tokens and delegates to module.
+/// Deploy first, pass address to CowSwapModule constructor, then call setModule().
 contract PaymentRailsProxy is Test {
-    CowSwapModule public immutable module;
+    CowSwapModule public module;
 
-    constructor(address _module) {
+    function setModule(address _module) external {
         module = CowSwapModule(_module);
     }
 

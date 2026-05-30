@@ -166,6 +166,11 @@ contract CowSwapSmoke is Script {
         require(module.cowSettlement() != address(0), "Module cowSettlement is zero");
         console2.log("[OK] Module cowSettlement:", module.cowSettlement());
 
+        require(
+            module.paymentRails() == address(paymentRails), "Module paymentRails does not match PAYMENT_RAILS_ADDRESS"
+        );
+        console2.log("[OK] Module paymentRails:", module.paymentRails());
+
         if (!cfg.skipConfigure) {
             address paymentRailsOwner = paymentRails.owner();
             require(paymentRailsOwner == deployer, "Deployer is not PaymentRails owner - cannot configure");

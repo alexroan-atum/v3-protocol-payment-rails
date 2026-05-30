@@ -59,6 +59,9 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
     /// @inheritdoc ICowSwapModule
     bytes32 public immutable override cowDomainSeparator;
 
+    /// @inheritdoc ICowSwapModule
+    address public immutable override paymentRails;
+
     /*//////////////////////////////////////////////////////////////////////////
                                 MUTABLE STATE
     //////////////////////////////////////////////////////////////////////////*/
@@ -70,13 +73,14 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
                                     CONSTRUCTOR
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @dev Reverts with {Errors.CowSwapModule_ZeroCowSettlement} if `_cowSettlement` is zero.
-    constructor(address _cowSettlement, address _owner) Ownable(_owner) {
+    constructor(address _cowSettlement, address _owner, address _paymentRails) Ownable(_owner) {
         if (_cowSettlement == address(0)) revert Errors.CowSwapModule_ZeroCowSettlement();
+        if (_paymentRails == address(0)) revert Errors.CowSwapModule_ZeroPaymentRails();
 
         cowSettlement = _cowSettlement;
         cowDomainSeparator = IGPv2Settlement(_cowSettlement).domainSeparator();
         vaultRelayer = IGPv2Settlement(_cowSettlement).vaultRelayer();
+        paymentRails = _paymentRails;
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -103,6 +107,10 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
         nonReentrant
         returns (DataTypes.ExecutionResult memory result)
     {
+        if (msg.sender != paymentRails) {
+            return _failedResult(token, "Caller is not authorized PaymentRails");
+        }
+
         DataTypes.CowSwapParams memory swapParams;
         uint32 validTo;
         uint256 oracleFloor;
@@ -171,12 +179,10 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
         }
 
         address sellToken = meta.sellToken;
-        address paymentRails = meta.paymentRails;
         uint256 sellAmount = meta.sellAmount;
 
         meta.cancelled = true;
 
-        // Cap return at this order's sellAmount to protect concurrent orders sharing the same token.
         uint256 sellBalance = IERC20(sellToken).balanceOf(address(this));
         uint256 returnAmount = sellBalance < sellAmount ? sellBalance : sellAmount;
         if (returnAmount > 0) {
@@ -470,7 +476,7 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
     function _computeOrderDigest(
         address sellToken,
         address buyToken,
-        address paymentRails,
+        address receiver,
         uint256 sellAmount,
         uint256 buyAmount,
         uint32 validTo,
@@ -485,7 +491,7 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
                 ORDER_TYPE_HASH,
                 sellToken,
                 buyToken,
-                paymentRails,
+                receiver,
                 sellAmount,
                 buyAmount,
                 validTo,

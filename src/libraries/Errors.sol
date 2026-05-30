@@ -79,6 +79,9 @@ library Errors {
     /// @notice Thrown when the CowSwap GPv2Settlement address is the zero address
     error CowSwapModule_ZeroCowSettlement();
 
+    /// @notice Thrown when the PaymentRails address is the zero address in the constructor
+    error CowSwapModule_ZeroPaymentRails();
+
     /// @notice Thrown when attempting to act on an orderId that was never created
     /// @param orderId The unknown order digest
     error CowSwapModule_UnknownOrder(bytes32 orderId);
@@ -88,7 +91,7 @@ library Errors {
     error CowSwapModule_OrderAlreadyCancelled(bytes32 orderId);
 
     /// @notice Thrown when cancelOrder is called on an order already filled by a CowSwap solver
-    /// @dev Verified via GPv2Settlement.filledAmounts(orderId) >= meta.sellAmount
+    /// @dev Verified via GPv2Settlement.filledAmount(orderUid) >= meta.sellAmount
     /// @param orderId The order digest
     error CowSwapModule_OrderAlreadyFilled(bytes32 orderId);
 

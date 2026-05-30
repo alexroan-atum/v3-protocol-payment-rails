@@ -1,4 +1,7 @@
 CowSwapModule_Execute
+├── when caller is not authorized payment rails
+│   ├── it should return failed result with caller is not authorized PaymentRails reason
+│   └── it should not transfer any tokens
 ├── when params are malformed
 │   ├── it should return failed result with invalid params encoding reason
 │   ├── it should not create an order
@@ -52,9 +55,8 @@ CowSwapModule_Execute
 │   ├── it should succeed but module receives less than recorded sellAmount
 │   └── it should prevent solver from pulling full sellAmount
 ├── when concurrent orders share the same sell token
-│   ├── it should use accumulated approval after second order
-│   ├── it should preserve second order approval after first order is mark filled
-│   └── it should preserve second order approval after first order is cancelled
+│   ├── it should use max approval after second order
+│   └── it should preserve max approval after first order is cancelled
 └── when all parameters are valid
     ├── it should transfer sell token from paymentRails to module
     ├── it should approve vault relayer for max amount

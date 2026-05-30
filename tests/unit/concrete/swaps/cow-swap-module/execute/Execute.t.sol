@@ -14,6 +14,35 @@ import {
 /// @dev Tree: tests/unit/concrete/cow-swap-module/execute/execute.tree
 contract CowSwapModule_Execute_Test is CowSwapModuleBase {
     // -----------------------------------------------------------------------
+    // when caller is not authorized payment rails
+    // -----------------------------------------------------------------------
+
+    function test_WhenCallerIsNotAuthorizedPaymentRails_ReturnsFailedResult() external {
+        sellToken.mint(attacker, DEFAULT_SELL_AMOUNT);
+
+        vm.startPrank(attacker);
+        sellToken.approve(address(module), DEFAULT_SELL_AMOUNT);
+        DataTypes.ExecutionResult memory result =
+            module.execute(address(sellToken), DEFAULT_SELL_AMOUNT, _buildDefaultParams());
+        vm.stopPrank();
+
+        assertFalse(result.success);
+        assertEq(result.failureReason, "Caller is not authorized PaymentRails");
+    }
+
+    function test_WhenCallerIsNotAuthorizedPaymentRails_DoesNotTransferTokens() external {
+        sellToken.mint(attacker, DEFAULT_SELL_AMOUNT);
+
+        vm.startPrank(attacker);
+        sellToken.approve(address(module), DEFAULT_SELL_AMOUNT);
+        module.execute(address(sellToken), DEFAULT_SELL_AMOUNT, _buildDefaultParams());
+        vm.stopPrank();
+
+        assertEq(sellToken.balanceOf(address(module)), 0);
+        assertEq(sellToken.balanceOf(attacker), DEFAULT_SELL_AMOUNT);
+    }
+
+    // -----------------------------------------------------------------------
     // when amount is zero
     // -----------------------------------------------------------------------
 

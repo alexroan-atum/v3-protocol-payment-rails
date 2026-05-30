@@ -73,14 +73,16 @@ contract CowSwapDryRun is Script, StdCheats {
         vm.startBroadcast(deployerKey);
 
         // --- DEPLOY ---
-        CowSwapModule module = new CowSwapModule(GPV2_SETTLEMENT, deployer);
+        // PaymentRails first — CowSwapModule needs its address at construction.
+        PaymentRails paymentRails = new PaymentRails(deployer);
+        console2.log("[DEPLOYED] PaymentRails:          ", address(paymentRails));
+
+        CowSwapModule module = new CowSwapModule(GPV2_SETTLEMENT, deployer, address(paymentRails));
         console2.log("");
         console2.log("[DEPLOYED] CowSwapModule:", address(module));
         console2.log("  cowSettlement:    ", module.cowSettlement());
+        console2.log("  paymentRails:     ", module.paymentRails());
         console2.log("  domainSeparator: ", vm.toString(module.cowDomainSeparator()));
-
-        PaymentRails paymentRails = new PaymentRails(deployer);
-        console2.log("[DEPLOYED] PaymentRails:          ", address(paymentRails));
 
         // --- CONFIGURE ---
         bytes memory moduleParams = module.encodeParams(
