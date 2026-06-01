@@ -78,7 +78,7 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, ReentrancyGuard {
             _validate(token, amount, params);
         if (!valid) return _failedResult(token, reason);
 
-        (bool ok, uint256 actualIn, uint256 amountOut) = _executeSwap(token, amount, cfg, oracleFloor);
+        (bool ok, uint256 amountOut) = _executeSwap(token, amount, cfg, oracleFloor);
 
         _returnLeftover(token, msg.sender);
 
@@ -87,7 +87,7 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, ReentrancyGuard {
             revert Errors.DexSwapModule_InsufficientOutput(amountOut, oracleFloor);
         }
 
-        emit SwapExecuted(msg.sender, token, cfg.targetToken, actualIn, amountOut);
+        emit SwapExecuted(msg.sender, token, cfg.targetToken, amount, amountOut);
 
         return _successResult(amountOut, cfg.targetToken, "");
     }
@@ -322,8 +322,7 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, ReentrancyGuard {
         }
     }
 
-    /// @dev Pulls sellToken, builds exactInputSingle calldata with oracle floor as amountOutMinimum,
-    /// calls the immutable router, measures output via balance diff, forwards to msg.sender.
+    /// @dev Pulls sellToken, calls the immutable router, measures output via balance diff, forwards to msg.sender.
     function _executeSwap(
         address token,
         uint256 amount,
@@ -331,13 +330,11 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, ReentrancyGuard {
         uint256 oracleFloor
     )
         private
-        returns (bool ok, uint256 actualIn, uint256 amountOut)
+        returns (bool ok, uint256 amountOut)
     {
-        uint256 sellBefore = IERC20(token).balanceOf(address(this));
         IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
-        actualIn = IERC20(token).balanceOf(address(this)) - sellBefore;
 
-        IERC20(token).forceApprove(router, actualIn);
+        IERC20(token).forceApprove(router, amount);
 
         uint256 buyTokenBefore = IERC20(cfg.targetToken).balanceOf(address(this));
 
@@ -349,7 +346,7 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, ReentrancyGuard {
                     fee: cfg.fee,
                     recipient: address(this),
                     deadline: block.timestamp + cfg.swapDeadlineSeconds,
-                    amountIn: actualIn,
+                    amountIn: amount,
                     amountOutMinimum: oracleFloor,
                     sqrtPriceLimitX96: 0
                 }))
@@ -359,10 +356,10 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, ReentrancyGuard {
 
         IERC20(token).forceApprove(router, 0);
 
-        if (!ok) return (false, actualIn, 0);
+        if (!ok) return (false, 0);
 
         uint256 buyTokenAfter = IERC20(cfg.targetToken).balanceOf(address(this));
-        if (buyTokenAfter < buyTokenBefore) return (false, actualIn, 0);
+        if (buyTokenAfter < buyTokenBefore) return (false, 0);
         amountOut = buyTokenAfter - buyTokenBefore;
 
         if (amountOut > 0) {

@@ -8,7 +8,6 @@ import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { MockERC20 } from "../../../../shared/mocks/MockERC20.sol";
 import { FailingTransferERC20 } from "../../../../shared/mocks/FailingTransferERC20.sol";
 import { RevertingTransferERC20 } from "../../../../shared/mocks/RevertingTransferERC20.sol";
-import { FeeOnTransferERC20 } from "../../../../shared/mocks/FeeOnTransferERC20.sol";
 import { MockRouter } from "../../../../shared/mocks/MockRouter.sol";
 import { MockDexSwapPaymentRails } from "../../../../shared/mocks/MockDexSwapPaymentRails.sol";
 import { MockChainlinkAggregator } from "../../../../shared/mocks/MockChainlinkAggregator.sol";
@@ -53,7 +52,6 @@ abstract contract DexSwapModuleBase is Test {
     MockERC20 internal buyToken;
     FailingTransferERC20 internal failingToken;
     RevertingTransferERC20 internal revertingToken;
-    FeeOnTransferERC20 internal feeToken;
     MockChainlinkAggregator internal sellFeed;
     MockChainlinkAggregator internal buyFeed;
 
@@ -72,8 +70,6 @@ abstract contract DexSwapModuleBase is Test {
         buyToken = new MockERC20("Buy Token", "BUY");
         failingToken = new FailingTransferERC20();
         revertingToken = new RevertingTransferERC20();
-        feeToken = new FeeOnTransferERC20();
-
         sellFeed = new MockChainlinkAggregator(SELL_PRICE, FEED_DECIMALS);
         buyFeed = new MockChainlinkAggregator(BUY_PRICE, FEED_DECIMALS);
 
@@ -81,8 +77,6 @@ abstract contract DexSwapModuleBase is Test {
         buyToken.mint(address(router), DEFAULT_BUY_AMOUNT * 100);
         failingToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 100);
         revertingToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 100);
-        feeToken.mint(address(paymentRails), DEFAULT_SELL_AMOUNT * 100);
-
         router.setOutputAmount(DEFAULT_BUY_AMOUNT);
 
         vm.label(address(module), "DexSwapModule");

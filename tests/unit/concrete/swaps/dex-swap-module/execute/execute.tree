@@ -31,8 +31,6 @@ DexSwapModule::execute
 │   └── it should not transfer sell tokens (atomic rollback)
 ├── when router sends no buy tokens
 │   └── it should revert atomically
-├── when fee-on-transfer sell token
-│   └── it should use balance-diff for actual received amount
 ├── when router partially consumes sell token
 │   ├── it should succeed if output meets oracle floor
 │   └── it should return unconsumed sell tokens to caller

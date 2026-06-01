@@ -34,7 +34,8 @@ import { DataTypes } from "../types/DataTypes.sol";
 ///     prices as `oracleExpected * (10000 - maxSlippageBps) / 10000`. Oracle feeds are mandatory.
 ///   - **Balance-diff verification**: Output is measured as the module's targetToken balance
 ///     change — the module never trusts router return values.
-///   - **Fee-on-transfer support**: Sell-side pull uses balance-diff for actual received amount.
+///   - **Fee-on-transfer tokens not supported**: Failed router calls return sell tokens via
+///     a second transfer, doubling FOT fee deductions. Only standard ERC-20 tokens should be configured.
 ///   - **No residual state**: Module holds no tokens between executions.
 ///
 /// Deployment model: a single instance may be shared across multiple PaymentRails.
@@ -48,7 +49,7 @@ interface IDexSwapModule is IActionModule {
     /// @param paymentRails PaymentRails that initiated the swap.
     /// @param sellToken    Input token sold.
     /// @param buyToken     Output token received by the PaymentRails.
-    /// @param amountIn     Actual sell amount after fee-on-transfer deduction.
+    /// @param amountIn     Sell amount sent to the router.
     /// @param amountOut    Actual buy amount received (verified via balance diff).
     event SwapExecuted(
         address indexed paymentRails, address indexed sellToken, address buyToken, uint256 amountIn, uint256 amountOut

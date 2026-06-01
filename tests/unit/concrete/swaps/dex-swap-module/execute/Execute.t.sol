@@ -247,24 +247,6 @@ contract DexSwapModule_Execute_Test is DexSwapModuleBase {
     }
 
     /*//////////////////////////////////////////////////////////////////////////
-                    FEE-ON-TRANSFER TOKEN TESTS
-    //////////////////////////////////////////////////////////////////////////*/
-
-    function test_FeeOnTransferSellToken_UsesBalanceDiff() external {
-        uint256 feeTokenAmount = 10_000e18;
-        feeToken.mint(address(paymentRails), feeTokenAmount);
-
-        uint256 oracleFloor = _computeOracleFloor(feeTokenAmount);
-        buyToken.mint(address(router), oracleFloor);
-        router.setOutputAmount(oracleFloor);
-
-        bytes memory params = _buildParams(address(buyToken));
-
-        DataTypes.ExecutionResult memory result = paymentRails.executeSwap(address(feeToken), feeTokenAmount, params);
-        assertTrue(result.success, "fee-on-transfer swap should succeed");
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
                     PARTIAL FILL TESTS
     //////////////////////////////////////////////////////////////////////////*/
 
