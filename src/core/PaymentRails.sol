@@ -169,7 +169,7 @@ contract PaymentRails is IPaymentRails, Ownable2Step, ReentrancyGuard {
     }
 
     /// @inheritdoc IPaymentRails
-    /// @dev Emits an {ActionExecuted} event on successful execution.
+    /// @dev Emits {ActionExecuted} on success, {ActionFailed} on failure.
     function executeAction(address token, uint256 amount) external nonReentrant returns (bool success) {
         DataTypes.TokenConfig memory config = _tokenConfigs[token];
 
@@ -202,10 +202,12 @@ contract PaymentRails is IPaymentRails, Ownable2Step, ReentrancyGuard {
                 return true;
             } else {
                 IERC20(token).forceApprove(config.actionModule, 0);
+                emit ActionFailed(token, config.actionType, amount, result.failureReason, msg.sender);
                 return false;
             }
         } catch {
             IERC20(token).forceApprove(config.actionModule, 0);
+            emit ActionFailed(token, config.actionType, amount, "Module execution reverted", msg.sender);
             return false;
         }
     }

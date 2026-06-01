@@ -44,6 +44,20 @@ interface IPaymentRails {
         address indexed executor
     );
 
+    /// @notice Emitted when a module execution fails without reverting the transaction.
+    ///
+    /// @dev Covers both soft failures (module returns success=false) and hard reverts (module call
+    /// reverts).
+    ///
+    /// @param token The input token address
+    /// @param actionType The action type that was attempted
+    /// @param amount The input amount that was attempted
+    /// @param reason The module's failure reason, or a generic message on revert
+    /// @param executor The address that called executeAction()
+    event ActionFailed(
+        address indexed token, string actionType, uint256 amount, string reason, address indexed executor
+    );
+
     /*//////////////////////////////////////////////////////////////////////////
                                   CONFIGURATION
     //////////////////////////////////////////////////////////////////////////*/
@@ -84,14 +98,15 @@ interface IPaymentRails {
 
     /// @notice Execute the configured action for a token.
     /// @dev Permissionless. Validates preconditions, approves the module for `amount`, calls
-    /// {IActionModule.execute}, and emits {ActionExecuted} on success. Revokes approval on failure.
+    /// {IActionModule.execute}, and emits {ActionExecuted} on success or {ActionFailed} on failure.
+    /// Revokes approval on all paths.
     ///
     /// All execution parameters come from the owner-configured `moduleParams` — the caller supplies
     /// only `(token, amount)`. This eliminates caller-controlled attack surfaces at the architecture
     /// level.
     ///
     /// Notes:
-    /// - The executor's address (`msg.sender`) is recorded in the {ActionExecuted} event.
+    /// - The executor's address (`msg.sender`) is recorded in both {ActionExecuted} and {ActionFailed}.
     /// - Module execution failures return `false` instead of reverting.
     ///
     /// Requirements:
