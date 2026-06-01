@@ -49,6 +49,14 @@ CowSwapModule_Execute
 │   └── it should leave module state clean after blocked reentry
 ├── when sell token reenters cancelOrder during execute transferFrom
 │   └── it should revert the reentrant cancelOrder (shared ReentrancyGuard lock)
+├── when L2 sequencer is down
+│   └── it should return failed result with oracle price unavailable
+├── when L2 sequencer is in grace period
+│   └── it should return failed result with oracle price unavailable
+├── when L2 sequencer is up past grace period
+│   └── it should succeed
+├── when L2 sequencer feed reverts
+│   └── it should return failed result with oracle price unavailable
 ├── when no-return sell token (e.g. USDT)
 │   └── it should succeed and store order metadata
 ├── when fee-on-transfer sell token

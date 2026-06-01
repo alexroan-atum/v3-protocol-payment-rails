@@ -103,10 +103,10 @@ contract CowSwapModuleIntegrationTest is Test {
         vm.prank(owner);
         realPaymentRails = new PaymentRails(owner);
 
-        module = new CowSwapModule(address(cowSettlement), address(this), address(mockPaymentRails));
+        module = new CowSwapModule(address(cowSettlement), address(this), address(mockPaymentRails), address(0), 0);
         mockPaymentRails.setModule(address(module));
 
-        realModule = new CowSwapModule(address(cowSettlement), address(this), address(realPaymentRails));
+        realModule = new CowSwapModule(address(cowSettlement), address(this), address(realPaymentRails), address(0), 0);
 
         sellToken = new MockERC20("USDC", "USDC");
         buyToken = new MockERC20("WETH", "WETH");

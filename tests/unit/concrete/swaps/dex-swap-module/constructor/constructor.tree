@@ -5,4 +5,6 @@ DexSwapModule::constructor
 │   └── it should revert with DexSwapModule_RouterNotContract
 └── when router is a valid contract
     ├── it should set the immutable router address
+    ├── it should store sequencerUptimeFeed as immutable
+    ├── it should store sequencerGracePeriod as immutable
     └── it should return "SWAP" from moduleType()

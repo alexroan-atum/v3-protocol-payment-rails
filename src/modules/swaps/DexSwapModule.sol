@@ -38,15 +38,25 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, ReentrancyGuard {
     /// @inheritdoc IDexSwapModule
     address public immutable override router;
 
+    /// @inheritdoc IDexSwapModule
+    address public immutable override sequencerUptimeFeed;
+
+    /// @inheritdoc IDexSwapModule
+    uint256 public immutable override sequencerGracePeriod;
+
     /*//////////////////////////////////////////////////////////////////////////
                                   CONSTRUCTOR
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @param _router Uniswap V3 SwapRouter address. Must be a contract. Immutable after deployment.
-    constructor(address _router) {
+    /// @param _router Uniswap V3 SwapRouter address (must be a contract).
+    /// @param _sequencerUptimeFeed Chainlink L2 sequencer uptime feed; address(0) on L1.
+    /// @param _sequencerGracePeriod Seconds after sequencer recovery before trusting oracles.
+    constructor(address _router, address _sequencerUptimeFeed, uint256 _sequencerGracePeriod) {
         if (_router == address(0)) revert Errors.DexSwapModule_ZeroRouter();
         if (_router.code.length == 0) revert Errors.DexSwapModule_RouterNotContract(_router);
         router = _router;
+        sequencerUptimeFeed = _sequencerUptimeFeed;
+        sequencerGracePeriod = _sequencerGracePeriod;
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -203,7 +213,7 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, ReentrancyGuard {
         return (true, "", cfg);
     }
 
-    /// @dev Reads a Chainlink price feed and validates freshness, positivity, and magnitude.
+    /// @dev Validates Chainlink price feed; checks L2 sequencer uptime when configured.
     function _getOraclePrice(
         address feed,
         uint256 maxStaleness
@@ -212,6 +222,18 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, ReentrancyGuard {
         view
         returns (bool ok, uint256 price, uint8 feedDecimals)
     {
+        if (sequencerUptimeFeed != address(0)) {
+            try IChainlinkAggregatorV3(sequencerUptimeFeed).latestRoundData() returns (
+                uint80, int256 answer, uint256, uint256 startedAt, uint80
+            ) {
+                // answer == 0 → sequencer is up; answer == 1 → sequencer is down
+                if (answer != 0) return (false, 0, 0);
+                if (block.timestamp - startedAt < sequencerGracePeriod) return (false, 0, 0);
+            } catch {
+                return (false, 0, 0);
+            }
+        }
+
         try IChainlinkAggregatorV3(feed).latestRoundData() returns (
             uint80, int256 answer, uint256, uint256 updatedAt, uint80
         ) {

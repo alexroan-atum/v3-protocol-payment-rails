@@ -65,7 +65,7 @@ abstract contract DexSwapModuleBase is Test {
         vm.warp(1_700_000_000);
 
         router = new MockRouter();
-        module = new DexSwapModule(address(router));
+        module = new DexSwapModule(address(router), address(0), 0);
         paymentRails = new MockDexSwapPaymentRails(address(module));
 
         sellToken = new MockERC20("Sell Token", "SELL");

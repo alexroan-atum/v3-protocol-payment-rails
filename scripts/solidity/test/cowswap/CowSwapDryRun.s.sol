@@ -77,7 +77,7 @@ contract CowSwapDryRun is Script, StdCheats {
         PaymentRails paymentRails = new PaymentRails(deployer);
         console2.log("[DEPLOYED] PaymentRails:          ", address(paymentRails));
 
-        CowSwapModule module = new CowSwapModule(GPV2_SETTLEMENT, deployer, address(paymentRails));
+        CowSwapModule module = new CowSwapModule(GPV2_SETTLEMENT, deployer, address(paymentRails), address(0), 0);
         console2.log("");
         console2.log("[DEPLOYED] CowSwapModule:", address(module));
         console2.log("  cowSettlement:    ", module.cowSettlement());

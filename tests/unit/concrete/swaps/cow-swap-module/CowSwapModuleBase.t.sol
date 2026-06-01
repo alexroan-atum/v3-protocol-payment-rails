@@ -86,7 +86,7 @@ abstract contract CowSwapModuleBase is Test {
         address vaultRelayerAddr = makeAddr("vaultRelayer");
         cowSettlement = new MockCowSettlement(DOMAIN_SEPARATOR, vaultRelayerAddr);
         paymentRails = new MockPaymentRails();
-        module = new CowSwapModule(address(cowSettlement), address(this), address(paymentRails));
+        module = new CowSwapModule(address(cowSettlement), address(this), address(paymentRails), address(0), 0);
         paymentRails.setModule(address(module));
         sellToken = new MockERC20("USDC", "USDC");
         buyToken = new MockERC20("WETH", "WETH");

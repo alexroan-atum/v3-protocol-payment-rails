@@ -62,6 +62,12 @@ interface IDexSwapModule is IActionModule {
     /// @return The router contract address set at construction.
     function router() external view returns (address);
 
+    /// @notice Chainlink L2 sequencer uptime feed; address(0) on L1.
+    function sequencerUptimeFeed() external view returns (address);
+
+    /// @notice Seconds after sequencer recovery before trusting oracles.
+    function sequencerGracePeriod() external view returns (uint256);
+
     /// @notice ABI-encodes a {DexSwapParams} struct into bytes for `PaymentRails.configureToken()`.
     /// @param params Typed struct.
     /// @return encoded ABI-encoded bytes.

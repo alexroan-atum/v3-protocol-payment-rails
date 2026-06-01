@@ -2,7 +2,10 @@
 pragma solidity ^0.8.29;
 
 import { CowSwapModuleBase } from "../CowSwapModuleBase.t.sol";
+import { CowSwapModule } from "../../../../../../src/modules/swaps/CowSwapModule.sol";
 import { DataTypes } from "../../../../../../src/types/DataTypes.sol";
+import { MockChainlinkAggregator } from "../../../../../shared/mocks/MockChainlinkAggregator.sol";
+import { MockPaymentRails } from "../../../../../shared/mocks/MockPaymentRails.sol";
 import { FailingTransferERC20 } from "../../../../../shared/mocks/FailingTransferERC20.sol";
 import { RevertingTransferERC20 } from "../../../../../shared/mocks/RevertingTransferERC20.sol";
 import { ReentrantExecuteSellToken } from "../../../../../shared/mocks/ReentrantExecuteSellToken.sol";
@@ -673,6 +676,73 @@ contract CowSwapModule_Execute_Test is CowSwapModuleBase {
             paymentRailsBefore - DEFAULT_SELL_AMOUNT,
             "paymentRails debited"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // L2 sequencer uptime feed (Certora L-02)
+    // -----------------------------------------------------------------------
+
+    /// @dev Certora L-02: oracle reads must fail when sequencer is down.
+    function test_Execute_WhenSequencerDown_ReturnsOracleUnavailable() external {
+        MockChainlinkAggregator seqFeed = new MockChainlinkAggregator(int256(0), 0);
+        seqFeed.setAnswer(1); // 1 = sequencer down
+        MockPaymentRails l2Rails = new MockPaymentRails();
+        CowSwapModule l2Module =
+            new CowSwapModule(address(cowSettlement), address(this), address(l2Rails), address(seqFeed), 3600);
+        l2Rails.setModule(address(l2Module));
+        sellToken.mint(address(l2Rails), DEFAULT_SELL_AMOUNT);
+
+        DataTypes.ExecutionResult memory result =
+            l2Rails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _buildDefaultParams());
+        assertFalse(result.success, "should fail when sequencer is down");
+        assertEq(result.failureReason, "Oracle price unavailable");
+    }
+
+    /// @dev Certora L-02: oracle reads must fail during grace period.
+    function test_Execute_WhenSequencerInGracePeriod_ReturnsOracleUnavailable() external {
+        MockChainlinkAggregator seqFeed = new MockChainlinkAggregator(int256(0), 0);
+        seqFeed.setUpdatedAt(block.timestamp - 1800); // up 30 min ago, grace = 1 hour
+        MockPaymentRails l2Rails = new MockPaymentRails();
+        CowSwapModule l2Module =
+            new CowSwapModule(address(cowSettlement), address(this), address(l2Rails), address(seqFeed), 3600);
+        l2Rails.setModule(address(l2Module));
+        sellToken.mint(address(l2Rails), DEFAULT_SELL_AMOUNT);
+
+        DataTypes.ExecutionResult memory result =
+            l2Rails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _buildDefaultParams());
+        assertFalse(result.success, "should fail during grace period");
+        assertEq(result.failureReason, "Oracle price unavailable");
+    }
+
+    /// @dev Certora L-02: oracle reads succeed after grace period expires.
+    function test_Execute_WhenSequencerUpPastGracePeriod_Succeeds() external {
+        MockChainlinkAggregator seqFeed = new MockChainlinkAggregator(int256(0), 0);
+        seqFeed.setUpdatedAt(block.timestamp - 7200); // up 2 hours ago, grace = 1 hour
+        MockPaymentRails l2Rails = new MockPaymentRails();
+        CowSwapModule l2Module =
+            new CowSwapModule(address(cowSettlement), address(this), address(l2Rails), address(seqFeed), 3600);
+        l2Rails.setModule(address(l2Module));
+        sellToken.mint(address(l2Rails), DEFAULT_SELL_AMOUNT);
+
+        DataTypes.ExecutionResult memory result =
+            l2Rails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _buildDefaultParams());
+        assertTrue(result.success, "should succeed after grace period");
+    }
+
+    /// @dev Certora L-02: sequencer feed revert must fail gracefully.
+    function test_Execute_WhenSequencerFeedReverts_ReturnsOracleUnavailable() external {
+        MockChainlinkAggregator seqFeed = new MockChainlinkAggregator(int256(0), 0);
+        seqFeed.setShouldRevert(true);
+        MockPaymentRails l2Rails = new MockPaymentRails();
+        CowSwapModule l2Module =
+            new CowSwapModule(address(cowSettlement), address(this), address(l2Rails), address(seqFeed), 3600);
+        l2Rails.setModule(address(l2Module));
+        sellToken.mint(address(l2Rails), DEFAULT_SELL_AMOUNT);
+
+        DataTypes.ExecutionResult memory result =
+            l2Rails.initiateSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _buildDefaultParams());
+        assertFalse(result.success, "should fail when sequencer feed reverts");
+        assertEq(result.failureReason, "Oracle price unavailable");
     }
 
     // -----------------------------------------------------------------------

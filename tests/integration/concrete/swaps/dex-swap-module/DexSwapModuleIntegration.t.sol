@@ -87,7 +87,7 @@ contract DexSwapModuleIntegrationTest is Test {
         keeper = makeAddr("keeper");
 
         router = new MockRouter();
-        module = new DexSwapModule(address(router));
+        module = new DexSwapModule(address(router), address(0), 0);
 
         vm.prank(owner);
         paymentRails = new PaymentRails(owner);
@@ -477,7 +477,7 @@ contract DexSwapModuleIntegrationTest is Test {
 
         // Deploy new module with a new router
         MockRouter newRouter = new MockRouter();
-        DexSwapModule newModule = new DexSwapModule(address(newRouter));
+        DexSwapModule newModule = new DexSwapModule(address(newRouter), address(0), 0);
         buyToken.mint(address(newRouter), BUY_AMOUNT * 10);
         newRouter.setOutputAmount(BUY_AMOUNT);
 

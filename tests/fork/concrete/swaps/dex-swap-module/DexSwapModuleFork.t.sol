@@ -80,7 +80,7 @@ abstract contract DexSwapModuleForkBase is Test {
         owner = makeAddr("owner");
 
         vm.startPrank(owner);
-        module = new DexSwapModule(UNISWAP_V3_ROUTER);
+        module = new DexSwapModule(UNISWAP_V3_ROUTER, address(0), 0);
         paymentRails = new PaymentRails(owner);
         vm.stopPrank();
 

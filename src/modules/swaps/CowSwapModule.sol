@@ -62,6 +62,12 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
     /// @inheritdoc ICowSwapModule
     address public immutable override paymentRails;
 
+    /// @inheritdoc ICowSwapModule
+    address public immutable override sequencerUptimeFeed;
+
+    /// @inheritdoc ICowSwapModule
+    uint256 public immutable override sequencerGracePeriod;
+
     /*//////////////////////////////////////////////////////////////////////////
                                 MUTABLE STATE
     //////////////////////////////////////////////////////////////////////////*/
@@ -73,7 +79,20 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
                                     CONSTRUCTOR
     //////////////////////////////////////////////////////////////////////////*/
 
-    constructor(address _cowSettlement, address _owner, address _paymentRails) Ownable(_owner) {
+    /// @param _cowSettlement GPv2Settlement contract address.
+    /// @param _owner Owner for Ownable2Step (can cancel orders).
+    /// @param _paymentRails Authorized PaymentRails caller for execute().
+    /// @param _sequencerUptimeFeed Chainlink L2 sequencer uptime feed; address(0) on L1.
+    /// @param _sequencerGracePeriod Seconds after sequencer recovery before trusting oracles.
+    constructor(
+        address _cowSettlement,
+        address _owner,
+        address _paymentRails,
+        address _sequencerUptimeFeed,
+        uint256 _sequencerGracePeriod
+    )
+        Ownable(_owner)
+    {
         if (_cowSettlement == address(0)) revert Errors.CowSwapModule_ZeroCowSettlement();
         if (_paymentRails == address(0)) revert Errors.CowSwapModule_ZeroPaymentRails();
 
@@ -81,6 +100,8 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
         cowDomainSeparator = IGPv2Settlement(_cowSettlement).domainSeparator();
         vaultRelayer = IGPv2Settlement(_cowSettlement).vaultRelayer();
         paymentRails = _paymentRails;
+        sequencerUptimeFeed = _sequencerUptimeFeed;
+        sequencerGracePeriod = _sequencerGracePeriod;
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -375,7 +396,7 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
         return (true, "", swapParams, uint32(rawValidTo));
     }
 
-    /// @dev Reads a Chainlink price feed and validates freshness, positivity, and magnitude.
+    /// @dev Validates Chainlink price feed; checks L2 sequencer uptime when configured.
     function _getOraclePrice(
         address feed,
         uint256 maxStaleness
@@ -384,6 +405,18 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
         view
         returns (bool ok, uint256 price, uint8 feedDecimals)
     {
+        if (sequencerUptimeFeed != address(0)) {
+            try IChainlinkAggregatorV3(sequencerUptimeFeed).latestRoundData() returns (
+                uint80, int256 answer, uint256, uint256 startedAt, uint80
+            ) {
+                // answer == 0 → sequencer is up; answer == 1 → sequencer is down
+                if (answer != 0) return (false, 0, 0);
+                if (block.timestamp - startedAt < sequencerGracePeriod) return (false, 0, 0);
+            } catch {
+                return (false, 0, 0);
+            }
+        }
+
         try IChainlinkAggregatorV3(feed).latestRoundData() returns (
             uint80, int256 answer, uint256, uint256 updatedAt, uint80
         ) {

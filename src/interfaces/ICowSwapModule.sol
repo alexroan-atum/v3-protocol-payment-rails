@@ -63,6 +63,12 @@ interface ICowSwapModule is IActionModule {
     /// @notice Address of the CowSwap GPv2Settlement contract (immutable).
     function cowSettlement() external view returns (address);
 
+    /// @notice Chainlink L2 sequencer uptime feed; address(0) on L1.
+    function sequencerUptimeFeed() external view returns (address);
+
+    /// @notice Seconds after sequencer recovery before trusting oracles.
+    function sequencerGracePeriod() external view returns (uint256);
+
     /// @notice EIP-712 domain separator of the CowSwap settlement contract (cached at construction).
     function cowDomainSeparator() external view returns (bytes32);
 

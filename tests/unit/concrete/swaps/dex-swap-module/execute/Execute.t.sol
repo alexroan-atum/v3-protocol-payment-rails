@@ -7,6 +7,7 @@ import { DataTypes } from "../../../../../../src/types/DataTypes.sol";
 import { Errors } from "../../../../../../src/libraries/Errors.sol";
 import { ReentrantRouter } from "../../../../../shared/mocks/ReentrantRouter.sol";
 import { MockDexSwapPaymentRails } from "../../../../../shared/mocks/MockDexSwapPaymentRails.sol";
+import { MockChainlinkAggregator } from "../../../../../shared/mocks/MockChainlinkAggregator.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /// @notice Unit tests for DexSwapModule.execute()
@@ -455,7 +456,7 @@ contract DexSwapModule_Execute_Test is DexSwapModuleBase {
         address predictedModule = vm.computeCreateAddress(address(this), nonce + 1);
 
         reentrantRouter = new ReentrantRouter(predictedModule);
-        reentrantModule = new DexSwapModule(address(reentrantRouter));
+        reentrantModule = new DexSwapModule(address(reentrantRouter), address(0), 0);
 
         reentrantRouter.setOutputAmount(DEFAULT_BUY_AMOUNT);
 
@@ -464,6 +465,67 @@ contract DexSwapModule_Execute_Test is DexSwapModuleBase {
         buyToken.mint(address(reentrantRouter), DEFAULT_BUY_AMOUNT);
 
         attackerRails = new MockDexSwapPaymentRails(address(reentrantModule));
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                    L2 SEQUENCER UPTIME FEED TESTS
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @dev Certora L-02: oracle reads must fail when sequencer is down.
+    function test_WhenSequencerDown_ReturnsOracleUnavailable() external {
+        MockChainlinkAggregator seqFeed = new MockChainlinkAggregator(int256(0), 0);
+        seqFeed.setAnswer(1); // 1 = sequencer down
+        DexSwapModule l2Module = new DexSwapModule(address(router), address(seqFeed), 3600);
+        MockDexSwapPaymentRails l2Rails = new MockDexSwapPaymentRails(address(l2Module));
+        sellToken.mint(address(l2Rails), DEFAULT_SELL_AMOUNT);
+
+        DataTypes.ExecutionResult memory result =
+            l2Rails.executeSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams());
+        assertFalse(result.success, "should fail when sequencer is down");
+        assertEq(result.failureReason, "Oracle price unavailable");
+    }
+
+    /// @dev Certora L-02: oracle reads must fail during grace period.
+    function test_WhenSequencerInGracePeriod_ReturnsOracleUnavailable() external {
+        MockChainlinkAggregator seqFeed = new MockChainlinkAggregator(int256(0), 0);
+        seqFeed.setUpdatedAt(block.timestamp - 1800); // up 30 min ago, grace = 1 hour
+        DexSwapModule l2Module = new DexSwapModule(address(router), address(seqFeed), 3600);
+        MockDexSwapPaymentRails l2Rails = new MockDexSwapPaymentRails(address(l2Module));
+        sellToken.mint(address(l2Rails), DEFAULT_SELL_AMOUNT);
+
+        DataTypes.ExecutionResult memory result =
+            l2Rails.executeSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams());
+        assertFalse(result.success, "should fail during grace period");
+        assertEq(result.failureReason, "Oracle price unavailable");
+    }
+
+    /// @dev Certora L-02: oracle reads succeed after grace period expires.
+    function test_WhenSequencerUpPastGracePeriod_Succeeds() external {
+        MockChainlinkAggregator seqFeed = new MockChainlinkAggregator(int256(0), 0);
+        seqFeed.setUpdatedAt(block.timestamp - 7200); // up 2 hours ago, grace = 1 hour
+        DexSwapModule l2Module = new DexSwapModule(address(router), address(seqFeed), 3600);
+        MockDexSwapPaymentRails l2Rails = new MockDexSwapPaymentRails(address(l2Module));
+        sellToken.mint(address(l2Rails), DEFAULT_SELL_AMOUNT);
+        buyToken.mint(address(router), DEFAULT_BUY_AMOUNT);
+        router.setOutputAmount(DEFAULT_BUY_AMOUNT);
+
+        DataTypes.ExecutionResult memory result =
+            l2Rails.executeSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams());
+        assertTrue(result.success, "should succeed after grace period");
+    }
+
+    /// @dev Certora L-02: sequencer feed revert must fail gracefully.
+    function test_WhenSequencerFeedReverts_ReturnsOracleUnavailable() external {
+        MockChainlinkAggregator seqFeed = new MockChainlinkAggregator(int256(0), 0);
+        seqFeed.setShouldRevert(true);
+        DexSwapModule l2Module = new DexSwapModule(address(router), address(seqFeed), 3600);
+        MockDexSwapPaymentRails l2Rails = new MockDexSwapPaymentRails(address(l2Module));
+        sellToken.mint(address(l2Rails), DEFAULT_SELL_AMOUNT);
+
+        DataTypes.ExecutionResult memory result =
+            l2Rails.executeSwap(address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams());
+        assertFalse(result.success, "should fail when sequencer feed reverts");
+        assertEq(result.failureReason, "Oracle price unavailable");
     }
 
     /*//////////////////////////////////////////////////////////////////////////

@@ -33,7 +33,7 @@ contract CowSwapModuleInvariant is Test {
 
         cowSettlement = new MockCowSettlement(DOMAIN_SEPARATOR, makeAddr("vaultRelayer"));
         paymentRails = new PaymentRailsProxy();
-        module = new CowSwapModule(address(cowSettlement), address(this), address(paymentRails));
+        module = new CowSwapModule(address(cowSettlement), address(this), address(paymentRails), address(0), 0);
         paymentRails.setModule(address(module));
         sellToken = new MockERC20("USDC", "USDC");
         buyToken = new MockERC20("WETH", "WETH");

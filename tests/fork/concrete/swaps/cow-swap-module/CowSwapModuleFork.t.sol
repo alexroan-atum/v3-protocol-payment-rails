@@ -103,7 +103,7 @@ abstract contract CowSwapModuleForkBase is Test {
 
         vm.startPrank(owner);
         paymentRails = new PaymentRails(owner);
-        module = new CowSwapModule(GPV2_SETTLEMENT, owner, address(paymentRails));
+        module = new CowSwapModule(GPV2_SETTLEMENT, owner, address(paymentRails), address(0), 0);
         vm.stopPrank();
 
         deal(USDC, address(paymentRails), USDC_SELL_AMOUNT * 10);

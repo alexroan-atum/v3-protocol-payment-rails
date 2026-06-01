@@ -48,6 +48,14 @@ DexSwapModule::execute
 │   ├── it should leave module with zero buy token balance
 │   ├── it should revoke router approval after swap
 │   └── it should not hold any residual state between swaps
+├── when L2 sequencer is down
+│   └── it should return failed result with oracle price unavailable
+├── when L2 sequencer is in grace period
+│   └── it should return failed result with oracle price unavailable
+├── when L2 sequencer is up past grace period
+│   └── it should succeed
+├── when L2 sequencer feed reverts
+│   └── it should return failed result with oracle price unavailable
 ├── when router re-enters execute during swap callback
 │   ├── it should revert the reentrant call with ReentrancyGuardReentrantCall
 │   ├── it should complete the original swap successfully
