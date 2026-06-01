@@ -204,6 +204,8 @@ contract CowSwapModule is ICowSwapModule, ActionModuleBase, Ownable2Step, Reentr
 
         meta.cancelled = true;
 
+        IGPv2Settlement(cowSettlement).invalidateOrder(_orderUid(orderId, meta.validTo));
+
         uint256 sellBalance = IERC20(sellToken).balanceOf(address(this));
         uint256 returnAmount = sellBalance < sellAmount ? sellBalance : sellAmount;
         if (returnAmount > 0) {

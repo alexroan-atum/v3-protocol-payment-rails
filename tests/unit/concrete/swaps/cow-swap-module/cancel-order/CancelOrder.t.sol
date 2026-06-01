@@ -144,6 +144,24 @@ contract CowSwapModule_CancelOrder_Test is CowSwapModuleBase {
     }
 
     // -----------------------------------------------------------------------
+    // given cancel succeeds — propagates invalidation to settlement contract
+    // -----------------------------------------------------------------------
+
+    function test_GivenSellTokenStillInModule_InvalidatesOrderOnSettlement() external givenPendingOrder {
+        module.cancelOrder(_orderId);
+        assertTrue(cowSettlement.invalidatedOrders(_orderId));
+    }
+
+    function test_GivenSolverAlreadyPulledSellToken_InvalidatesOrderOnSettlement()
+        external
+        givenPendingOrder
+        givenSolverPulledSellToken
+    {
+        module.cancelOrder(_orderId);
+        assertTrue(cowSettlement.invalidatedOrders(_orderId));
+    }
+
+    // -----------------------------------------------------------------------
     // full lifecycle: execute -> cancel -> tokens recovered
     // -----------------------------------------------------------------------
 

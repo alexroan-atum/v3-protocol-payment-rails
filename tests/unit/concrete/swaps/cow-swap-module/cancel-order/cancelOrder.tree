@@ -16,12 +16,14 @@ CowSwapModule_CancelOrder
 │   │   ├── it should set cancelled to true
 │   │   ├── it should emit OrderCancelled with zero return amount
 │   │   ├── it should not transfer any tokens
-│   │   └── it should not revert
+│   │   ├── it should not revert
+│   │   └── it should invalidate order on settlement contract
 │   └── given sell token is still in module
 │       ├── it should set cancelled to true
 │       ├── it should leave max approval unchanged
 │       ├── it should transfer sell tokens back to paymentRails
 │       ├── it should emit OrderCancelled event
-│       └── it should cause isValidSignature to return FAILURE
+│       ├── it should cause isValidSignature to return FAILURE
+│       └── it should invalidate order on settlement contract
 └── full lifecycle
     └── it should execute then cancel then recover tokens

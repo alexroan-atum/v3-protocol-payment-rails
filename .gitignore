@@ -1,4 +1,5 @@
 # directories
+.claude
 artifacts
 artifacts-*
 broadcast

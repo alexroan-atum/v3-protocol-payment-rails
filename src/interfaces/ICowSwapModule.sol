@@ -34,8 +34,10 @@ interface ICowSwapModule is IActionModule {
                             NON-CONSTANT FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Cancels a pending order and returns locked sellToken to PaymentRails.
-    /// @dev Owner-only. Blocked if filled or cancelled. Returns at most `meta.sellAmount`.
+    /// @notice Cancels a pending order, invalidates it on the settlement contract, and returns locked sellToken to
+    /// PaymentRails.
+    /// @dev Owner-only. Blocked if filled or cancelled. Calls `invalidateOrder()` on GPv2Settlement so solvers stop
+    /// matching it. Returns at most `meta.sellAmount`.
     ///
     /// Post-expiry edge cases (non-exploitable):
     /// - Filled order whose `filledAmount` slot was liberated by solvers: cancel succeeds
