@@ -38,7 +38,7 @@ contract CCTPBridgeModuleIntegrationTest is Test {
 
     uint32 internal constant DOMAIN_BASE = 6;
     bytes32 internal constant MINT_RECIPIENT = bytes32(uint256(uint160(0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB)));
-    uint256 internal constant MAX_FEE = 1e6;
+    uint16 internal constant MAX_FEE_BPS = 20; // 0.2%
     uint32 internal constant FINALITY_FAST = 1000;
     uint256 internal constant BRIDGE_AMOUNT = 1000e6;
     uint256 internal constant MIN_BALANCE = 100e6;
@@ -70,7 +70,7 @@ contract CCTPBridgeModuleIntegrationTest is Test {
 
         paymentRailsContract = new PaymentRails(paymentRailsOwner);
 
-        bytes memory moduleParams = _buildModuleParams(DOMAIN_BASE, MINT_RECIPIENT, MAX_FEE, FINALITY_FAST, "");
+        bytes memory moduleParams = _buildModuleParams(DOMAIN_BASE, MINT_RECIPIENT, MAX_FEE_BPS, FINALITY_FAST, "");
         vm.prank(paymentRailsOwner);
         paymentRailsContract.configureToken(
             address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, moduleParams, true
@@ -103,14 +103,19 @@ contract CCTPBridgeModuleIntegrationTest is Test {
         assertEq(destinationDomain, DOMAIN_BASE);
         assertEq(mintRecipient, MINT_RECIPIENT);
         assertEq(burnToken, address(usdc));
-        assertEq(maxFee, MAX_FEE);
+        assertEq(maxFee, BRIDGE_AMOUNT * uint256(MAX_FEE_BPS) / 10_000);
         assertEq(minFinalityThreshold, FINALITY_FAST);
     }
 
     function test_PaymentRailsEmitsActionExecuted() external {
         vm.expectEmit(true, false, false, true);
         emit ActionExecuted(
-            address(usdc), "CCTP_BRIDGE", BRIDGE_AMOUNT, BRIDGE_AMOUNT - MAX_FEE, address(usdc), executor
+            address(usdc),
+            "CCTP_BRIDGE",
+            BRIDGE_AMOUNT,
+            BRIDGE_AMOUNT - (BRIDGE_AMOUNT * uint256(MAX_FEE_BPS) / 10_000),
+            address(usdc),
+            executor
         );
 
         vm.prank(executor);
@@ -120,7 +125,13 @@ contract CCTPBridgeModuleIntegrationTest is Test {
     function test_BridgeModuleEmitsBridgeInitiated() external {
         vm.expectEmit(true, true, false, true);
         emit BridgeInitiated(
-            address(paymentRailsContract), BRIDGE_AMOUNT, DOMAIN_BASE, MINT_RECIPIENT, MAX_FEE, FINALITY_FAST, ""
+            address(paymentRailsContract),
+            BRIDGE_AMOUNT,
+            DOMAIN_BASE,
+            MINT_RECIPIENT,
+            BRIDGE_AMOUNT * uint256(MAX_FEE_BPS) / 10_000,
+            FINALITY_FAST,
+            ""
         );
 
         vm.prank(executor);
@@ -194,7 +205,7 @@ contract CCTPBridgeModuleIntegrationTest is Test {
     }
 
     function test_RevertWhen_TokenNotEnabled() external {
-        bytes memory moduleParams = _buildModuleParams(DOMAIN_BASE, MINT_RECIPIENT, MAX_FEE, FINALITY_FAST, "");
+        bytes memory moduleParams = _buildModuleParams(DOMAIN_BASE, MINT_RECIPIENT, MAX_FEE_BPS, FINALITY_FAST, "");
         vm.prank(paymentRailsOwner);
         paymentRailsContract.configureToken(
             address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, moduleParams, false
@@ -214,7 +225,7 @@ contract CCTPBridgeModuleIntegrationTest is Test {
         paymentRailsContract.executeAction(address(usdc), BRIDGE_AMOUNT / 2);
 
         bytes32 newRecipient = bytes32(uint256(uint160(0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC)));
-        bytes memory newParams = _buildModuleParams(DOMAIN_BASE, newRecipient, 0, FINALITY_FAST, "");
+        bytes memory newParams = _buildModuleParams(DOMAIN_BASE, newRecipient, uint16(0), FINALITY_FAST, "");
         vm.prank(paymentRailsOwner);
         paymentRailsContract.configureToken(
             address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, newParams, true
@@ -256,7 +267,7 @@ contract CCTPBridgeModuleIntegrationTest is Test {
 
     function test_PreviewExecution() external view {
         (uint256 estimatedOutput, address outputToken) = paymentRailsContract.previewExecution(address(usdc));
-        assertEq(estimatedOutput, BRIDGE_AMOUNT - MAX_FEE);
+        assertEq(estimatedOutput, BRIDGE_AMOUNT - (BRIDGE_AMOUNT * uint256(MAX_FEE_BPS) / 10_000));
         assertEq(outputToken, address(usdc));
     }
 
@@ -265,7 +276,8 @@ contract CCTPBridgeModuleIntegrationTest is Test {
     //////////////////////////////////////////////////////////////////////////*/
 
     function test_WithHookData_UsesDepositForBurnWithHook() external {
-        bytes memory hookParams = _buildModuleParams(DOMAIN_BASE, MINT_RECIPIENT, MAX_FEE, FINALITY_FAST, hex"cafebabe");
+        bytes memory hookParams =
+            _buildModuleParams(DOMAIN_BASE, MINT_RECIPIENT, MAX_FEE_BPS, FINALITY_FAST, hex"cafebabe");
         vm.prank(paymentRailsOwner);
         paymentRailsContract.configureToken(
             address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, hookParams, true
@@ -290,7 +302,7 @@ contract CCTPBridgeModuleIntegrationTest is Test {
         bytes32 recipientB = bytes32(uint256(uint160(0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa)));
 
         PaymentRails nodeB = new PaymentRails(paymentRailsOwner);
-        bytes memory paramsB = _buildModuleParams(DOMAIN_BASE, recipientB, MAX_FEE, FINALITY_FAST, "");
+        bytes memory paramsB = _buildModuleParams(DOMAIN_BASE, recipientB, MAX_FEE_BPS, FINALITY_FAST, "");
         vm.prank(paymentRailsOwner);
         nodeB.configureToken(address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, paramsB, true);
         usdc.mint(address(nodeB), BRIDGE_AMOUNT);
@@ -317,7 +329,7 @@ contract CCTPBridgeModuleIntegrationTest is Test {
         bytes32 recipientArb = bytes32(uint256(uint160(0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa)));
 
         PaymentRails nodeB = new PaymentRails(paymentRailsOwner);
-        bytes memory paramsB = _buildModuleParams(domainArbitrum, recipientArb, 0, FINALITY_FAST, "");
+        bytes memory paramsB = _buildModuleParams(domainArbitrum, recipientArb, uint16(0), FINALITY_FAST, "");
         vm.prank(paymentRailsOwner);
         nodeB.configureToken(address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, paramsB, true);
         usdc.mint(address(nodeB), BRIDGE_AMOUNT);
@@ -339,7 +351,7 @@ contract CCTPBridgeModuleIntegrationTest is Test {
 
     function test_MultiPaymentRails_InterleavedExecutions() external {
         PaymentRails nodeB = new PaymentRails(paymentRailsOwner);
-        bytes memory paramsB = _buildModuleParams(DOMAIN_BASE, MINT_RECIPIENT, MAX_FEE, FINALITY_FAST, "");
+        bytes memory paramsB = _buildModuleParams(DOMAIN_BASE, MINT_RECIPIENT, MAX_FEE_BPS, FINALITY_FAST, "");
         vm.prank(paymentRailsOwner);
         nodeB.configureToken(address(usdc), "CCTP_BRIDGE", address(bridgeModule), MIN_BALANCE, paramsB, true);
         usdc.mint(address(nodeB), BRIDGE_AMOUNT);
@@ -373,7 +385,7 @@ contract CCTPBridgeModuleIntegrationTest is Test {
 
         uint32 domainArbitrum = 3;
         bytes32 recipientArb = bytes32(uint256(uint160(0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa)));
-        bytes memory arbParams = _buildModuleParams(domainArbitrum, recipientArb, 0, FINALITY_FAST, "");
+        bytes memory arbParams = _buildModuleParams(domainArbitrum, recipientArb, uint16(0), FINALITY_FAST, "");
 
         vm.prank(paymentRailsOwner);
         paymentRailsContract.configureToken(
@@ -394,7 +406,7 @@ contract CCTPBridgeModuleIntegrationTest is Test {
     //////////////////////////////////////////////////////////////////////////*/
 
     function test_PaymentRailsDisableThenReEnable_BridgeWorks() external {
-        bytes memory moduleParams = _buildModuleParams(DOMAIN_BASE, MINT_RECIPIENT, MAX_FEE, FINALITY_FAST, "");
+        bytes memory moduleParams = _buildModuleParams(DOMAIN_BASE, MINT_RECIPIENT, MAX_FEE_BPS, FINALITY_FAST, "");
 
         vm.prank(paymentRailsOwner);
         paymentRailsContract.configureToken(
@@ -419,7 +431,7 @@ contract CCTPBridgeModuleIntegrationTest is Test {
         MockTokenMessengerV2 tokenMessenger2 = new MockTokenMessengerV2();
         CCTPBridgeModule moduleB = new CCTPBridgeModule(address(tokenMessenger2), address(usdc));
 
-        bytes memory moduleParams = _buildModuleParams(DOMAIN_BASE, MINT_RECIPIENT, 0, FINALITY_FAST, "");
+        bytes memory moduleParams = _buildModuleParams(DOMAIN_BASE, MINT_RECIPIENT, uint16(0), FINALITY_FAST, "");
         vm.prank(paymentRailsOwner);
         paymentRailsContract.configureToken(
             address(usdc), "CCTP_BRIDGE", address(moduleB), MIN_BALANCE, moduleParams, true
@@ -440,7 +452,7 @@ contract CCTPBridgeModuleIntegrationTest is Test {
     function _buildModuleParams(
         uint32 domain,
         bytes32 recipient,
-        uint256 maxFee,
+        uint16 maxFeeBps,
         uint32 finality,
         bytes memory hookData
     )
@@ -448,6 +460,6 @@ contract CCTPBridgeModuleIntegrationTest is Test {
         pure
         returns (bytes memory)
     {
-        return abi.encode(domain, recipient, bytes32(0), maxFee, finality, hookData);
+        return abi.encode(domain, recipient, bytes32(0), maxFeeBps, finality, hookData);
     }
 }

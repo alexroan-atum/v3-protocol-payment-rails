@@ -55,7 +55,7 @@ contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase {
         override(ActionModuleBase, IActionModule)
         returns (DataTypes.ExecutionResult memory result)
     {
-        (bool valid, string memory reason, DataTypes.CCTPBridgeParams memory bridgeParams) =
+        (bool valid, string memory reason, DataTypes.CCTPBridgeParams memory bridgeParams, uint256 maxFee) =
             _validateBridgeParams(token, amount, params);
         if (!valid) {
             return _failedResult(token, reason);
@@ -76,7 +76,7 @@ contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase {
                     bridgeParams.mintRecipient,
                     usdc,
                     bridgeParams.destinationCaller,
-                    bridgeParams.maxFee,
+                    maxFee,
                     bridgeParams.minFinalityThreshold,
                     bridgeParams.hookData
                 );
@@ -88,7 +88,7 @@ contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase {
                     bridgeParams.mintRecipient,
                     usdc,
                     bridgeParams.destinationCaller,
-                    bridgeParams.maxFee,
+                    maxFee,
                     bridgeParams.minFinalityThreshold
                 );
         }
@@ -101,13 +101,13 @@ contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase {
             amount,
             bridgeParams.destinationDomain,
             bridgeParams.mintRecipient,
-            bridgeParams.maxFee,
+            maxFee,
             bridgeParams.minFinalityThreshold,
             bridgeParams.hookData
         );
 
         return _successResult(
-            amount - bridgeParams.maxFee, token, abi.encode(bridgeParams.destinationDomain, bridgeParams.mintRecipient)
+            amount - maxFee, token, abi.encode(bridgeParams.destinationDomain, bridgeParams.mintRecipient)
         );
     }
 
@@ -126,7 +126,7 @@ contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase {
         override(ActionModuleBase, IActionModule)
         returns (bool isValid, string memory reason)
     {
-        (isValid, reason,) = _validateBridgeParams(token, amount, params);
+        (isValid, reason,,) = _validateBridgeParams(token, amount, params);
     }
 
     /// @inheritdoc IActionModule
@@ -140,13 +140,13 @@ contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase {
         override(ActionModuleBase, IActionModule)
         returns (uint256 estimatedOutput, address outputToken)
     {
-        (bool valid,, DataTypes.CCTPBridgeParams memory bridgeParams) = _validateBridgeParams(token, amount, params);
+        (bool valid,,, uint256 maxFee) = _validateBridgeParams(token, amount, params);
 
         if (!valid) {
             return (0, token);
         }
 
-        return (amount - bridgeParams.maxFee, token);
+        return (amount - maxFee, token);
     }
 
     /// @inheritdoc IActionModule
@@ -160,7 +160,7 @@ contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase {
             params.destinationDomain,
             params.mintRecipient,
             params.destinationCaller,
-            params.maxFee,
+            params.maxFeeBps,
             params.minFinalityThreshold,
             params.hookData
         );
@@ -172,17 +172,18 @@ contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase {
             params.destinationDomain,
             params.mintRecipient,
             params.destinationCaller,
-            params.maxFee,
+            params.maxFeeBps,
             params.minFinalityThreshold,
             params.hookData
-        ) = abi.decode(encoded, (uint32, bytes32, bytes32, uint256, uint32, bytes));
+        ) = abi.decode(encoded, (uint32, bytes32, bytes32, uint16, uint32, bytes));
     }
 
     /*//////////////////////////////////////////////////////////////////////////
                             INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @dev Shared validation. Returns decoded params so callers avoid a redundant decode.
+    /// @dev Shared validation. Returns decoded params and the computed maxFee so callers avoid
+    ///      redundant decodes and duplicate fee arithmetic.
     function _validateBridgeParams(
         address token,
         uint256 amount,
@@ -190,34 +191,43 @@ contract CCTPBridgeModule is ICCTPBridgeModule, ActionModuleBase {
     )
         private
         view
-        returns (bool valid, string memory reason, DataTypes.CCTPBridgeParams memory bridgeParams)
+        returns (
+            bool valid,
+            string memory reason,
+            DataTypes.CCTPBridgeParams memory bridgeParams,
+            uint256 computedMaxFee
+        )
     {
         // 6 fixed slots + 1 bytes-offset slot = 7 × 32 = 224 bytes minimum.
         if (params.length < 224) {
-            return (false, "Invalid params encoding", bridgeParams);
+            return (false, "Invalid params encoding", bridgeParams, 0);
         }
 
         bridgeParams = decodeParams(params);
 
         if (amount == 0) {
-            return (false, "Zero bridge amount", bridgeParams);
+            return (false, "Zero bridge amount", bridgeParams, 0);
         }
         if (token != usdc) {
-            return (false, "Only USDC supported", bridgeParams);
+            return (false, "Only USDC supported", bridgeParams, 0);
         }
         if (bridgeParams.mintRecipient == bytes32(0)) {
-            return (false, "Zero mint recipient", bridgeParams);
+            return (false, "Zero mint recipient", bridgeParams, 0);
+        }
+        // maxFeeBps < 10_000 guarantees computedMaxFee < amount for any amount > 0.
+        if (bridgeParams.maxFeeBps >= 10_000) {
+            return (false, "Invalid max fee bps", bridgeParams, 0);
         }
         if (bridgeParams.minFinalityThreshold != 1000 && bridgeParams.minFinalityThreshold != 2000) {
-            return (false, "Invalid finality threshold", bridgeParams);
-        }
-        if (bridgeParams.maxFee >= amount) {
-            return (false, "Max fee exceeds amount", bridgeParams);
-        }
-        if (!_hasSufficientBalance(token, amount)) {
-            return (false, "Insufficient balance", bridgeParams);
+            return (false, "Invalid finality threshold", bridgeParams, 0);
         }
 
-        return (true, "", bridgeParams);
+        computedMaxFee = (amount * uint256(bridgeParams.maxFeeBps)) / 10_000;
+
+        if (!_hasSufficientBalance(token, amount)) {
+            return (false, "Insufficient balance", bridgeParams, 0);
+        }
+
+        return (true, "", bridgeParams, computedMaxFee);
     }
 }

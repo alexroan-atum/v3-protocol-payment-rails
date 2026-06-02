@@ -11,10 +11,10 @@ CCTPBridgeModule_Execute
 │   └── it should return failed result with "Zero mint recipient"
 ├── when finality threshold is invalid
 │   └── it should return failed result with "Invalid finality threshold"
-├── when maxFee equals amount
-│   └── it should return failed result with "Max fee exceeds amount"
-├── when maxFee exceeds amount
-│   └── it should return failed result with "Max fee exceeds amount"
+├── when maxFeeBps equals 10000
+│   └── it should return failed result with "Invalid max fee bps"
+├── when maxFeeBps exceeds 10000
+│   └── it should return failed result with "Invalid max fee bps"
 ├── when caller has insufficient balance
 │   └── it should return failed result with "Insufficient balance"
 ├── when token transfer from caller fails
@@ -29,7 +29,7 @@ CCTPBridgeModule_Execute
 │       ├── it should pass correct arguments to tokenMessenger
 │       ├── it should revoke tokenMessenger approval after burn
 │       ├── it should emit BridgeInitiated
-│       ├── it should return success result with (amount - maxFee) as amountOut
+│       ├── it should return success result with (amount - computedMaxFee) as amountOut
 │       ├── it should return encoded domain and recipient in data field
 │       └── it should transfer USDC from caller to module
 ├── given params with hook data
@@ -43,8 +43,8 @@ CCTPBridgeModule_Execute
 │       └── it should pass minFinalityThreshold 2000 to tokenMessenger
 ├── when called by any address
 │   └── it should succeed (execute is permissionless)
-├── when amount equals maxFee plus one
-│   └── it should succeed with amountOut of 1
+├── when amount is 1 and computed maxFee rounds to zero
+│   └── it should succeed with full amount as amountOut
 ├── when destination caller is set
 │   └── it should pass destinationCaller to tokenMessenger
 ├── when executed consecutively
@@ -52,5 +52,5 @@ CCTPBridgeModule_Execute
 ├── when bridging to different domains
 │   └── it should route each bridge to its own domain
 └── fuzz
-    ├── it should succeed for any valid amount above maxFee [fuzz]
-    └── it should return full amount when maxFee is zero [fuzz]
+    ├── it should succeed for any valid amount [fuzz]
+    └── it should return full amount when maxFeeBps is zero [fuzz]

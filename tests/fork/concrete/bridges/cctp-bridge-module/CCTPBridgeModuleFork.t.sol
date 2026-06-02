@@ -48,7 +48,7 @@ abstract contract CCTPBridgeModuleForkBase is Test {
     bytes32 internal constant DEFAULT_MINT_RECIPIENT =
         bytes32(uint256(uint160(0xBEeFbeefbEefbeEFbeEfbEEfBEeFbeEfBeEfBeef)));
     bytes32 internal constant DEFAULT_DESTINATION_CALLER = bytes32(0);
-    uint256 internal constant DEFAULT_MAX_FEE = 0;
+    uint16 internal constant DEFAULT_MAX_FEE_BPS = 0;
     uint32 internal constant FINALITY_STANDARD = 2000;
     uint32 internal constant FINALITY_FAST = 1000;
 
@@ -90,7 +90,12 @@ abstract contract CCTPBridgeModuleForkBase is Test {
 
     function _buildParams(uint32 domain) internal pure returns (bytes memory) {
         return abi.encode(
-            domain, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE, FINALITY_STANDARD, bytes("")
+            domain,
+            DEFAULT_MINT_RECIPIENT,
+            DEFAULT_DESTINATION_CALLER,
+            DEFAULT_MAX_FEE_BPS,
+            FINALITY_STANDARD,
+            bytes("")
         );
     }
 
@@ -99,20 +104,23 @@ abstract contract CCTPBridgeModuleForkBase is Test {
             domain,
             DEFAULT_MINT_RECIPIENT,
             DEFAULT_DESTINATION_CALLER,
-            DEFAULT_MAX_FEE,
+            DEFAULT_MAX_FEE_BPS,
             FINALITY_STANDARD,
             hex"deadbeef"
         );
     }
 
-    function _buildParamsWithFee(uint32 domain, uint256 maxFee) internal pure returns (bytes memory) {
+    function _buildParamsWithFee(uint32 domain, uint16 maxFeeBps) internal pure returns (bytes memory) {
         return
-            abi.encode(domain, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, maxFee, FINALITY_STANDARD, bytes(""));
+            abi.encode(
+                domain, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, maxFeeBps, FINALITY_STANDARD, bytes("")
+            );
     }
 
     function _buildParamsWithFinality(uint32 domain, uint32 finality) internal pure returns (bytes memory) {
-        return
-            abi.encode(domain, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE, finality, bytes(""));
+        return abi.encode(
+            domain, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE_BPS, finality, bytes("")
+        );
     }
 
     function _executeBridge(uint256 amount) internal returns (DataTypes.ExecutionResult memory) {
@@ -222,7 +230,7 @@ contract CCTPBridgeModuleForkExecuteTest is CCTPBridgeModuleForkBase {
             BRIDGE_AMOUNT,
             DOMAIN_BASE,
             DEFAULT_MINT_RECIPIENT,
-            DEFAULT_MAX_FEE,
+            BRIDGE_AMOUNT * uint256(DEFAULT_MAX_FEE_BPS) / 10_000,
             FINALITY_STANDARD,
             ""
         );
@@ -235,7 +243,7 @@ contract CCTPBridgeModuleForkExecuteTest is CCTPBridgeModuleForkBase {
         DataTypes.ExecutionResult memory result = _executeBridge(BRIDGE_AMOUNT);
 
         assertTrue(result.success);
-        assertEq(result.amountOut, BRIDGE_AMOUNT - DEFAULT_MAX_FEE);
+        assertEq(result.amountOut, BRIDGE_AMOUNT - (BRIDGE_AMOUNT * uint256(DEFAULT_MAX_FEE_BPS) / 10_000));
         assertEq(result.outputToken, USDC);
     }
 
@@ -263,7 +271,7 @@ contract CCTPBridgeModuleForkExecuteTest is CCTPBridgeModuleForkBase {
             BRIDGE_AMOUNT,
             DOMAIN_BASE,
             DEFAULT_MINT_RECIPIENT,
-            DEFAULT_MAX_FEE,
+            BRIDGE_AMOUNT * uint256(DEFAULT_MAX_FEE_BPS) / 10_000,
             FINALITY_STANDARD,
             hex"deadbeef"
         );
@@ -297,6 +305,138 @@ contract CCTPBridgeModuleForkExecuteTest is CCTPBridgeModuleForkBase {
         vm.stopPrank();
 
         assertTrue(result.success);
+    }
+}
+
+/*//////////////////////////////////////////////////////////////////////////
+                    NON-ZERO maxFeeBps EXECUTE TESTS
+//////////////////////////////////////////////////////////////////////////*/
+
+contract CCTPBridgeModuleForkMaxFeeBpsTest is CCTPBridgeModuleForkBase {
+    uint16 internal constant FEE_BPS = 20; // 0.2%
+
+    function _buildFastFinalityParams(uint32 domain, uint16 maxFeeBps) internal pure returns (bytes memory) {
+        return
+            abi.encode(domain, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, maxFeeBps, FINALITY_FAST, bytes(""));
+    }
+
+    function _buildFastFinalityParamsWithHook(uint32 domain, uint16 maxFeeBps) internal pure returns (bytes memory) {
+        return abi.encode(
+            domain, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, maxFeeBps, FINALITY_FAST, hex"deadbeef"
+        );
+    }
+
+    function test_Execute_NonZeroFeeBps_FastFinality_SucceedsAgainstRealTokenMessenger() external {
+        bytes memory params = _buildFastFinalityParams(DOMAIN_BASE, FEE_BPS);
+
+        vm.startPrank(address(paymentRails));
+        IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
+        DataTypes.ExecutionResult memory result = module.execute(USDC, BRIDGE_AMOUNT, params);
+        vm.stopPrank();
+
+        assertTrue(result.success, "Non-zero maxFeeBps must succeed against real TokenMessengerV2");
+    }
+
+    function test_Execute_NonZeroFeeBps_AmountOutReflectsComputedFee() external {
+        bytes memory params = _buildFastFinalityParams(DOMAIN_BASE, FEE_BPS);
+        uint256 expectedFee = (BRIDGE_AMOUNT * uint256(FEE_BPS)) / 10_000;
+
+        vm.startPrank(address(paymentRails));
+        IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
+        DataTypes.ExecutionResult memory result = module.execute(USDC, BRIDGE_AMOUNT, params);
+        vm.stopPrank();
+
+        assertEq(result.amountOut, BRIDGE_AMOUNT - expectedFee);
+    }
+
+    function test_Execute_NonZeroFeeBps_EmitsCorrectComputedMaxFee() external {
+        bytes memory params = _buildFastFinalityParams(DOMAIN_BASE, FEE_BPS);
+        uint256 expectedFee = (BRIDGE_AMOUNT * uint256(FEE_BPS)) / 10_000;
+
+        vm.startPrank(address(paymentRails));
+        IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
+
+        vm.expectEmit(true, true, true, true, address(module));
+        emit BridgeInitiated(
+            address(paymentRails), BRIDGE_AMOUNT, DOMAIN_BASE, DEFAULT_MINT_RECIPIENT, expectedFee, FINALITY_FAST, ""
+        );
+
+        module.execute(USDC, BRIDGE_AMOUNT, params);
+        vm.stopPrank();
+    }
+
+    function test_Execute_NonZeroFeeBps_WithHookData_Succeeds() external {
+        bytes memory params = _buildFastFinalityParamsWithHook(DOMAIN_BASE, FEE_BPS);
+        uint256 expectedFee = (BRIDGE_AMOUNT * uint256(FEE_BPS)) / 10_000;
+
+        vm.startPrank(address(paymentRails));
+        IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
+        DataTypes.ExecutionResult memory result = module.execute(USDC, BRIDGE_AMOUNT, params);
+        vm.stopPrank();
+
+        assertTrue(result.success);
+        assertEq(result.amountOut, BRIDGE_AMOUNT - expectedFee);
+        assertEq(IERC20(USDC).balanceOf(address(module)), 0);
+    }
+
+    function test_Execute_NonZeroFeeBps_SmallAmount_ComputedFeeScalesCorrectly() external {
+        bytes memory params = _buildFastFinalityParams(DOMAIN_BASE, FEE_BPS);
+        uint256 expectedFee = (SMALL_BRIDGE_AMOUNT * uint256(FEE_BPS)) / 10_000;
+
+        vm.startPrank(address(paymentRails));
+        IERC20(USDC).approve(address(module), SMALL_BRIDGE_AMOUNT);
+        DataTypes.ExecutionResult memory result = module.execute(USDC, SMALL_BRIDGE_AMOUNT, params);
+        vm.stopPrank();
+
+        assertTrue(result.success);
+        assertEq(result.amountOut, SMALL_BRIDGE_AMOUNT - expectedFee);
+    }
+
+    function test_Execute_NonZeroFeeBps_ModuleHoldsZeroAfterBurn() external {
+        bytes memory params = _buildFastFinalityParams(DOMAIN_BASE, FEE_BPS);
+
+        vm.startPrank(address(paymentRails));
+        IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
+        module.execute(USDC, BRIDGE_AMOUNT, params);
+        vm.stopPrank();
+
+        assertEq(IERC20(USDC).balanceOf(address(module)), 0, "Module must hold zero after non-zero fee bridge");
+    }
+
+    function test_Execute_NonZeroFeeBps_ApprovalRevokedAfterBurn() external {
+        bytes memory params = _buildFastFinalityParams(DOMAIN_BASE, FEE_BPS);
+
+        vm.startPrank(address(paymentRails));
+        IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
+        module.execute(USDC, BRIDGE_AMOUNT, params);
+        vm.stopPrank();
+
+        assertEq(
+            IERC20(USDC).allowance(address(module), TOKEN_MESSENGER_V2),
+            0,
+            "Approval to TokenMessengerV2 must be zero after non-zero fee bridge"
+        );
+    }
+
+    function test_Execute_NonZeroFeeBps_ViaPaymentRails_FullLifecycle() external {
+        bytes memory params = _buildFastFinalityParams(DOMAIN_BASE, FEE_BPS);
+        uint256 expectedFee = (BRIDGE_AMOUNT * uint256(FEE_BPS)) / 10_000;
+
+        vm.prank(owner);
+        paymentRails.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
+
+        uint256 balanceBefore = IERC20(USDC).balanceOf(address(paymentRails));
+
+        vm.expectEmit(true, true, true, true, address(module));
+        emit BridgeInitiated(
+            address(paymentRails), BRIDGE_AMOUNT, DOMAIN_BASE, DEFAULT_MINT_RECIPIENT, expectedFee, FINALITY_FAST, ""
+        );
+
+        bool success = paymentRails.executeAction(USDC, BRIDGE_AMOUNT);
+
+        assertTrue(success, "PaymentRails executeAction with non-zero feeBps must succeed");
+        assertEq(IERC20(USDC).balanceOf(address(paymentRails)), balanceBefore - BRIDGE_AMOUNT);
+        assertEq(IERC20(USDC).balanceOf(address(module)), 0);
     }
 }
 
@@ -339,7 +479,7 @@ contract CCTPBridgeModuleForkValidateTest is CCTPBridgeModuleForkBase {
             DOMAIN_BASE,
             bytes32(0), // zero mint recipient
             DEFAULT_DESTINATION_CALLER,
-            DEFAULT_MAX_FEE,
+            DEFAULT_MAX_FEE_BPS,
             FINALITY_STANDARD,
             bytes("")
         );
@@ -355,7 +495,7 @@ contract CCTPBridgeModuleForkValidateTest is CCTPBridgeModuleForkBase {
             DOMAIN_BASE,
             DEFAULT_MINT_RECIPIENT,
             DEFAULT_DESTINATION_CALLER,
-            DEFAULT_MAX_FEE,
+            DEFAULT_MAX_FEE_BPS,
             uint32(9999), // invalid finality threshold
             bytes("")
         );
@@ -367,12 +507,12 @@ contract CCTPBridgeModuleForkValidateTest is CCTPBridgeModuleForkBase {
     }
 
     function test_Validate_MaxFeeExceedsAmount_ReturnsFalse() external view {
-        bytes memory params = _buildParamsWithFee(DOMAIN_BASE, BRIDGE_AMOUNT + 1);
+        bytes memory params = _buildParamsWithFee(DOMAIN_BASE, uint16(10_000));
 
         (bool isValid, string memory reason) = module.validate(USDC, BRIDGE_AMOUNT, params);
 
         assertFalse(isValid);
-        assertEq(reason, "Max fee exceeds amount");
+        assertEq(reason, "Invalid max fee bps");
     }
 
     function test_Validate_InsufficientBalance_ReturnsFalse() external {
@@ -412,13 +552,13 @@ contract CCTPBridgeModuleForkEstimateOutputTest is CCTPBridgeModuleForkBase {
     }
 
     function test_EstimateOutput_WithMaxFee_ReturnsAmountMinusFee() external {
-        uint256 maxFee = 1e6;
-        bytes memory params = _buildParamsWithFee(DOMAIN_BASE, maxFee);
+        uint16 maxFeeBps = 20; // 0.2%
+        bytes memory params = _buildParamsWithFee(DOMAIN_BASE, maxFeeBps);
 
         vm.prank(address(paymentRails));
         (uint256 estimatedOutput, address outputToken) = module.estimateOutput(USDC, BRIDGE_AMOUNT, params);
 
-        assertEq(estimatedOutput, BRIDGE_AMOUNT - maxFee);
+        assertEq(estimatedOutput, BRIDGE_AMOUNT - (BRIDGE_AMOUNT * uint256(maxFeeBps) / 10_000));
         assertEq(outputToken, USDC);
     }
 

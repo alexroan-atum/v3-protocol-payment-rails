@@ -36,7 +36,7 @@ contract CCTPBridgeModule_Validate_Test is CCTPBridgeModuleBase {
 
     function test_WhenMintRecipientIsZero() external view {
         bytes memory params = _encodeParams(
-            DOMAIN_BASE, bytes32(0), DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE, FINALITY_FAST, DEFAULT_HOOK_DATA
+            DOMAIN_BASE, bytes32(0), DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE_BPS, FINALITY_FAST, DEFAULT_HOOK_DATA
         );
         (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_BRIDGE_AMOUNT, params);
         assertFalse(isValid);
@@ -45,23 +45,39 @@ contract CCTPBridgeModule_Validate_Test is CCTPBridgeModuleBase {
 
     function test_WhenFinalityThresholdIsInvalid() external view {
         bytes memory params = _encodeParams(
-            DOMAIN_BASE, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE, 500, DEFAULT_HOOK_DATA
+            DOMAIN_BASE, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE_BPS, 500, DEFAULT_HOOK_DATA
         );
         (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_BRIDGE_AMOUNT, params);
         assertFalse(isValid);
         assertEq(reason, "Invalid finality threshold");
     }
 
-    function test_WhenMaxFeeEqualsAmount() external view {
-        (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_MAX_FEE, _defaultParams());
+    function test_WhenMaxFeeBpsEquals10000() external view {
+        bytes memory params = _encodeParams(
+            DOMAIN_BASE,
+            DEFAULT_MINT_RECIPIENT,
+            DEFAULT_DESTINATION_CALLER,
+            uint16(10_000),
+            FINALITY_FAST,
+            DEFAULT_HOOK_DATA
+        );
+        (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_BRIDGE_AMOUNT, params);
         assertFalse(isValid);
-        assertEq(reason, "Max fee exceeds amount");
+        assertEq(reason, "Invalid max fee bps");
     }
 
-    function test_WhenMaxFeeExceedsAmount() external view {
-        (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_MAX_FEE - 1, _defaultParams());
+    function test_WhenMaxFeeBpsExceeds10000() external view {
+        bytes memory params = _encodeParams(
+            DOMAIN_BASE,
+            DEFAULT_MINT_RECIPIENT,
+            DEFAULT_DESTINATION_CALLER,
+            uint16(15_000),
+            FINALITY_FAST,
+            DEFAULT_HOOK_DATA
+        );
+        (bool isValid, string memory reason) = module.validate(address(usdc), DEFAULT_BRIDGE_AMOUNT, params);
         assertFalse(isValid);
-        assertEq(reason, "Max fee exceeds amount");
+        assertEq(reason, "Invalid max fee bps");
     }
 
     function test_WhenCallerHasInsufficientBalance() external {
@@ -83,7 +99,7 @@ contract CCTPBridgeModule_Validate_Test is CCTPBridgeModuleBase {
     }
 
     function testFuzz_WhenAllChecksPass(uint256 amount) external {
-        amount = bound(amount, DEFAULT_MAX_FEE + 1, DEFAULT_BRIDGE_AMOUNT * 10);
+        amount = bound(amount, 1, DEFAULT_BRIDGE_AMOUNT * 10);
         vm.prank(address(paymentRails));
         (bool isValid,) = module.validate(address(usdc), amount, _defaultParams());
         assertTrue(isValid);
@@ -133,7 +149,7 @@ contract CCTPBridgeModule_Validate_Test is CCTPBridgeModuleBase {
 
     function test_ValidateExecuteAgree_ZeroMintRecipient() external {
         bytes memory params = _encodeParams(
-            DOMAIN_BASE, bytes32(0), DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE, FINALITY_FAST, DEFAULT_HOOK_DATA
+            DOMAIN_BASE, bytes32(0), DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE_BPS, FINALITY_FAST, DEFAULT_HOOK_DATA
         );
 
         vm.prank(address(paymentRails));
@@ -147,12 +163,21 @@ contract CCTPBridgeModule_Validate_Test is CCTPBridgeModuleBase {
         assertEq(valReason, result.failureReason);
     }
 
-    function test_ValidateExecuteAgree_MaxFeeExceedsAmount() external {
-        vm.prank(address(paymentRails));
-        (bool isValid, string memory valReason) = module.validate(address(usdc), DEFAULT_MAX_FEE - 1, _defaultParams());
+    function test_ValidateExecuteAgree_InvalidMaxFeeBps() external {
+        bytes memory params = _encodeParams(
+            DOMAIN_BASE,
+            DEFAULT_MINT_RECIPIENT,
+            DEFAULT_DESTINATION_CALLER,
+            uint16(10_000),
+            FINALITY_FAST,
+            DEFAULT_HOOK_DATA
+        );
 
         vm.prank(address(paymentRails));
-        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_MAX_FEE - 1, _defaultParams());
+        (bool isValid, string memory valReason) = module.validate(address(usdc), DEFAULT_BRIDGE_AMOUNT, params);
+
+        vm.prank(address(paymentRails));
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, params);
 
         assertFalse(isValid);
         assertFalse(result.success);

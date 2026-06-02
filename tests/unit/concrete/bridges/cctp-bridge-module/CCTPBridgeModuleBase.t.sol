@@ -35,7 +35,7 @@ abstract contract CCTPBridgeModuleBase is Test {
     bytes32 internal constant DEFAULT_MINT_RECIPIENT =
         bytes32(uint256(uint160(0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB)));
     bytes32 internal constant DEFAULT_DESTINATION_CALLER = bytes32(0);
-    uint256 internal constant DEFAULT_MAX_FEE = 1e6;
+    uint16 internal constant DEFAULT_MAX_FEE_BPS = 20;
     uint32 internal constant FINALITY_FAST = 1000;
     uint32 internal constant FINALITY_STANDARD = 2000;
     bytes internal constant DEFAULT_HOOK_DATA = "";
@@ -86,7 +86,7 @@ abstract contract CCTPBridgeModuleBase is Test {
         uint32 destinationDomain,
         bytes32 mintRecipient,
         bytes32 destinationCaller,
-        uint256 maxFee,
+        uint16 maxFeeBps,
         uint32 minFinalityThreshold,
         bytes memory hookData
     )
@@ -94,7 +94,8 @@ abstract contract CCTPBridgeModuleBase is Test {
         pure
         returns (bytes memory)
     {
-        return abi.encode(destinationDomain, mintRecipient, destinationCaller, maxFee, minFinalityThreshold, hookData);
+        return
+            abi.encode(destinationDomain, mintRecipient, destinationCaller, maxFeeBps, minFinalityThreshold, hookData);
     }
 
     function _defaultParams() internal pure returns (bytes memory) {
@@ -102,7 +103,7 @@ abstract contract CCTPBridgeModuleBase is Test {
             DOMAIN_BASE,
             DEFAULT_MINT_RECIPIENT,
             DEFAULT_DESTINATION_CALLER,
-            DEFAULT_MAX_FEE,
+            DEFAULT_MAX_FEE_BPS,
             FINALITY_FAST,
             DEFAULT_HOOK_DATA
         );
@@ -113,9 +114,13 @@ abstract contract CCTPBridgeModuleBase is Test {
             DOMAIN_BASE,
             DEFAULT_MINT_RECIPIENT,
             DEFAULT_DESTINATION_CALLER,
-            DEFAULT_MAX_FEE,
+            DEFAULT_MAX_FEE_BPS,
             FINALITY_FAST,
             hex"deadbeef"
         );
+    }
+
+    function _computeMaxFee(uint256 amount, uint16 feeBps) internal pure returns (uint256) {
+        return (amount * uint256(feeBps)) / 10_000;
     }
 }

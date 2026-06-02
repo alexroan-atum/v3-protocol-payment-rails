@@ -11,20 +11,20 @@ CCTPBridgeModule_Validate
 │   └── it should return (false, "Zero mint recipient")
 ├── when finality threshold is invalid
 │   └── it should return (false, "Invalid finality threshold")
-├── when maxFee equals amount
-│   └── it should return (false, "Max fee exceeds amount")
-├── when maxFee exceeds amount
-│   └── it should return (false, "Max fee exceeds amount")
+├── when maxFeeBps equals 10000
+│   └── it should return (false, "Invalid max fee bps")
+├── when maxFeeBps exceeds 10000
+│   └── it should return (false, "Invalid max fee bps")
 ├── when caller has insufficient balance
 │   └── it should return (false, "Insufficient balance")
 ├── when all checks pass
 │   ├── it should return (true, "")
-│   └── it should return true for any valid amount above maxFee [fuzz]
+│   └── it should return true for any valid amount [fuzz]
 ├── validate and execute should agree on failure reasons
 │   ├── it should agree on invalid params
 │   ├── it should agree on zero bridge amount
 │   ├── it should agree on wrong token
 │   ├── it should agree on zero mint recipient
-│   └── it should agree on maxFee exceeds amount
+│   └── it should agree on invalid max fee bps
 └── fuzz: validate and execute agreement
     └── it should produce identical failure reasons for shared validation checks [fuzz]

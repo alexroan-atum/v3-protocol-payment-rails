@@ -28,7 +28,7 @@ interface ICCTPBridgeModule is IActionModule {
     /// @param amount               The amount of USDC burned.
     /// @param destinationDomain    CCTP domain ID of the destination chain.
     /// @param mintRecipient        Recipient address on the destination chain (bytes32-encoded).
-    /// @param maxFee               Maximum fee configured by the PaymentRails.
+    /// @param maxFee               Computed fee ceiling passed to Circle (amount × maxFeeBps / 10_000).
     /// @param minFinalityThreshold 1000 (fast) or 2000 (standard).
     /// @param hookData             Hook data passed to destination (empty if no hook).
     event BridgeInitiated(
@@ -45,10 +45,10 @@ interface ICCTPBridgeModule is IActionModule {
                             CONSTANT FUNCTIONS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Address of Circle's TokenMessengerV2 contract on this chain (immutable).
+    /// @notice Address of Circle's TokenMessengerV2 contract on this chain.
     function tokenMessenger() external view returns (address);
 
-    /// @notice Address of USDC on this chain (immutable).
+    /// @notice Address of USDC on this chain.
     function usdc() external view returns (address);
 
     /// @notice ABI-encodes a {CCTPBridgeParams} struct into bytes for `PaymentRails.configureToken()`.

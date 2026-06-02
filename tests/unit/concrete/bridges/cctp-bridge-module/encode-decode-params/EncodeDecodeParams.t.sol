@@ -10,7 +10,7 @@ contract CCTPBridgeModule_EncodeDecodeParams_Test is CCTPBridgeModuleBase {
             destinationDomain: DOMAIN_BASE,
             mintRecipient: DEFAULT_MINT_RECIPIENT,
             destinationCaller: DEFAULT_DESTINATION_CALLER,
-            maxFee: DEFAULT_MAX_FEE,
+            maxFeeBps: DEFAULT_MAX_FEE_BPS,
             minFinalityThreshold: FINALITY_FAST,
             hookData: DEFAULT_HOOK_DATA
         });
@@ -19,7 +19,7 @@ contract CCTPBridgeModule_EncodeDecodeParams_Test is CCTPBridgeModuleBase {
             DOMAIN_BASE,
             DEFAULT_MINT_RECIPIENT,
             DEFAULT_DESTINATION_CALLER,
-            DEFAULT_MAX_FEE,
+            DEFAULT_MAX_FEE_BPS,
             FINALITY_FAST,
             DEFAULT_HOOK_DATA
         );
@@ -31,7 +31,7 @@ contract CCTPBridgeModule_EncodeDecodeParams_Test is CCTPBridgeModuleBase {
             DOMAIN_ARBITRUM,
             DEFAULT_MINT_RECIPIENT,
             DEFAULT_DESTINATION_CALLER,
-            DEFAULT_MAX_FEE,
+            DEFAULT_MAX_FEE_BPS,
             FINALITY_STANDARD,
             DEFAULT_HOOK_DATA
         );
@@ -39,7 +39,7 @@ contract CCTPBridgeModule_EncodeDecodeParams_Test is CCTPBridgeModuleBase {
         assertEq(decoded.destinationDomain, DOMAIN_ARBITRUM);
         assertEq(decoded.mintRecipient, DEFAULT_MINT_RECIPIENT);
         assertEq(decoded.destinationCaller, DEFAULT_DESTINATION_CALLER);
-        assertEq(decoded.maxFee, DEFAULT_MAX_FEE);
+        assertEq(decoded.maxFeeBps, DEFAULT_MAX_FEE_BPS);
         assertEq(decoded.minFinalityThreshold, FINALITY_STANDARD);
         assertEq(decoded.hookData, DEFAULT_HOOK_DATA);
     }
@@ -49,7 +49,7 @@ contract CCTPBridgeModule_EncodeDecodeParams_Test is CCTPBridgeModuleBase {
             destinationDomain: DOMAIN_ETHEREUM,
             mintRecipient: DEFAULT_MINT_RECIPIENT,
             destinationCaller: DEFAULT_DESTINATION_CALLER,
-            maxFee: 5e6,
+            maxFeeBps: 100,
             minFinalityThreshold: FINALITY_STANDARD,
             hookData: hex"cafebabe"
         });
@@ -58,18 +58,18 @@ contract CCTPBridgeModule_EncodeDecodeParams_Test is CCTPBridgeModuleBase {
         assertEq(recovered.destinationDomain, original.destinationDomain);
         assertEq(recovered.mintRecipient, original.mintRecipient);
         assertEq(recovered.destinationCaller, original.destinationCaller);
-        assertEq(recovered.maxFee, original.maxFee);
+        assertEq(recovered.maxFeeBps, original.maxFeeBps);
         assertEq(recovered.minFinalityThreshold, original.minFinalityThreshold);
         assertEq(recovered.hookData, original.hookData);
     }
 
-    function testFuzz_RoundTrip(uint32 domain, bytes32 recipient, uint256 maxFee, bool useFast) external view {
+    function testFuzz_RoundTrip(uint32 domain, bytes32 recipient, uint16 maxFeeBps, bool useFast) external view {
         vm.assume(recipient != bytes32(0));
         DataTypes.CCTPBridgeParams memory original = DataTypes.CCTPBridgeParams({
             destinationDomain: domain,
             mintRecipient: recipient,
             destinationCaller: bytes32(0),
-            maxFee: maxFee,
+            maxFeeBps: maxFeeBps,
             minFinalityThreshold: useFast ? FINALITY_FAST : FINALITY_STANDARD,
             hookData: ""
         });
@@ -77,7 +77,7 @@ contract CCTPBridgeModule_EncodeDecodeParams_Test is CCTPBridgeModuleBase {
         DataTypes.CCTPBridgeParams memory recovered = module.decodeParams(encoded);
         assertEq(recovered.destinationDomain, domain);
         assertEq(recovered.mintRecipient, recipient);
-        assertEq(recovered.maxFee, maxFee);
+        assertEq(recovered.maxFeeBps, maxFeeBps);
         assertEq(recovered.minFinalityThreshold, original.minFinalityThreshold);
     }
 }

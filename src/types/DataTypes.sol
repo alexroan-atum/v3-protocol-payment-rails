@@ -91,13 +91,22 @@ library DataTypes {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Routing parameters for a CCTP bridge action, stored in PaymentRails's moduleParams.
-    /// @dev destinationDomain is CCTP domain ID (NOT EVM chain ID).
+    /// @dev destinationDomain is CCTP domain ID (NOT EVM chain ID). maxFeeBps is used to compute
+    ///      the maxFee passed to Circle's TokenMessengerV2 at execution time:
+    ///      `maxFee = amount * maxFeeBps / 10_000`. This replaces a static maxFee to match Circle's
+    ///      percentage-based fee model and scale correctly with any bridge amount.
     struct CCTPBridgeParams {
+        /// @dev CCTP domain ID of the destination chain (NOT an EVM chain ID).
         uint32 destinationDomain;
+        /// @dev Recipient address on the destination chain, left-padded to bytes32.
         bytes32 mintRecipient;
+        /// @dev Address allowed to call `receiveMessage` on the destination. `bytes32(0)` = anyone.
         bytes32 destinationCaller;
-        uint256 maxFee;
+        /// @dev Fee ceiling in basis points. `maxFee = amount * maxFeeBps / 10_000`.
+        uint16 maxFeeBps;
+        /// @dev 1000 for fast (confirmed) or 2000 for standard (finalized) finality.
         uint32 minFinalityThreshold;
+        /// @dev Arbitrary bytes for destination-chain post-mint automation. Empty = no hook.
         bytes hookData;
     }
 }

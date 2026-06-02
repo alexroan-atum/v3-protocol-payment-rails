@@ -39,6 +39,7 @@ contract CCTPBridgeModuleHandler is Test {
     uint256 public ghost_totalMintedToPaymentRails;
 
     bytes32 internal constant MINT_RECIPIENT = bytes32(uint256(uint160(0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB)));
+    uint16 internal constant MAX_FEE_BPS = 20; // 0.2%
     uint32 internal constant MAX_DOMAIN = 10;
 
     constructor(
@@ -59,10 +60,9 @@ contract CCTPBridgeModuleHandler is Test {
                             EXECUTION ACTIONS
     //////////////////////////////////////////////////////////////////////////*/
 
-    function handler_execute(uint256 amount, uint32 domain, uint256 maxFee, bool useFastFinality) external {
-        amount = bound(amount, 2, 100_000e6); // min 2 so maxFee < amount is possible
+    function handler_execute(uint256 amount, uint32 domain, bool useFastFinality) external {
+        amount = bound(amount, 2, 100_000e6);
         domain = uint32(bound(domain, 0, MAX_DOMAIN));
-        maxFee = bound(maxFee, 0, amount - 1); // must be strictly less than amount
         uint32 finality = useFastFinality ? 1000 : 2000;
 
         usdc.mint(address(paymentRails), amount);
@@ -72,7 +72,7 @@ contract CCTPBridgeModuleHandler is Test {
             domain,
             MINT_RECIPIENT,
             bytes32(0), // destinationCaller — anyone can relay
-            maxFee,
+            uint16(MAX_FEE_BPS),
             finality,
             bytes("") // no hook data
         );
@@ -80,10 +80,9 @@ contract CCTPBridgeModuleHandler is Test {
         paymentRails.initiateBridge(address(usdc), amount, params);
     }
 
-    function handler_executeWithHook(uint256 amount, uint32 domain, uint256 maxFee, bool useFastFinality) external {
+    function handler_executeWithHook(uint256 amount, uint32 domain, bool useFastFinality) external {
         amount = bound(amount, 2, 100_000e6);
         domain = uint32(bound(domain, 0, MAX_DOMAIN));
-        maxFee = bound(maxFee, 0, amount - 1);
         uint32 finality = useFastFinality ? 1000 : 2000;
 
         usdc.mint(address(paymentRails), amount);
@@ -93,7 +92,7 @@ contract CCTPBridgeModuleHandler is Test {
             domain,
             MINT_RECIPIENT,
             bytes32(0),
-            maxFee,
+            uint16(MAX_FEE_BPS),
             finality,
             bytes(hex"deadbeef") // non-empty hook data
         );
@@ -117,7 +116,7 @@ contract CCTPBridgeModuleHandler is Test {
                 uint32(0),
                 bytes32(0), // invalid: zero recipient
                 bytes32(0),
-                uint256(0),
+                uint16(MAX_FEE_BPS),
                 uint32(1000),
                 bytes("")
             );
@@ -130,7 +129,7 @@ contract CCTPBridgeModuleHandler is Test {
                 uint32(0),
                 MINT_RECIPIENT,
                 bytes32(0),
-                uint256(0),
+                uint16(MAX_FEE_BPS),
                 uint32(999), // invalid finality
                 bytes("")
             );
@@ -138,21 +137,21 @@ contract CCTPBridgeModuleHandler is Test {
             assertFalse(result.success, "Bad finality should fail");
             assertEq(result.failureReason, "Invalid finality threshold");
         } else if (badCase == 2) {
-            // maxFee >= amount
+            // maxFeeBps >= 10_000
             params = abi.encode(
                 uint32(0),
                 MINT_RECIPIENT,
                 bytes32(0),
-                amount, // maxFee == amount
+                uint16(10_000), // maxFeeBps == 100%
                 uint32(1000),
                 bytes("")
             );
             result = paymentRails.initiateBridge(address(usdc), amount, params);
-            assertFalse(result.success, "maxFee >= amount should fail");
-            assertEq(result.failureReason, "Max fee exceeds amount");
+            assertFalse(result.success, "maxFeeBps >= 10_000 should fail");
+            assertEq(result.failureReason, "Invalid max fee bps");
         } else {
             // Zero bridge amount
-            params = abi.encode(uint32(0), MINT_RECIPIENT, bytes32(0), uint256(0), uint32(1000), bytes(""));
+            params = abi.encode(uint32(0), MINT_RECIPIENT, bytes32(0), uint16(MAX_FEE_BPS), uint32(1000), bytes(""));
             result = paymentRails.initiateBridge(address(usdc), 0, params);
             assertFalse(result.success, "Zero amount should fail");
             assertEq(result.failureReason, "Zero bridge amount");
@@ -165,7 +164,8 @@ contract CCTPBridgeModuleHandler is Test {
 
         otherToken.mint(address(paymentRails), amount);
 
-        bytes memory params = abi.encode(domain, MINT_RECIPIENT, bytes32(0), uint256(0), uint32(1000), bytes(""));
+        bytes memory params =
+            abi.encode(domain, MINT_RECIPIENT, bytes32(0), uint16(MAX_FEE_BPS), uint32(1000), bytes(""));
 
         vm.prank(address(paymentRails));
         IERC20(address(otherToken)).approve(address(module), amount);
