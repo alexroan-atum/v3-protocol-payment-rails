@@ -20,16 +20,16 @@ contract CowSwapDryRun is Script, StdCheats {
 
     address internal constant GPV2_SETTLEMENT = 0x9008D19f58AAbD9eD0D60971565AA8510560ab41;
 
-    address internal constant DEFAULT_SELL_TOKEN = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
-    address internal constant DEFAULT_BUY_TOKEN = 0xc02AAA39B223fe8d0A0e5595ab2d3EB9fa40Fc9E;
+    address internal constant DEFAULT_SELL_TOKEN = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2; // WETH
+    address internal constant DEFAULT_BUY_TOKEN = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48; // USDC
 
-    address internal constant DEFAULT_SELL_TOKEN_FEED = 0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6; // USDC/USD
-    address internal constant DEFAULT_BUY_TOKEN_FEED = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419; // ETH/USD
+    address internal constant DEFAULT_SELL_TOKEN_FEED = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419; // ETH/USD
+    address internal constant DEFAULT_BUY_TOKEN_FEED = 0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6; // USDC/USD
 
-    uint256 internal constant DEFAULT_SELL_AMOUNT = 1_000_000; // 1 USDC
-    uint256 internal constant DEFAULT_MIN_BALANCE = 1_000_000; // 1 USDC
+    uint256 internal constant DEFAULT_SELL_AMOUNT = 1e15; // 0.001 WETH
+    uint256 internal constant DEFAULT_MIN_BALANCE = 1e15; // 0.001 WETH
     uint16 internal constant DEFAULT_SLIPPAGE_BPS = 500; // 5%
-    uint256 internal constant DEFAULT_MAX_STALENESS = 3600; // 1 hour
+    uint256 internal constant DEFAULT_MAX_STALENESS = 86_400; // 24 hours (generous for fork simulations)
     uint32 internal constant DEFAULT_VALIDITY_DURATION = 1800; // 30 min
 
     struct Config {
@@ -52,9 +52,7 @@ contract CowSwapDryRun is Script, StdCheats {
 
     function run() public {
         Config memory cfg = _loadConfig();
-        address deployer;
-        uint256 deployerKey;
-        (deployer, deployerKey) = _deriveDeployer();
+        (address deployer,) = _deriveDeployer();
 
         console2.log("=============================================================");
         console2.log("  CowSwap Full Dry Run (deploy + configure + fund + execute)");
@@ -67,10 +65,7 @@ contract CowSwapDryRun is Script, StdCheats {
         console2.log("Slippage bps:   ", uint256(cfg.maxSlippageBps));
         console2.log("Validity (sec): ", uint256(cfg.validityDuration));
 
-        uint256 deployerBal = IERC20(cfg.sellToken).balanceOf(deployer);
-        console2.log("Deployer sell token balance:", deployerBal);
-
-        vm.startBroadcast(deployerKey);
+        vm.startPrank(deployer);
 
         // --- DEPLOY ---
         // PaymentRails first — CowSwapModule needs its address at construction.
@@ -99,24 +94,18 @@ contract CowSwapDryRun is Script, StdCheats {
         paymentRails.configureToken(cfg.sellToken, "COWSWAP", address(module), cfg.minBalance, moduleParams, true);
         console2.log("[CONFIGURED] Token route set");
 
+        vm.stopPrank();
+
         // --- FUND ---
-        if (deployerBal >= cfg.sellAmount) {
-            IERC20(cfg.sellToken).transfer(address(paymentRails), cfg.sellAmount);
-            console2.log("[FUNDED] PaymentRails from deployer wallet:", cfg.sellAmount);
-        } else {
-            vm.stopBroadcast();
-            deal(cfg.sellToken, address(paymentRails), cfg.sellAmount);
-            vm.startBroadcast(deployerKey);
-            console2.log("[FUNDED] PaymentRails via deal() (simulation only):", cfg.sellAmount);
-        }
+        deal(cfg.sellToken, address(paymentRails), cfg.sellAmount);
+        console2.log("[FUNDED] PaymentRails via deal():", cfg.sellAmount);
 
         // --- EXECUTE ---
         vm.recordLogs();
+        vm.prank(deployer);
         bool success = paymentRails.executeAction(cfg.sellToken, cfg.sellAmount);
         require(success, "executeAction failed");
         console2.log("[EXECUTED] CowSwap order created on-chain");
-
-        vm.stopBroadcast();
 
         // --- VERIFY ---
         _verifyAndLog(cfg, module, paymentRails);

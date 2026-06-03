@@ -56,7 +56,7 @@ contract CCTPBridgeDryRun is Script, StdCheats {
 
     function run() public {
         Config memory cfg = _loadConfig();
-        (address deployer, uint256 deployerKey) = _deriveDeployer();
+        (address deployer,) = _deriveDeployer();
 
         if (cfg.mintRecipient == address(0)) cfg.mintRecipient = deployer;
 
@@ -74,7 +74,7 @@ contract CCTPBridgeDryRun is Script, StdCheats {
         console2.log("Mint recipient:    ", cfg.mintRecipient);
         console2.log("=============================================================");
 
-        vm.startBroadcast(deployerKey);
+        vm.startPrank(deployer);
 
         // --- Deploy ---
         PaymentRails paymentRails = new PaymentRails(deployer);
@@ -96,24 +96,17 @@ contract CCTPBridgeDryRun is Script, StdCheats {
         paymentRails.configureToken(cfg.usdc, "CCTP_BRIDGE", address(module), cfg.minBalance, moduleParams, true);
         console2.log("[CONFIGURED] USDC -> CCTP_BRIDGE on PaymentRails");
 
-        // --- Fund ---
-        uint256 deployerBal = IERC20(cfg.usdc).balanceOf(deployer);
-        if (deployerBal >= cfg.bridgeAmount) {
-            IERC20(cfg.usdc).transfer(address(paymentRails), cfg.bridgeAmount);
-            console2.log("[FUNDED] From deployer wallet: %s", vm.toString(cfg.bridgeAmount));
-        } else {
-            vm.stopBroadcast();
-            deal(cfg.usdc, address(paymentRails), cfg.bridgeAmount);
-            vm.startBroadcast(deployerKey);
-            console2.log("[FUNDED] Via deal() (simulation only): %s", vm.toString(cfg.bridgeAmount));
-        }
+        vm.stopPrank();
+
+        // --- Fund PaymentRails ---
+        deal(cfg.usdc, address(paymentRails), cfg.bridgeAmount);
+        console2.log("[FUNDED] PaymentRails via deal(): %s", vm.toString(cfg.bridgeAmount));
 
         // --- Execute ---
+        vm.prank(deployer);
         bool success = paymentRails.executeAction(cfg.usdc, cfg.bridgeAmount);
         require(success, "executeAction failed");
         console2.log("[EXECUTED] depositForBurn called");
-
-        vm.stopBroadcast();
 
         // --- Verify ---
         _verify(cfg, module, paymentRails);

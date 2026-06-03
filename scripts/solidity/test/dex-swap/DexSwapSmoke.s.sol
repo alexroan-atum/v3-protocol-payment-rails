@@ -3,16 +3,20 @@ pragma solidity >=0.8.29 <0.9.0;
 
 import { Script, console2 } from "forge-std/src/Script.sol";
 import { PaymentRails } from "../../../../src/core/PaymentRails.sol";
-import { CowSwapModule } from "../../../../src/modules/swaps/CowSwapModule.sol";
+import { DexSwapModule } from "../../../../src/modules/swaps/DexSwapModule.sol";
 import { DataTypes } from "../../../../src/types/DataTypes.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-/// @title CowSwapSmoke
+/// @title DexSwapSmoke
 /// @author Credit Cooperative
-/// @notice Smoke test for the CowSwap module against already-deployed contracts.
+/// @notice Smoke test for the DexSwapModule against already-deployed contracts.
 /// @dev Requires PAYMENT_RAILS_ADDRESS and MODULE_ADDRESS env vars. Override token addresses for non-mainnet chains.
-/// Set SKIP_CONFIGURE=true / SKIP_FUND=true for subsequent runs.
-contract CowSwapSmoke is Script {
+///      Set SKIP_CONFIGURE=true / SKIP_FUND=true for subsequent runs.
+///
+///      Usage:
+///        source .env && forge script scripts/solidity/test/dex-swap/DexSwapSmoke.s.sol \
+///          --rpc-url $ETHEREUM_RPC_URL --broadcast -vvvv
+contract DexSwapSmoke is Script {
     /*//////////////////////////////////////////////////////////////////////////
                                     CONSTANTS
     //////////////////////////////////////////////////////////////////////////*/
@@ -25,15 +29,15 @@ contract CowSwapSmoke is Script {
 
     uint256 internal constant DEFAULT_SELL_AMOUNT = 1_000_000; // 1 USDC
     uint16 internal constant DEFAULT_SLIPPAGE_BPS = 500; // 5%
+    uint24 internal constant DEFAULT_FEE = 500; // Uniswap 0.05% pool
     uint256 internal constant DEFAULT_MAX_STALENESS = 3600; // 1 hour
     uint256 internal constant DEFAULT_MIN_BALANCE = 1_000_000; // 1 USDC
-    uint32 internal constant DEFAULT_VALIDITY_DURATION = 1800; // 30 minutes
+    uint256 internal constant DEFAULT_SWAP_DEADLINE = 300; // 5 minutes
 
     /*//////////////////////////////////////////////////////////////////////////
                                     STRUCTS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @dev Packed config to avoid stack-too-deep.
     struct Config {
         address sellToken;
         address buyToken;
@@ -41,11 +45,10 @@ contract CowSwapSmoke is Script {
         address buyTokenFeed;
         uint256 sellAmount;
         uint16 maxSlippageBps;
+        uint24 fee;
         uint256 maxStaleness;
         uint256 minBalance;
-        uint32 validityDuration;
-        bytes32 appData;
-        string cowswapApi;
+        uint256 swapDeadlineSeconds;
         bool skipConfigure;
         bool skipFund;
     }
@@ -59,25 +62,24 @@ contract CowSwapSmoke is Script {
         address moduleAddr = vm.envAddress("MODULE_ADDRESS");
 
         PaymentRails paymentRails = PaymentRails(paymentRailsAddr);
-        CowSwapModule module = CowSwapModule(moduleAddr);
+        DexSwapModule module = DexSwapModule(moduleAddr);
 
         Config memory cfg = _loadConfig();
-
-        address deployer;
-        uint256 deployerKey;
-        (deployer, deployerKey) = _deriveDeployer();
+        (address deployer, uint256 deployerKey) = _deriveDeployer();
 
         console2.log("=============================================================");
-        console2.log("  CowSwap Smoke Test");
+        console2.log("  DexSwap Smoke Test");
         console2.log("=============================================================");
         console2.log("Deployer:       ", deployer);
-        console2.log("PaymentRails:           ", paymentRailsAddr);
+        console2.log("PaymentRails:   ", paymentRailsAddr);
         console2.log("Module:         ", moduleAddr);
+        console2.log("Router:         ", module.router());
         console2.log("Sell token:     ", cfg.sellToken);
         console2.log("Buy token:      ", cfg.buyToken);
         console2.log("Sell amount:    ", cfg.sellAmount);
         console2.log("Slippage bps:   ", uint256(cfg.maxSlippageBps));
-        console2.log("Validity (sec): ", uint256(cfg.validityDuration));
+        console2.log("Pool fee:       ", uint256(cfg.fee));
+        console2.log("Swap deadline:  ", cfg.swapDeadlineSeconds);
         console2.log("Skip configure: ", cfg.skipConfigure);
         console2.log("Skip fund:      ", cfg.skipFund);
         console2.log("=============================================================");
@@ -95,23 +97,27 @@ contract CowSwapSmoke is Script {
             console2.log("[FUNDED] PaymentRails with:", cfg.sellAmount);
         }
 
+        uint256 buyTokenBefore = IERC20(cfg.buyToken).balanceOf(paymentRailsAddr);
+
         bool success = paymentRails.executeAction(cfg.sellToken, cfg.sellAmount);
         require(success, "executeAction failed");
-        console2.log("[EXECUTED] CowSwap order created on-chain");
+        console2.log("[EXECUTED] DexSwap completed");
 
         vm.stopBroadcast();
 
-        // orderId depends on mined block.timestamp — use cowswap-submit.sh to parse broadcast JSON
+        uint256 buyTokenAfter = IERC20(cfg.buyToken).balanceOf(paymentRailsAddr);
+        uint256 received = buyTokenAfter - buyTokenBefore;
+
         console2.log("");
         console2.log("=============================================================");
         console2.log("  BROADCAST COMPLETE");
         console2.log("=============================================================");
-        console2.log("");
-        console2.log("  Submit the order to CowSwap API:");
-        console2.log("    bash scripts/solidity/test/cowswap/cowswap-submit.sh");
-        console2.log("");
-        console2.log("  Or auto-submit:");
-        console2.log("    AUTO_SUBMIT=true bash scripts/solidity/test/cowswap/cowswap-submit.sh");
+        console2.log("Buy token received at PaymentRails:", received);
+        require(received > 0, "No buy token received");
+        console2.log("[VERIFIED] Swap produced output");
+
+        uint256 moduleSellBalance = IERC20(cfg.sellToken).balanceOf(moduleAddr);
+        console2.log("Module sell token leftover:        ", moduleSellBalance, " (expected: 0)");
         console2.log("=============================================================");
     }
 
@@ -126,18 +132,14 @@ contract CowSwapSmoke is Script {
         cfg.buyTokenFeed = vm.envOr("BUY_TOKEN_FEED", DEFAULT_BUY_TOKEN_FEED);
         cfg.sellAmount = vm.envOr("SELL_AMOUNT", DEFAULT_SELL_AMOUNT);
         cfg.maxSlippageBps = uint16(vm.envOr("MAX_SLIPPAGE_BPS", uint256(DEFAULT_SLIPPAGE_BPS)));
+        cfg.fee = uint24(vm.envOr("POOL_FEE", uint256(DEFAULT_FEE)));
         cfg.maxStaleness = vm.envOr("MAX_STALENESS", DEFAULT_MAX_STALENESS);
         cfg.minBalance = vm.envOr("MIN_BALANCE", DEFAULT_MIN_BALANCE);
-        cfg.validityDuration = uint32(vm.envOr("VALIDITY_DURATION", uint256(DEFAULT_VALIDITY_DURATION)));
+        cfg.swapDeadlineSeconds = vm.envOr("SWAP_DEADLINE", DEFAULT_SWAP_DEADLINE);
 
-        string memory defaultApi = "https://api.cow.fi/mainnet";
-        cfg.cowswapApi = vm.envOr("COWSWAP_API", defaultApi);
-
-        string memory defaultFalse = "false";
-        cfg.skipConfigure = keccak256(bytes(vm.envOr("SKIP_CONFIGURE", defaultFalse))) == keccak256("true");
-        cfg.skipFund = keccak256(bytes(vm.envOr("SKIP_FUND", defaultFalse))) == keccak256("true");
-
-        cfg.appData = bytes32(0);
+        string memory f = "false";
+        cfg.skipConfigure = keccak256(bytes(vm.envOr("SKIP_CONFIGURE", f))) == keccak256("true");
+        cfg.skipFund = keccak256(bytes(vm.envOr("SKIP_FUND", f))) == keccak256("true");
     }
 
     function _deriveDeployer() internal returns (address deployer, uint256 deployerKey) {
@@ -154,7 +156,7 @@ contract CowSwapSmoke is Script {
 
     function _preflight(
         Config memory cfg,
-        CowSwapModule module,
+        DexSwapModule module,
         PaymentRails paymentRails,
         address deployer
     )
@@ -163,13 +165,9 @@ contract CowSwapSmoke is Script {
     {
         require(address(module).code.length > 0, "MODULE_ADDRESS is not a contract");
         require(address(paymentRails).code.length > 0, "PAYMENT_RAILS_ADDRESS is not a contract");
-        require(module.cowSettlement() != address(0), "Module cowSettlement is zero");
-        console2.log("[OK] Module cowSettlement:", module.cowSettlement());
 
-        require(
-            module.paymentRails() == address(paymentRails), "Module paymentRails does not match PAYMENT_RAILS_ADDRESS"
-        );
-        console2.log("[OK] Module paymentRails:", module.paymentRails());
+        require(module.router() != address(0), "Module router is zero");
+        console2.log("[OK] Module router:", module.router());
 
         if (!cfg.skipConfigure) {
             address paymentRailsOwner = paymentRails.owner();
@@ -181,29 +179,27 @@ contract CowSwapSmoke is Script {
             uint256 balance = IERC20(cfg.sellToken).balanceOf(deployer);
             require(balance >= cfg.sellAmount, "Deployer has insufficient sell token");
             console2.log("[OK] Deployer sell token balance:", balance);
-        }
-
-        if (cfg.skipFund) {
+        } else {
             uint256 paymentRailsBalance = IERC20(cfg.sellToken).balanceOf(address(paymentRails));
             require(paymentRailsBalance >= cfg.sellAmount, "PaymentRails has insufficient sell token balance");
             console2.log("[OK] PaymentRails sell token balance:", paymentRailsBalance);
         }
     }
 
-    function _configure(Config memory cfg, CowSwapModule module, PaymentRails paymentRails) internal {
+    function _configure(Config memory cfg, DexSwapModule module, PaymentRails paymentRails) internal {
         bytes memory moduleParams = module.encodeParams(
-            DataTypes.CowSwapParams({
+            DataTypes.DexSwapParams({
                 targetToken: cfg.buyToken,
+                fee: cfg.fee,
                 maxSlippageBps: cfg.maxSlippageBps,
                 sellTokenPriceFeed: cfg.sellTokenFeed,
                 buyTokenPriceFeed: cfg.buyTokenFeed,
                 maxStaleness: cfg.maxStaleness,
-                validityDuration: cfg.validityDuration,
-                appData: cfg.appData
+                swapDeadlineSeconds: cfg.swapDeadlineSeconds
             })
         );
 
-        paymentRails.configureToken(cfg.sellToken, "COWSWAP", address(module), cfg.minBalance, moduleParams, true);
-        console2.log("[CONFIGURED] %s -> COWSWAP", vm.toString(cfg.sellToken));
+        paymentRails.configureToken(cfg.sellToken, "SWAP", address(module), cfg.minBalance, moduleParams, true);
+        console2.log("[CONFIGURED] %s -> SWAP", vm.toString(cfg.sellToken));
     }
 }

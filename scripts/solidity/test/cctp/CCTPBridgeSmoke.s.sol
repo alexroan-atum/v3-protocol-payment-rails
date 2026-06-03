@@ -99,7 +99,7 @@ contract CCTPBridgeSmoke is Script {
                 })
             );
             paymentRails.configureToken(cfg.usdc, "CCTP_BRIDGE", address(module), cfg.minBalance, moduleParams, true);
-            console2.log("[NODE] Configured USDC -> CCTP_BRIDGE");
+            console2.log("[CONFIGURED] USDC -> CCTP_BRIDGE");
         }
 
         if (!cfg.skipFund) {
