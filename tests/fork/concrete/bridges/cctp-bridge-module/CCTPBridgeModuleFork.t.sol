@@ -88,37 +88,55 @@ abstract contract CCTPBridgeModuleForkBase is Test {
                                     HELPERS
     //////////////////////////////////////////////////////////////////////////*/
 
-    function _buildParams(uint32 domain) internal pure returns (bytes memory) {
-        return abi.encode(
-            domain,
-            DEFAULT_MINT_RECIPIENT,
-            DEFAULT_DESTINATION_CALLER,
-            DEFAULT_MAX_FEE_BPS,
-            FINALITY_STANDARD,
-            bytes("")
+    function _buildParams(uint32 domain) internal view returns (bytes memory) {
+        return module.encodeParams(
+            DataTypes.CCTPBridgeParams({
+                destinationDomain: domain,
+                mintRecipient: DEFAULT_MINT_RECIPIENT,
+                destinationCaller: DEFAULT_DESTINATION_CALLER,
+                maxFeeBps: DEFAULT_MAX_FEE_BPS,
+                minFinalityThreshold: FINALITY_STANDARD,
+                hookData: bytes("")
+            })
         );
     }
 
-    function _buildParamsWithHook(uint32 domain) internal pure returns (bytes memory) {
-        return abi.encode(
-            domain,
-            DEFAULT_MINT_RECIPIENT,
-            DEFAULT_DESTINATION_CALLER,
-            DEFAULT_MAX_FEE_BPS,
-            FINALITY_STANDARD,
-            hex"deadbeef"
+    function _buildParamsWithHook(uint32 domain) internal view returns (bytes memory) {
+        return module.encodeParams(
+            DataTypes.CCTPBridgeParams({
+                destinationDomain: domain,
+                mintRecipient: DEFAULT_MINT_RECIPIENT,
+                destinationCaller: DEFAULT_DESTINATION_CALLER,
+                maxFeeBps: DEFAULT_MAX_FEE_BPS,
+                minFinalityThreshold: FINALITY_STANDARD,
+                hookData: hex"deadbeef"
+            })
         );
     }
 
-    function _buildParamsWithFee(uint32 domain, uint16 maxFeeBps) internal pure returns (bytes memory) {
-        return abi.encode(
-            domain, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, maxFeeBps, FINALITY_STANDARD, bytes("")
+    function _buildParamsWithFee(uint32 domain, uint16 maxFeeBps) internal view returns (bytes memory) {
+        return module.encodeParams(
+            DataTypes.CCTPBridgeParams({
+                destinationDomain: domain,
+                mintRecipient: DEFAULT_MINT_RECIPIENT,
+                destinationCaller: DEFAULT_DESTINATION_CALLER,
+                maxFeeBps: maxFeeBps,
+                minFinalityThreshold: FINALITY_STANDARD,
+                hookData: bytes("")
+            })
         );
     }
 
-    function _buildParamsWithFinality(uint32 domain, uint32 finality) internal pure returns (bytes memory) {
-        return abi.encode(
-            domain, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE_BPS, finality, bytes("")
+    function _buildParamsWithFinality(uint32 domain, uint32 finality) internal view returns (bytes memory) {
+        return module.encodeParams(
+            DataTypes.CCTPBridgeParams({
+                destinationDomain: domain,
+                mintRecipient: DEFAULT_MINT_RECIPIENT,
+                destinationCaller: DEFAULT_DESTINATION_CALLER,
+                maxFeeBps: DEFAULT_MAX_FEE_BPS,
+                minFinalityThreshold: finality,
+                hookData: bytes("")
+            })
         );
     }
 
@@ -314,14 +332,29 @@ contract CCTPBridgeModuleForkExecuteTest is CCTPBridgeModuleForkBase {
 contract CCTPBridgeModuleForkMaxFeeBpsTest is CCTPBridgeModuleForkBase {
     uint16 internal constant FEE_BPS = 20; // 0.2%
 
-    function _buildFastFinalityParams(uint32 domain, uint16 maxFeeBps) internal pure returns (bytes memory) {
-        return
-            abi.encode(domain, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, maxFeeBps, FINALITY_FAST, bytes(""));
+    function _buildFastFinalityParams(uint32 domain, uint16 maxFeeBps) internal view returns (bytes memory) {
+        return module.encodeParams(
+            DataTypes.CCTPBridgeParams({
+                destinationDomain: domain,
+                mintRecipient: DEFAULT_MINT_RECIPIENT,
+                destinationCaller: DEFAULT_DESTINATION_CALLER,
+                maxFeeBps: maxFeeBps,
+                minFinalityThreshold: FINALITY_FAST,
+                hookData: bytes("")
+            })
+        );
     }
 
-    function _buildFastFinalityParamsWithHook(uint32 domain, uint16 maxFeeBps) internal pure returns (bytes memory) {
-        return abi.encode(
-            domain, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, maxFeeBps, FINALITY_FAST, hex"deadbeef"
+    function _buildFastFinalityParamsWithHook(uint32 domain, uint16 maxFeeBps) internal view returns (bytes memory) {
+        return module.encodeParams(
+            DataTypes.CCTPBridgeParams({
+                destinationDomain: domain,
+                mintRecipient: DEFAULT_MINT_RECIPIENT,
+                destinationCaller: DEFAULT_DESTINATION_CALLER,
+                maxFeeBps: maxFeeBps,
+                minFinalityThreshold: FINALITY_FAST,
+                hookData: hex"deadbeef"
+            })
         );
     }
 
@@ -474,13 +507,15 @@ contract CCTPBridgeModuleForkValidateTest is CCTPBridgeModuleForkBase {
     }
 
     function test_Validate_ZeroMintRecipient_ReturnsFalse() external view {
-        bytes memory params = abi.encode(
-            DOMAIN_BASE,
-            bytes32(0), // zero mint recipient
-            DEFAULT_DESTINATION_CALLER,
-            DEFAULT_MAX_FEE_BPS,
-            FINALITY_STANDARD,
-            bytes("")
+        bytes memory params = module.encodeParams(
+            DataTypes.CCTPBridgeParams({
+                destinationDomain: DOMAIN_BASE,
+                mintRecipient: bytes32(0),
+                destinationCaller: DEFAULT_DESTINATION_CALLER,
+                maxFeeBps: DEFAULT_MAX_FEE_BPS,
+                minFinalityThreshold: FINALITY_STANDARD,
+                hookData: bytes("")
+            })
         );
 
         (bool isValid, string memory reason) = module.validate(USDC, BRIDGE_AMOUNT, params);
@@ -490,13 +525,15 @@ contract CCTPBridgeModuleForkValidateTest is CCTPBridgeModuleForkBase {
     }
 
     function test_Validate_InvalidFinalityThreshold_ReturnsFalse() external view {
-        bytes memory params = abi.encode(
-            DOMAIN_BASE,
-            DEFAULT_MINT_RECIPIENT,
-            DEFAULT_DESTINATION_CALLER,
-            DEFAULT_MAX_FEE_BPS,
-            uint32(9999), // invalid finality threshold
-            bytes("")
+        bytes memory params = module.encodeParams(
+            DataTypes.CCTPBridgeParams({
+                destinationDomain: DOMAIN_BASE,
+                mintRecipient: DEFAULT_MINT_RECIPIENT,
+                destinationCaller: DEFAULT_DESTINATION_CALLER,
+                maxFeeBps: DEFAULT_MAX_FEE_BPS,
+                minFinalityThreshold: uint32(9999),
+                hookData: bytes("")
+            })
         );
 
         (bool isValid, string memory reason) = module.validate(USDC, BRIDGE_AMOUNT, params);
@@ -712,5 +749,369 @@ contract CCTPBridgeModuleForkSecurityTest is CCTPBridgeModuleForkBase {
 
         uint256 paymentRailsToModuleAllowance = IERC20(USDC).allowance(address(paymentRails), address(module));
         assertEq(paymentRailsToModuleAllowance, 0, "PaymentRails approval to module should be consumed after execute");
+    }
+}
+
+/*//////////////////////////////////////////////////////////////////////////
+                    ENCODE / DECODE PARAMS TESTS
+//////////////////////////////////////////////////////////////////////////*/
+
+contract CCTPBridgeModuleForkEncodeDecodeTest is CCTPBridgeModuleForkBase {
+    function test_EncodeDecodeParams_Roundtrip_PreservesAllFields() external view {
+        DataTypes.CCTPBridgeParams memory original = DataTypes.CCTPBridgeParams({
+            destinationDomain: DOMAIN_BASE,
+            mintRecipient: DEFAULT_MINT_RECIPIENT,
+            destinationCaller: DEFAULT_DESTINATION_CALLER,
+            maxFeeBps: 50,
+            minFinalityThreshold: FINALITY_FAST,
+            hookData: hex"deadbeef"
+        });
+
+        bytes memory encoded = module.encodeParams(original);
+        DataTypes.CCTPBridgeParams memory decoded = module.decodeParams(encoded);
+
+        assertEq(decoded.destinationDomain, original.destinationDomain);
+        assertEq(decoded.mintRecipient, original.mintRecipient);
+        assertEq(decoded.destinationCaller, original.destinationCaller);
+        assertEq(decoded.maxFeeBps, original.maxFeeBps);
+        assertEq(decoded.minFinalityThreshold, original.minFinalityThreshold);
+        assertEq(keccak256(decoded.hookData), keccak256(original.hookData));
+    }
+
+    function test_EncodeDecodeParams_ZeroFeeBps_Roundtrip() external view {
+        DataTypes.CCTPBridgeParams memory original = DataTypes.CCTPBridgeParams({
+            destinationDomain: DOMAIN_ARBITRUM,
+            mintRecipient: DEFAULT_MINT_RECIPIENT,
+            destinationCaller: bytes32(0),
+            maxFeeBps: 0,
+            minFinalityThreshold: FINALITY_STANDARD,
+            hookData: bytes("")
+        });
+
+        bytes memory encoded = module.encodeParams(original);
+        DataTypes.CCTPBridgeParams memory decoded = module.decodeParams(encoded);
+
+        assertEq(decoded.destinationDomain, DOMAIN_ARBITRUM);
+        assertEq(decoded.maxFeeBps, 0);
+        assertEq(decoded.hookData.length, 0);
+    }
+
+    function test_EncodeDecodeParams_DifferentDomains_DifferentEncodings() external view {
+        bytes memory paramsBase = _buildParams(DOMAIN_BASE);
+        bytes memory paramsArbitrum = _buildParams(DOMAIN_ARBITRUM);
+
+        assertTrue(keccak256(paramsBase) != keccak256(paramsArbitrum));
+    }
+}
+
+/*//////////////////////////////////////////////////////////////////////////
+                    EDGE CASE TESTS
+//////////////////////////////////////////////////////////////////////////*/
+
+contract CCTPBridgeModuleForkMaxFeeBpsEdgeCaseTest is CCTPBridgeModuleForkBase {
+    function test_Execute_HighFeeBps_9999_SucceedsAgainstRealCCTP() external {
+        // 99.99% fee ceiling — leaves only 1 USDC from a 10,000 USDC bridge
+        uint16 highFeeBps = 9999;
+        bytes memory params = module.encodeParams(
+            DataTypes.CCTPBridgeParams({
+                destinationDomain: DOMAIN_BASE,
+                mintRecipient: DEFAULT_MINT_RECIPIENT,
+                destinationCaller: DEFAULT_DESTINATION_CALLER,
+                maxFeeBps: highFeeBps,
+                minFinalityThreshold: FINALITY_STANDARD,
+                hookData: bytes("")
+            })
+        );
+
+        uint256 expectedFee = (BRIDGE_AMOUNT * uint256(highFeeBps)) / 10_000;
+
+        vm.startPrank(address(paymentRails));
+        IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
+        DataTypes.ExecutionResult memory result = module.execute(USDC, BRIDGE_AMOUNT, params);
+        vm.stopPrank();
+
+        assertTrue(result.success, "High feeBps must succeed against real TokenMessengerV2");
+        assertEq(result.amountOut, BRIDGE_AMOUNT - expectedFee, "amountOut must reflect 99.99% fee ceiling");
+        assertGt(expectedFee, 0, "Fee must be non-zero");
+    }
+
+    function test_Execute_SmallAmount_FeeBpsTruncatesToZero() external {
+        // amount=1 (0.000001 USDC), maxFeeBps=1 → maxFee = 1 * 1 / 10000 = 0 (truncation)
+        uint256 tinyAmount = 1;
+        uint16 feeBps = 1;
+
+        bytes memory params = module.encodeParams(
+            DataTypes.CCTPBridgeParams({
+                destinationDomain: DOMAIN_BASE,
+                mintRecipient: DEFAULT_MINT_RECIPIENT,
+                destinationCaller: DEFAULT_DESTINATION_CALLER,
+                maxFeeBps: feeBps,
+                minFinalityThreshold: FINALITY_STANDARD,
+                hookData: bytes("")
+            })
+        );
+
+        deal(USDC, address(paymentRails), tinyAmount);
+
+        vm.startPrank(address(paymentRails));
+        IERC20(USDC).approve(address(module), tinyAmount);
+        DataTypes.ExecutionResult memory result = module.execute(USDC, tinyAmount, params);
+        vm.stopPrank();
+
+        assertTrue(result.success, "Tiny amount with fee truncation should succeed");
+        assertEq(result.amountOut, tinyAmount, "amountOut must equal amount when fee truncates to 0");
+    }
+
+    function test_Execute_HighFeeBps_ViaPaymentRails_FullLifecycle() external {
+        uint16 highFeeBps = 5000; // 50% fee ceiling
+        bytes memory params = module.encodeParams(
+            DataTypes.CCTPBridgeParams({
+                destinationDomain: DOMAIN_BASE,
+                mintRecipient: DEFAULT_MINT_RECIPIENT,
+                destinationCaller: DEFAULT_DESTINATION_CALLER,
+                maxFeeBps: highFeeBps,
+                minFinalityThreshold: FINALITY_STANDARD,
+                hookData: bytes("")
+            })
+        );
+
+        vm.prank(owner);
+        paymentRails.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
+
+        uint256 balanceBefore = IERC20(USDC).balanceOf(address(paymentRails));
+
+        bool success = paymentRails.executeAction(USDC, BRIDGE_AMOUNT);
+
+        assertTrue(success, "50% fee ceiling should succeed via PaymentRails");
+        assertEq(IERC20(USDC).balanceOf(address(paymentRails)), balanceBefore - BRIDGE_AMOUNT);
+        assertEq(IERC20(USDC).balanceOf(address(module)), 0, "Module must hold zero after bridge");
+    }
+}
+
+contract CCTPBridgeModuleForkUSDCPauseTest is CCTPBridgeModuleForkBase {
+    event ActionFailed(
+        address indexed token, string actionType, uint256 amountIn, string reason, address indexed executor
+    );
+
+    function _pauseUSDC() internal {
+        (, bytes memory data) = USDC.staticcall(abi.encodeWithSignature("pauser()"));
+        address usdcPauser = abi.decode(data, (address));
+        vm.prank(usdcPauser);
+        (bool ok,) = USDC.call(abi.encodeWithSignature("pause()"));
+        require(ok, "Failed to pause USDC");
+    }
+
+    function _unpauseUSDC() internal {
+        (, bytes memory data) = USDC.staticcall(abi.encodeWithSignature("pauser()"));
+        address usdcPauser = abi.decode(data, (address));
+        vm.prank(usdcPauser);
+        (bool ok,) = USDC.call(abi.encodeWithSignature("unpause()"));
+        require(ok, "Failed to unpause USDC");
+    }
+
+    function test_Execute_USDCPaused_ReturnsGracefulFailure() external {
+        bytes memory params = _buildParams(DOMAIN_BASE);
+
+        vm.startPrank(address(paymentRails));
+        IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
+        vm.stopPrank();
+
+        _pauseUSDC();
+
+        vm.prank(address(paymentRails));
+        DataTypes.ExecutionResult memory result = module.execute(USDC, BRIDGE_AMOUNT, params);
+
+        assertFalse(result.success, "Execute must fail gracefully when USDC is paused");
+        assertEq(result.failureReason, "Token transfer failed");
+    }
+
+    function test_Execute_USDCPaused_NoTokensStranded() external {
+        bytes memory params = _buildParams(DOMAIN_BASE);
+
+        uint256 paymentRailsBefore = IERC20(USDC).balanceOf(address(paymentRails));
+
+        vm.startPrank(address(paymentRails));
+        IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
+        vm.stopPrank();
+
+        _pauseUSDC();
+
+        vm.prank(address(paymentRails));
+        module.execute(USDC, BRIDGE_AMOUNT, params);
+
+        assertEq(IERC20(USDC).balanceOf(address(paymentRails)), paymentRailsBefore, "PaymentRails balance unchanged");
+        assertEq(IERC20(USDC).balanceOf(address(module)), 0, "Module holds zero");
+    }
+
+    /// @dev USDC's approve() has a whenNotPaused modifier, so forceApprove reverts before the module is reached.
+    function test_Execute_USDCPaused_ViaPaymentRails_RevertsAtApprove() external {
+        bytes memory params = _buildParams(DOMAIN_BASE);
+
+        vm.prank(owner);
+        paymentRails.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
+
+        _pauseUSDC();
+
+        vm.expectRevert();
+        paymentRails.executeAction(USDC, BRIDGE_AMOUNT);
+    }
+
+    function test_Execute_USDCUnpaused_ResumesNormally() external {
+        bytes memory params = _buildParams(DOMAIN_BASE);
+
+        vm.prank(owner);
+        paymentRails.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
+
+        _pauseUSDC();
+        vm.expectRevert();
+        paymentRails.executeAction(USDC, BRIDGE_AMOUNT);
+
+        _unpauseUSDC();
+        assertTrue(paymentRails.executeAction(USDC, BRIDGE_AMOUNT), "Should succeed after unpause");
+    }
+}
+
+contract CCTPBridgeModuleForkAmountOutCeilingTest is CCTPBridgeModuleForkBase {
+    function test_AmountOut_IsAmountMinusCeilingFee_NotActualFee() external {
+        uint16 feeBps = 100; // 1%
+        uint256 expectedMaxFee = (BRIDGE_AMOUNT * uint256(feeBps)) / 10_000;
+
+        bytes memory params = _buildParamsWithFee(DOMAIN_BASE, feeBps);
+
+        vm.startPrank(address(paymentRails));
+        IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
+        DataTypes.ExecutionResult memory result = module.execute(USDC, BRIDGE_AMOUNT, params);
+        vm.stopPrank();
+
+        assertTrue(result.success);
+        assertEq(result.amountOut, BRIDGE_AMOUNT - expectedMaxFee);
+    }
+
+    function test_AmountOut_ZeroFeeBps_ReportsFullAmount() external {
+        bytes memory params = _buildParams(DOMAIN_BASE); // DEFAULT_MAX_FEE_BPS = 0
+
+        vm.startPrank(address(paymentRails));
+        IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
+        DataTypes.ExecutionResult memory result = module.execute(USDC, BRIDGE_AMOUNT, params);
+        vm.stopPrank();
+
+        assertTrue(result.success);
+        assertEq(result.amountOut, BRIDGE_AMOUNT, "Zero fee means amountOut equals amount");
+    }
+
+    function test_AmountOut_TotalSupplyDecreasesFullAmount_RegardlessOfFee() external {
+        uint16 feeBps = 100; // 1%
+        bytes memory params = _buildParamsWithFee(DOMAIN_BASE, feeBps);
+
+        uint256 supplyBefore = IERC20(USDC).totalSupply();
+
+        vm.startPrank(address(paymentRails));
+        IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
+        module.execute(USDC, BRIDGE_AMOUNT, params);
+        vm.stopPrank();
+
+        uint256 supplyAfter = IERC20(USDC).totalSupply();
+
+        assertEq(supplyAfter, supplyBefore - BRIDGE_AMOUNT, "CCTP burns full amount, fee deducted on destination");
+    }
+}
+
+/*//////////////////////////////////////////////////////////////////////////
+                    INVALID DESTINATION DOMAIN TESTS
+//////////////////////////////////////////////////////////////////////////*/
+
+contract CCTPBridgeModuleForkInvalidDomainTest is CCTPBridgeModuleForkBase {
+    uint32 internal constant INVALID_DOMAIN = 999;
+
+    event ActionFailed(
+        address indexed token, string actionType, uint256 amountIn, string reason, address indexed executor
+    );
+
+    function _buildInvalidDomainParams() internal view returns (bytes memory) {
+        return module.encodeParams(
+            DataTypes.CCTPBridgeParams({
+                destinationDomain: INVALID_DOMAIN,
+                mintRecipient: DEFAULT_MINT_RECIPIENT,
+                destinationCaller: DEFAULT_DESTINATION_CALLER,
+                maxFeeBps: DEFAULT_MAX_FEE_BPS,
+                minFinalityThreshold: FINALITY_STANDARD,
+                hookData: bytes("")
+            })
+        );
+    }
+
+    function test_Execute_InvalidDomain_DirectCall_Reverts() external {
+        bytes memory params = _buildInvalidDomainParams();
+
+        vm.startPrank(address(paymentRails));
+        IERC20(USDC).approve(address(module), BRIDGE_AMOUNT);
+
+        vm.expectRevert();
+        module.execute(USDC, BRIDGE_AMOUNT, params);
+        vm.stopPrank();
+    }
+
+    function test_Execute_InvalidDomain_ViaPaymentRails_ReturnsFalse() external {
+        bytes memory params = _buildInvalidDomainParams();
+
+        vm.prank(owner);
+        paymentRails.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
+
+        bool success = paymentRails.executeAction(USDC, BRIDGE_AMOUNT);
+
+        assertFalse(success, "Invalid domain should cause failure");
+    }
+
+    function test_Execute_InvalidDomain_NoTokensLost() external {
+        bytes memory params = _buildInvalidDomainParams();
+
+        vm.prank(owner);
+        paymentRails.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
+
+        uint256 paymentRailsBefore = IERC20(USDC).balanceOf(address(paymentRails));
+
+        paymentRails.executeAction(USDC, BRIDGE_AMOUNT);
+
+        assertEq(IERC20(USDC).balanceOf(address(paymentRails)), paymentRailsBefore, "PaymentRails balance unchanged");
+        assertEq(IERC20(USDC).balanceOf(address(module)), 0, "Module holds zero");
+    }
+
+    function test_Execute_InvalidDomain_ApprovalRevoked() external {
+        bytes memory params = _buildInvalidDomainParams();
+
+        vm.prank(owner);
+        paymentRails.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
+
+        paymentRails.executeAction(USDC, BRIDGE_AMOUNT);
+
+        assertEq(IERC20(USDC).allowance(address(paymentRails), address(module)), 0, "Approval must be revoked");
+    }
+
+    function test_Execute_InvalidDomain_EmitsActionFailed() external {
+        bytes memory params = _buildInvalidDomainParams();
+
+        vm.prank(owner);
+        paymentRails.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, params, true);
+
+        vm.expectEmit(true, false, false, true, address(paymentRails));
+        emit ActionFailed(USDC, "CCTP_BRIDGE", BRIDGE_AMOUNT, "Module execution reverted", address(this));
+
+        paymentRails.executeAction(USDC, BRIDGE_AMOUNT);
+    }
+
+    function test_Execute_InvalidDomain_ValidDomainSucceedsAfter() external {
+        bytes memory invalidParams = _buildInvalidDomainParams();
+
+        vm.prank(owner);
+        paymentRails.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, invalidParams, true);
+
+        assertFalse(paymentRails.executeAction(USDC, BRIDGE_AMOUNT), "Invalid domain should fail");
+
+        bytes memory validParams = _buildParams(DOMAIN_BASE);
+
+        vm.prank(owner);
+        paymentRails.configureToken(USDC, "CCTP_BRIDGE", address(module), BRIDGE_AMOUNT, validParams, true);
+
+        assertTrue(paymentRails.executeAction(USDC, BRIDGE_AMOUNT), "Valid domain should succeed after invalid");
     }
 }

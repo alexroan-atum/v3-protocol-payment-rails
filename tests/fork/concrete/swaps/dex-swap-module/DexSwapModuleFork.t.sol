@@ -93,7 +93,6 @@ abstract contract DexSwapModuleForkBase is Test {
                                     HELPERS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @dev Builds DexSwapParams with oracle feeds and slippage.
     function _buildSwapParams(
         address targetToken,
         uint24 fee,
@@ -118,17 +117,14 @@ abstract contract DexSwapModuleForkBase is Test {
         );
     }
 
-    /// @dev Convenience overload for the common WETH→USDC case with 1% slippage.
     function _buildDefaultWethToUsdcParams() internal view returns (bytes memory) {
         return _buildSwapParams(USDC, FEE_MEDIUM, 100, ETH_USD_FEED, USDC_USD_FEED);
     }
 
-    /// @dev Convenience overload for USDC→WETH with 1% slippage.
     function _buildDefaultUsdcToWethParams() internal view returns (bytes memory) {
         return _buildSwapParams(WETH, FEE_MEDIUM, 100, USDC_USD_FEED, ETH_USD_FEED);
     }
 
-    /// @dev Convenience overload for DAI→USDC with 0.5% slippage.
     function _buildDefaultDaiToUsdcParams() internal view returns (bytes memory) {
         return _buildSwapParams(USDC, FEE_LOW, 50, DAI_USD_FEED, USDC_USD_FEED);
     }
@@ -436,8 +432,6 @@ contract DexSwapModuleForkLifecycleTest is DexSwapModuleForkBase {
             ORACLE SLIPPAGE: MAINNET CHAINLINK FEED TESTS
 //////////////////////////////////////////////////////////////////////////*/
 
-/// @notice Validates oracle slippage enforcement against real Chainlink feeds on Ethereum mainnet.
-/// @dev Uses ETH/USD, USDC/USD, and DAI/USD feeds at block 21_900_000.
 contract DexSwapModuleForkOracleSlippageTest is DexSwapModuleForkBase {
     function test_Oracle_FeedsAreResponding() external view {
         (, int256 ethPrice,,,) = IChainlinkAggregatorV3(ETH_USD_FEED).latestRoundData();
@@ -508,10 +502,8 @@ contract DexSwapModuleForkOracleSlippageTest is DexSwapModuleForkBase {
         ORACLE SLIPPAGE: MAINNET SWAP WITH ORACLE ENFORCEMENT
 //////////////////////////////////////////////////////////////////////////*/
 
-/// @notice End-to-end swap execution with oracle slippage protection on mainnet.
 contract DexSwapModuleForkOracleSwapTest is DexSwapModuleForkBase {
     function test_Oracle_WethToUsdc_SwapSucceeds_WithOracleProtection() external {
-        // Configure with 1% slippage tolerance
         bytes memory params = _buildDefaultWethToUsdcParams();
 
         (uint256 estimated,) = module.estimateOutput(WETH, WETH_SELL_AMOUNT, params);
@@ -587,33 +579,28 @@ contract DexSwapModuleForkOracleLifecycleTest is DexSwapModuleForkBase {
         console2.log("=============================================");
         console2.log("");
 
-        // Step 1: Read oracle prices
         (, int256 ethPrice,,,) = IChainlinkAggregatorV3(ETH_USD_FEED).latestRoundData();
         (, int256 usdcPrice,,,) = IChainlinkAggregatorV3(USDC_USD_FEED).latestRoundData();
         console2.log("[1] ETH/USD:", uint256(ethPrice) / 1e8, "USD");
         console2.log("[1] USDC/USD:", uint256(usdcPrice) / 1e8, "USD");
         console2.log("");
 
-        // Step 2: Configure WETH→USDC with oracle protection (1% slippage)
         bytes memory params = _buildDefaultWethToUsdcParams();
         vm.prank(owner);
         paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, params, true);
 
-        // Step 3: Get oracle estimate
         (uint256 estimated,) = module.estimateOutput(WETH, WETH_SELL_AMOUNT, params);
         uint256 oracleFloor = estimated * 9900 / 10_000;
         console2.log("[2] Oracle estimate for 1 WETH:", estimated / 1e6, "USDC");
         console2.log("[2] Oracle floor (1%):", oracleFloor / 1e6, "USDC");
         console2.log("");
 
-        // Step 4: Validate before executing
         vm.prank(address(paymentRails));
         (bool isValid,) = module.validate(WETH, WETH_SELL_AMOUNT, params);
         assertTrue(isValid, "Pre-execution validation should pass");
         console2.log("[3] Pre-execution validation: PASSED");
         console2.log("");
 
-        // Step 5: Execute the swap
         uint256 usdcBefore = IERC20(USDC).balanceOf(address(paymentRails));
         bool success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT);
         assertTrue(success, "Oracle-protected swap should succeed");
@@ -624,18 +611,493 @@ contract DexSwapModuleForkOracleLifecycleTest is DexSwapModuleForkBase {
         console2.log("    Above oracle floor:", usdcReceived >= oracleFloor ? "YES" : "NO");
         console2.log("");
 
-        // Step 6: Verify no residual state
         assertEq(IERC20(WETH).balanceOf(address(module)), 0, "No residual WETH");
         assertEq(IERC20(USDC).balanceOf(address(module)), 0, "No residual USDC");
         console2.log("[5] Module residual state: CLEAN");
         console2.log("");
 
-        // Step 7: Verify oracle floor was respected
         assertGe(usdcReceived, oracleFloor, "Received should be >= oracle floor");
 
         console2.log("");
         console2.log("=============================================");
         console2.log("  ORACLE LIFECYCLE SIMULATION PASSED");
         console2.log("=============================================");
+    }
+}
+
+/*//////////////////////////////////////////////////////////////////////////
+                    APPROVAL SECURITY TESTS
+//////////////////////////////////////////////////////////////////////////*/
+
+contract DexSwapModuleForkApprovalTest is DexSwapModuleForkBase {
+    function test_Security_RouterApprovalRevokedAfterSwap() external {
+        bytes memory swapParams = _buildDefaultWethToUsdcParams();
+
+        vm.startPrank(address(paymentRails));
+        IERC20(WETH).approve(address(module), WETH_SELL_AMOUNT);
+        module.execute(WETH, WETH_SELL_AMOUNT, swapParams);
+        vm.stopPrank();
+
+        assertEq(
+            IERC20(WETH).allowance(address(module), UNISWAP_V3_ROUTER), 0, "Router approval must be zero after swap"
+        );
+    }
+
+    function test_Security_PaymentRailsApprovalConsumedAfterExecute() external {
+        bytes memory swapParams = _buildDefaultWethToUsdcParams();
+
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
+
+        paymentRails.executeAction(WETH, WETH_SELL_AMOUNT);
+
+        assertEq(
+            IERC20(WETH).allowance(address(paymentRails), address(module)),
+            0,
+            "PaymentRails approval to module should be consumed after execute"
+        );
+    }
+
+    function test_Security_RouterApprovalRevokedAfterConsecutiveSwaps() external {
+        bytes memory swapParams = _buildDefaultWethToUsdcParams();
+
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
+
+        for (uint256 i = 0; i < 3; i++) {
+            paymentRails.executeAction(WETH, WETH_SELL_AMOUNT);
+            assertEq(
+                IERC20(WETH).allowance(address(module), UNISWAP_V3_ROUTER),
+                0,
+                "Router approval must be zero after each swap"
+            );
+        }
+    }
+}
+
+/*//////////////////////////////////////////////////////////////////////////
+                    SHARED MODULE TESTS
+//////////////////////////////////////////////////////////////////////////*/
+
+contract DexSwapModuleForkSharedModuleTest is DexSwapModuleForkBase {
+    function test_SharedModule_TwoPaymentRailsShareOneModule() external {
+        address owner2 = makeAddr("owner2");
+        vm.prank(owner2);
+        PaymentRails paymentRails2 = new PaymentRails(owner2);
+        deal(WETH, address(paymentRails2), WETH_SELL_AMOUNT * 10);
+
+        bytes memory swapParams = _buildDefaultWethToUsdcParams();
+
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
+        vm.prank(owner2);
+        paymentRails2.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
+
+        uint256 usdc1Before = IERC20(USDC).balanceOf(address(paymentRails));
+        uint256 usdc2Before = IERC20(USDC).balanceOf(address(paymentRails2));
+
+        assertTrue(paymentRails.executeAction(WETH, WETH_SELL_AMOUNT));
+        assertTrue(paymentRails2.executeAction(WETH, WETH_SELL_AMOUNT));
+
+        assertGt(IERC20(USDC).balanceOf(address(paymentRails)), usdc1Before, "PaymentRails1 should receive USDC");
+        assertGt(IERC20(USDC).balanceOf(address(paymentRails2)), usdc2Before, "PaymentRails2 should receive USDC");
+        assertEq(IERC20(WETH).balanceOf(address(module)), 0, "Module holds no WETH");
+        assertEq(IERC20(USDC).balanceOf(address(module)), 0, "Module holds no USDC");
+    }
+
+    function test_SharedModule_AlternatingSwapsFromDifferentPaymentRails() external {
+        address owner2 = makeAddr("owner2");
+        vm.prank(owner2);
+        PaymentRails paymentRails2 = new PaymentRails(owner2);
+        deal(WETH, address(paymentRails2), WETH_SELL_AMOUNT * 10);
+
+        bytes memory swapParams = _buildDefaultWethToUsdcParams();
+
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
+        vm.prank(owner2);
+        paymentRails2.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
+
+        assertTrue(paymentRails.executeAction(WETH, WETH_SELL_AMOUNT));
+        assertTrue(paymentRails2.executeAction(WETH, WETH_SELL_AMOUNT));
+        assertTrue(paymentRails.executeAction(WETH, WETH_SELL_AMOUNT));
+
+        assertEq(IERC20(WETH).balanceOf(address(module)), 0);
+        assertEq(IERC20(USDC).balanceOf(address(module)), 0);
+    }
+}
+
+/*//////////////////////////////////////////////////////////////////////////
+                    PREVIEW EXECUTION TESTS
+//////////////////////////////////////////////////////////////////////////*/
+
+contract DexSwapModuleForkPreviewTest is DexSwapModuleForkBase {
+    function test_PreviewExecution_WethToUsdc_ReturnsReasonableEstimate() external {
+        bytes memory swapParams = _buildDefaultWethToUsdcParams();
+
+        // Deal exact sell amount — previewExecution uses full PaymentRails balance
+        deal(WETH, address(paymentRails), WETH_SELL_AMOUNT);
+
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
+
+        (uint256 estimatedOutput, address outputToken) = paymentRails.previewExecution(WETH);
+
+        assertEq(outputToken, USDC, "Output token should be USDC");
+        assertGt(estimatedOutput, 1000e6, "1 ETH should be worth > $1000 USDC");
+        assertLt(estimatedOutput, 10_000e6, "1 ETH should be worth < $10000 USDC");
+    }
+
+    function test_PreviewExecution_DaiToUsdc_ReturnsReasonableEstimate() external {
+        bytes memory swapParams = _buildDefaultDaiToUsdcParams();
+
+        // Deal exact sell amount — previewExecution uses full PaymentRails balance
+        deal(DAI, address(paymentRails), DAI_SELL_AMOUNT);
+
+        vm.prank(owner);
+        paymentRails.configureToken(DAI, "SWAP", address(module), DAI_SELL_AMOUNT, swapParams, true);
+
+        (uint256 estimatedOutput, address outputToken) = paymentRails.previewExecution(DAI);
+
+        assertEq(outputToken, USDC);
+        assertGt(estimatedOutput, 1900e6, "2000 DAI should yield > 1900 USDC");
+        assertLt(estimatedOutput, 2100e6, "2000 DAI should yield < 2100 USDC");
+    }
+
+    function test_PreviewExecution_EstimateCloseToActualOutput() external {
+        bytes memory swapParams = _buildDefaultWethToUsdcParams();
+
+        // Deal exact sell amount — previewExecution uses full PaymentRails balance
+        deal(WETH, address(paymentRails), WETH_SELL_AMOUNT);
+
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
+
+        (uint256 estimatedOutput,) = paymentRails.previewExecution(WETH);
+
+        uint256 usdcBefore = IERC20(USDC).balanceOf(address(paymentRails));
+        paymentRails.executeAction(WETH, WETH_SELL_AMOUNT);
+        uint256 actualOutput = IERC20(USDC).balanceOf(address(paymentRails)) - usdcBefore;
+
+        // Oracle estimate vs AMM actual should be within 2%
+        uint256 lowerBound = estimatedOutput * 98 / 100;
+        uint256 upperBound = estimatedOutput * 102 / 100;
+        assertGe(actualOutput, lowerBound, "Actual should be within 2% of estimate (lower)");
+        assertLe(actualOutput, upperBound, "Actual should be within 2% of estimate (upper)");
+    }
+}
+
+/*//////////////////////////////////////////////////////////////////////////
+                        EVENT EMISSION TESTS
+//////////////////////////////////////////////////////////////////////////*/
+
+contract DexSwapModuleForkEventTest is DexSwapModuleForkBase {
+    function test_Event_SwapExecuted_EmittedOnModuleExecute() external {
+        bytes memory swapParams = _buildDefaultWethToUsdcParams();
+
+        vm.startPrank(address(paymentRails));
+        IERC20(WETH).approve(address(module), WETH_SELL_AMOUNT);
+
+        vm.expectEmit(true, true, false, false, address(module));
+        emit SwapExecuted(address(paymentRails), WETH, USDC, WETH_SELL_AMOUNT, 0);
+
+        module.execute(WETH, WETH_SELL_AMOUNT, swapParams);
+        vm.stopPrank();
+    }
+
+    function test_Event_ActionExecuted_EmittedOnPaymentRailsExecute() external {
+        bytes memory swapParams = _buildDefaultWethToUsdcParams();
+
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
+
+        vm.expectEmit(true, false, false, false, address(paymentRails));
+        emit ActionExecuted(WETH, "SWAP", WETH_SELL_AMOUNT, 0, USDC, address(this));
+
+        paymentRails.executeAction(WETH, WETH_SELL_AMOUNT);
+    }
+}
+
+/*//////////////////////////////////////////////////////////////////////////
+                    ENCODE / DECODE PARAMS TESTS
+//////////////////////////////////////////////////////////////////////////*/
+
+contract DexSwapModuleForkEncodeDecodeTest is DexSwapModuleForkBase {
+    function test_EncodeDecodeParams_Roundtrip_PreservesAllFields() external view {
+        DataTypes.DexSwapParams memory original = DataTypes.DexSwapParams({
+            targetToken: USDC,
+            fee: FEE_MEDIUM,
+            maxSlippageBps: 100,
+            sellTokenPriceFeed: ETH_USD_FEED,
+            buyTokenPriceFeed: USDC_USD_FEED,
+            maxStaleness: ORACLE_MAX_STALENESS,
+            swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
+        });
+
+        bytes memory encoded = module.encodeParams(original);
+        DataTypes.DexSwapParams memory decoded = module.decodeParams(encoded);
+
+        assertEq(decoded.targetToken, original.targetToken);
+        assertEq(decoded.fee, original.fee);
+        assertEq(decoded.maxSlippageBps, original.maxSlippageBps);
+        assertEq(decoded.sellTokenPriceFeed, original.sellTokenPriceFeed);
+        assertEq(decoded.buyTokenPriceFeed, original.buyTokenPriceFeed);
+        assertEq(decoded.maxStaleness, original.maxStaleness);
+        assertEq(decoded.swapDeadlineSeconds, original.swapDeadlineSeconds);
+    }
+
+    function test_EncodeDecodeParams_DifferentTargetTokens_DifferentEncodings() external view {
+        bytes memory params1 = _buildSwapParams(USDC, FEE_MEDIUM, 100, ETH_USD_FEED, USDC_USD_FEED);
+        bytes memory params2 = _buildSwapParams(DAI, FEE_MEDIUM, 100, ETH_USD_FEED, DAI_USD_FEED);
+
+        assertTrue(keccak256(params1) != keccak256(params2));
+    }
+}
+
+/*//////////////////////////////////////////////////////////////////////////
+                        FAILURE PATH TESTS
+//////////////////////////////////////////////////////////////////////////*/
+
+contract DexSwapModuleForkFailureTest is DexSwapModuleForkBase {
+    event ActionFailed(
+        address indexed token, string actionType, uint256 amountIn, string reason, address indexed executor
+    );
+
+    /*//////////////////////////////////////////////////////////////////////////
+                FAILED ROUTER — INVALID FEE TIER
+    //////////////////////////////////////////////////////////////////////////*/
+
+    function test_FailedRouter_InvalidFeeTier_ReturnsFalse() external {
+        bytes memory swapParams = module.encodeParams(
+            DataTypes.DexSwapParams({
+                targetToken: USDC,
+                fee: 200,
+                maxSlippageBps: 100,
+                sellTokenPriceFeed: ETH_USD_FEED,
+                buyTokenPriceFeed: USDC_USD_FEED,
+                maxStaleness: ORACLE_MAX_STALENESS,
+                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
+            })
+        );
+
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
+
+        bool success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT);
+
+        assertFalse(success, "Execute should fail with invalid fee tier");
+    }
+
+    function test_FailedRouter_InvalidFeeTier_ReturnsAllTokens() external {
+        bytes memory swapParams = module.encodeParams(
+            DataTypes.DexSwapParams({
+                targetToken: USDC,
+                fee: 200,
+                maxSlippageBps: 100,
+                sellTokenPriceFeed: ETH_USD_FEED,
+                buyTokenPriceFeed: USDC_USD_FEED,
+                maxStaleness: ORACLE_MAX_STALENESS,
+                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
+            })
+        );
+
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
+
+        uint256 wethBefore = IERC20(WETH).balanceOf(address(paymentRails));
+
+        paymentRails.executeAction(WETH, WETH_SELL_AMOUNT);
+
+        assertEq(IERC20(WETH).balanceOf(address(paymentRails)), wethBefore, "WETH must be returned to PaymentRails");
+        assertEq(IERC20(WETH).balanceOf(address(module)), 0, "Module must not retain any WETH");
+    }
+
+    function test_FailedRouter_InvalidFeeTier_RevokesApproval() external {
+        bytes memory swapParams = module.encodeParams(
+            DataTypes.DexSwapParams({
+                targetToken: USDC,
+                fee: 200,
+                maxSlippageBps: 100,
+                sellTokenPriceFeed: ETH_USD_FEED,
+                buyTokenPriceFeed: USDC_USD_FEED,
+                maxStaleness: ORACLE_MAX_STALENESS,
+                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
+            })
+        );
+
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
+
+        paymentRails.executeAction(WETH, WETH_SELL_AMOUNT);
+
+        assertEq(IERC20(WETH).allowance(address(paymentRails), address(module)), 0, "Approval must be revoked");
+    }
+
+    function test_FailedRouter_InvalidFeeTier_EmitsActionFailed() external {
+        bytes memory swapParams = module.encodeParams(
+            DataTypes.DexSwapParams({
+                targetToken: USDC,
+                fee: 200,
+                maxSlippageBps: 100,
+                sellTokenPriceFeed: ETH_USD_FEED,
+                buyTokenPriceFeed: USDC_USD_FEED,
+                maxStaleness: ORACLE_MAX_STALENESS,
+                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
+            })
+        );
+
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
+
+        vm.expectEmit(true, false, false, true, address(paymentRails));
+        emit ActionFailed(WETH, "SWAP", WETH_SELL_AMOUNT, "Router call failed", address(this));
+
+        paymentRails.executeAction(WETH, WETH_SELL_AMOUNT);
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+            ORACLE FLOOR ENFORCEMENT — TIGHT SLIPPAGE
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @dev The module's InsufficientOutput check is defense-in-depth — the router enforces amountOutMinimum first.
+    function test_TightSlippage_OracleFloorEnforcedByRouter() external {
+        bytes memory swapParams = module.encodeParams(
+            DataTypes.DexSwapParams({
+                targetToken: USDC,
+                fee: FEE_MEDIUM,
+                maxSlippageBps: 1, // 0.01% — tighter than real AMM spread
+                sellTokenPriceFeed: ETH_USD_FEED,
+                buyTokenPriceFeed: USDC_USD_FEED,
+                maxStaleness: ORACLE_MAX_STALENESS,
+                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
+            })
+        );
+
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
+
+        uint256 wethBefore = IERC20(WETH).balanceOf(address(paymentRails));
+
+        bool success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT);
+
+        assertFalse(success, "Tight slippage should cause swap failure");
+        assertEq(IERC20(WETH).balanceOf(address(paymentRails)), wethBefore, "WETH must be returned");
+        assertEq(IERC20(WETH).balanceOf(address(module)), 0, "Module must not retain WETH");
+    }
+
+    function test_TightSlippage_ReasonableSlippageSucceeds_TightFails() external {
+        bytes memory goodParams = _buildDefaultWethToUsdcParams(); // 100 bps = 1%
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, goodParams, true);
+        assertTrue(paymentRails.executeAction(WETH, WETH_SELL_AMOUNT), "1% slippage should succeed");
+
+        // Re-fund PaymentRails
+        deal(WETH, address(paymentRails), WETH_SELL_AMOUNT);
+
+        bytes memory tightParams = module.encodeParams(
+            DataTypes.DexSwapParams({
+                targetToken: USDC,
+                fee: FEE_MEDIUM,
+                maxSlippageBps: 1,
+                sellTokenPriceFeed: ETH_USD_FEED,
+                buyTokenPriceFeed: USDC_USD_FEED,
+                maxStaleness: ORACLE_MAX_STALENESS,
+                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
+            })
+        );
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, tightParams, true);
+        assertFalse(paymentRails.executeAction(WETH, WETH_SELL_AMOUNT), "0.01% slippage should fail");
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                STALE ORACLE — GRACEFUL FAILURE
+    //////////////////////////////////////////////////////////////////////////*/
+
+    function test_StaleOracle_TinyMaxStaleness_ReturnsGracefulFailure() external {
+        bytes memory swapParams = module.encodeParams(
+            DataTypes.DexSwapParams({
+                targetToken: USDC,
+                fee: FEE_MEDIUM,
+                maxSlippageBps: 100,
+                sellTokenPriceFeed: ETH_USD_FEED,
+                buyTokenPriceFeed: USDC_USD_FEED,
+                maxStaleness: 1,
+                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
+            })
+        );
+
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
+
+        uint256 wethBefore = IERC20(WETH).balanceOf(address(paymentRails));
+
+        bool success = paymentRails.executeAction(WETH, WETH_SELL_AMOUNT);
+
+        assertFalse(success, "Stale oracle should cause graceful failure");
+        assertEq(IERC20(WETH).balanceOf(address(paymentRails)), wethBefore, "WETH must remain in PaymentRails");
+        assertEq(IERC20(WETH).balanceOf(address(module)), 0, "Module must not hold any WETH");
+    }
+
+    function test_StaleOracle_TinyMaxStaleness_EmitsOracleUnavailable() external {
+        bytes memory swapParams = module.encodeParams(
+            DataTypes.DexSwapParams({
+                targetToken: USDC,
+                fee: FEE_MEDIUM,
+                maxSlippageBps: 100,
+                sellTokenPriceFeed: ETH_USD_FEED,
+                buyTokenPriceFeed: USDC_USD_FEED,
+                maxStaleness: 1,
+                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
+            })
+        );
+
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
+
+        vm.expectEmit(true, false, false, true, address(paymentRails));
+        emit ActionFailed(WETH, "SWAP", WETH_SELL_AMOUNT, "Oracle price unavailable", address(this));
+
+        paymentRails.executeAction(WETH, WETH_SELL_AMOUNT);
+    }
+
+    function test_StaleOracle_WarpedTime_OracleBecomesStale() external {
+        bytes memory swapParams = _buildDefaultWethToUsdcParams(); // 86400s staleness
+
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
+
+        assertTrue(paymentRails.executeAction(WETH, WETH_SELL_AMOUNT), "Should succeed before warp");
+
+        deal(WETH, address(paymentRails), WETH_SELL_AMOUNT);
+        vm.warp(block.timestamp + 200_000);
+
+        assertFalse(paymentRails.executeAction(WETH, WETH_SELL_AMOUNT), "Should fail after oracle becomes stale");
+    }
+
+    function test_StaleOracle_NoTokensLostOnStaleFeed() external {
+        bytes memory swapParams = module.encodeParams(
+            DataTypes.DexSwapParams({
+                targetToken: USDC,
+                fee: FEE_MEDIUM,
+                maxSlippageBps: 100,
+                sellTokenPriceFeed: ETH_USD_FEED,
+                buyTokenPriceFeed: USDC_USD_FEED,
+                maxStaleness: 1,
+                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
+            })
+        );
+
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
+
+        uint256 totalWethBefore =
+            IERC20(WETH).balanceOf(address(paymentRails)) + IERC20(WETH).balanceOf(address(module));
+
+        paymentRails.executeAction(WETH, WETH_SELL_AMOUNT);
+
+        uint256 totalWethAfter = IERC20(WETH).balanceOf(address(paymentRails)) + IERC20(WETH).balanceOf(address(module));
+
+        assertEq(totalWethAfter, totalWethBefore, "No WETH should be lost on stale oracle failure");
     }
 }

@@ -460,7 +460,6 @@ contract CowSwapModuleForkExecuteTest is CowSwapModuleForkBase {
             USDC, USDC_SELL_AMOUNT, WETH, USDC_USD_FEED, ETH_USD_FEED, DEFAULT_VALIDITY, keccak256("app-data-2")
         );
 
-        // Approval remains max (not doubled or re-set)
         uint256 allowanceAfterSecond = IERC20(USDC).allowance(address(module), GPV2_VAULT_RELAYER);
         assertEq(allowanceAfterSecond, type(uint256).max);
     }
@@ -471,8 +470,6 @@ contract CowSwapModuleForkExecuteTest is CowSwapModuleForkBase {
 //////////////////////////////////////////////////////////////////////////*/
 
 contract CowSwapModuleForkValidateTest is CowSwapModuleForkBase {
-    /// @dev validate() calls _hasSufficientBalance(token, amount) which checks
-    ///      msg.sender's balance. We prank as the paymentRails (which holds USDC from setUp).
     function test_Validate_ValidParams_ReturnsTrue() external {
         bytes memory params =
             _buildParams(WETH, USDC_USD_FEED, ETH_USD_FEED, SLIPPAGE_BPS, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
@@ -898,7 +895,6 @@ contract CowSwapModuleForkOwnershipTransferTest is CowSwapModuleForkBase {
 //////////////////////////////////////////////////////////////////////////*/
 
 contract CowSwapModuleForkLifecycleHappyPathTest is CowSwapModuleForkBase {
-    /// @dev Full happy-path lifecycle: configure → execute → solver fills → isValidSignature=FAILURE.
     function test_Lifecycle_HappyPath_UsdcToWeth_FullFlow() external {
         bytes memory params =
             _buildParams(WETH, USDC_USD_FEED, ETH_USD_FEED, SLIPPAGE_BPS, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
@@ -995,12 +991,10 @@ contract CowSwapModuleForkLifecycleCancelPathTest is CowSwapModuleForkBase {
     }
 
     function test_Lifecycle_CancelPath_ReExecuteAfterCancel() external {
-        // First order
         bytes32 orderId1 = _initiateOrderViaPaymentRails(
             USDC, USDC_SELL_AMOUNT, WETH, USDC_USD_FEED, ETH_USD_FEED, DEFAULT_VALIDITY, DEFAULT_APP_DATA
         );
 
-        // Cancel it
         vm.prank(owner);
         module.cancelOrder(orderId1);
 
@@ -1014,7 +1008,6 @@ contract CowSwapModuleForkLifecycleCancelPathTest is CowSwapModuleForkBase {
         bool success = paymentRails.executeAction(USDC, USDC_SELL_AMOUNT);
         assertTrue(success, "Re-execution after cancel should succeed");
 
-        // Compute new orderId
         uint32 validTo = uint32(block.timestamp + DEFAULT_VALIDITY);
         uint256 oracleFloor = _computeOracleFloor(USDC, USDC_SELL_AMOUNT, USDC_USD_FEED, WETH, ETH_USD_FEED);
         bytes32 orderId2 = _computeExpectedOrderId(
@@ -1092,25 +1085,20 @@ contract CowSwapModuleForkLifecycleExpiryPathTest is CowSwapModuleForkBase {
 //////////////////////////////////////////////////////////////////////////*/
 
 contract CowSwapModuleForkLifecycleConcurrentMultiTokenTest is CowSwapModuleForkBase {
-    /// @dev Two different token pairs (USDC→WETH and DAI→USDC) active simultaneously.
     function test_Lifecycle_Concurrent_TwoTokenPairs_IndependentlyPending() external {
-        // Configure USDC→WETH
         bytes memory usdcParams =
             _buildParams(WETH, USDC_USD_FEED, ETH_USD_FEED, SLIPPAGE_BPS, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
         vm.prank(owner);
         paymentRails.configureToken(USDC, "COWSWAP", address(module), USDC_SELL_AMOUNT, usdcParams, true);
 
-        // Configure DAI→USDC
         bytes memory daiParams =
             _buildParams(USDC, DAI_USD_FEED, USDC_USD_FEED, SLIPPAGE_BPS, DEFAULT_VALIDITY, keccak256("dai-order"));
         vm.prank(owner);
         paymentRails.configureToken(DAI, "COWSWAP", address(module), DAI_SELL_AMOUNT, daiParams, true);
 
-        // Execute both
         assertTrue(paymentRails.executeAction(USDC, USDC_SELL_AMOUNT));
         assertTrue(paymentRails.executeAction(DAI, DAI_SELL_AMOUNT));
 
-        // Both orders should be independently pending
         assertEq(IERC20(USDC).balanceOf(address(module)), USDC_SELL_AMOUNT);
         assertEq(IERC20(DAI).balanceOf(address(module)), DAI_SELL_AMOUNT);
 
@@ -1128,7 +1116,6 @@ contract CowSwapModuleForkLifecycleConcurrentMultiTokenTest is CowSwapModuleFork
         assertEq(module.isValidSignature(daiOrderId, abi.encode(daiOrderId)), EIP1271_MAGIC);
     }
 
-    /// @dev Cancel one token pair, verify the other is unaffected.
     function test_Lifecycle_Concurrent_CancelOneDoesNotAffectOther() external {
         bytes32 usdcOrderId = _initiateOrder(
             USDC, USDC_SELL_AMOUNT, WETH, USDC_USD_FEED, ETH_USD_FEED, DEFAULT_VALIDITY, DEFAULT_APP_DATA
@@ -1137,19 +1124,15 @@ contract CowSwapModuleForkLifecycleConcurrentMultiTokenTest is CowSwapModuleFork
             DAI, DAI_SELL_AMOUNT, USDC, DAI_USD_FEED, USDC_USD_FEED, DEFAULT_VALIDITY, keccak256("dai-order")
         );
 
-        // Cancel USDC order
         vm.prank(owner);
         module.cancelOrder(usdcOrderId);
 
-        // USDC returned, DAI still held
         assertEq(IERC20(USDC).balanceOf(address(module)), 0);
         assertEq(IERC20(DAI).balanceOf(address(module)), DAI_SELL_AMOUNT);
 
-        // DAI order still valid
         assertEq(module.isValidSignature(daiOrderId, abi.encode(daiOrderId)), EIP1271_MAGIC);
     }
 
-    /// @dev Three concurrent USDC orders with different appData.
     function test_Lifecycle_Concurrent_ThreeOrdersSameToken_UniqueIds() external {
         bytes32 orderId1 = _initiateOrder(
             USDC, USDC_SELL_AMOUNT, WETH, USDC_USD_FEED, ETH_USD_FEED, DEFAULT_VALIDITY, keccak256("order-1")
@@ -1161,16 +1144,13 @@ contract CowSwapModuleForkLifecycleConcurrentMultiTokenTest is CowSwapModuleFork
             USDC, USDC_SELL_AMOUNT, WETH, USDC_USD_FEED, ETH_USD_FEED, DEFAULT_VALIDITY, keccak256("order-3")
         );
 
-        // All unique
         assertTrue(orderId1 != orderId2);
         assertTrue(orderId2 != orderId3);
         assertTrue(orderId1 != orderId3);
 
-        // Module holds 3x
         assertEq(IERC20(USDC).balanceOf(address(module)), USDC_SELL_AMOUNT * 3);
     }
 
-    /// @dev Cancel middle order of three — verify boundary orders unaffected.
     function test_Lifecycle_Concurrent_CancelMiddleOrder_LeavesOthersUnaffected() external {
         bytes32 orderId1 = _initiateOrder(
             USDC, USDC_SELL_AMOUNT, WETH, USDC_USD_FEED, ETH_USD_FEED, DEFAULT_VALIDITY, keccak256("order-1")
@@ -1182,18 +1162,14 @@ contract CowSwapModuleForkLifecycleConcurrentMultiTokenTest is CowSwapModuleFork
             USDC, USDC_SELL_AMOUNT, WETH, USDC_USD_FEED, ETH_USD_FEED, DEFAULT_VALIDITY, keccak256("order-3")
         );
 
-        // Cancel middle order
         vm.prank(owner);
         module.cancelOrder(orderId2);
 
-        // Module holds 2x (order 1 + order 3)
         assertEq(IERC20(USDC).balanceOf(address(module)), USDC_SELL_AMOUNT * 2);
 
-        // Orders 1 and 3 still valid
         assertEq(module.isValidSignature(orderId1, abi.encode(orderId1)), EIP1271_MAGIC);
         assertEq(module.isValidSignature(orderId3, abi.encode(orderId3)), EIP1271_MAGIC);
 
-        // Order 2 is cancelled
         assertEq(module.isValidSignature(orderId2, abi.encode(orderId2)), EIP1271_FAILURE);
     }
 }
@@ -1257,7 +1233,6 @@ contract CowSwapModuleForkPaymentRailsIntegrationTest is CowSwapModuleForkBase {
 
         paymentRails.executeAction(USDC, USDC_SELL_AMOUNT);
 
-        // Find the orderId from module state — get it by computing the expected digest
         uint32 validTo = uint32(block.timestamp + DEFAULT_VALIDITY);
         uint256 oracleFloor = _computeOracleFloor(USDC, USDC_SELL_AMOUNT, USDC_USD_FEED, WETH, ETH_USD_FEED);
         bytes32 orderId = _computeExpectedOrderId(
@@ -1271,7 +1246,6 @@ contract CowSwapModuleForkPaymentRailsIntegrationTest is CowSwapModuleForkBase {
         assertEq(IERC20(USDC).balanceOf(address(module)), 0);
     }
 
-    /// @dev Verifies PaymentRails.previewExecution works with the real CowSwapModule on fork.
     function test_PaymentRailsIntegration_PreviewExecution_ReturnsExpectedOutput() external {
         bytes memory params =
             _buildParams(WETH, USDC_USD_FEED, ETH_USD_FEED, SLIPPAGE_BPS, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
@@ -1423,7 +1397,6 @@ contract CowSwapModuleForkSecurityTest is CowSwapModuleForkBase {
         assertEq(module.isValidSignature(_orderId, abi.encode(_orderId)), EIP1271_MAGIC);
     }
 
-    /// @dev M-02 fix: only the authorized paymentRails can call execute(). Other callers get _failedResult.
     function test_Security_UnauthorizedPaymentRails_ExecuteBlocked() external {
         vm.prank(owner);
         PaymentRails paymentRails2 = new PaymentRails(owner);
@@ -1432,7 +1405,6 @@ contract CowSwapModuleForkSecurityTest is CowSwapModuleForkBase {
         bytes memory params =
             _buildParams(WETH, USDC_USD_FEED, ETH_USD_FEED, SLIPPAGE_BPS, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
 
-        // Authorized paymentRails succeeds
         vm.startPrank(address(paymentRails));
         IERC20(USDC).approve(address(module), USDC_SELL_AMOUNT);
         DataTypes.ExecutionResult memory result1 = module.execute(USDC, USDC_SELL_AMOUNT, params);
@@ -1440,7 +1412,6 @@ contract CowSwapModuleForkSecurityTest is CowSwapModuleForkBase {
 
         assertTrue(result1.success, "authorized paymentRails must succeed");
 
-        // Unauthorized paymentRails is blocked
         vm.startPrank(address(paymentRails2));
         IERC20(USDC).approve(address(module), USDC_SELL_AMOUNT);
         DataTypes.ExecutionResult memory result2 = module.execute(USDC, USDC_SELL_AMOUNT, params);
@@ -1449,5 +1420,139 @@ contract CowSwapModuleForkSecurityTest is CowSwapModuleForkBase {
         assertFalse(result2.success, "unauthorized paymentRails must fail");
         assertEq(result2.failureReason, "Caller is not authorized PaymentRails");
         assertEq(IERC20(USDC).balanceOf(address(module)), USDC_SELL_AMOUNT, "only authorized order tokens in module");
+    }
+}
+
+/*//////////////////////////////////////////////////////////////////////////
+                    RENOUNCE OWNERSHIP TESTS
+//////////////////////////////////////////////////////////////////////////*/
+
+contract CowSwapModuleForkRenounceOwnershipTest is CowSwapModuleForkBase {
+    function test_RenounceOwnership_RevertsForOwner() external {
+        vm.expectRevert(abi.encodeWithSelector(Errors.CowSwapModule_OwnershipCannotBeRenounced.selector));
+        vm.prank(owner);
+        module.renounceOwnership();
+    }
+
+    function test_RenounceOwnership_RevertsForNonOwner() external {
+        vm.expectRevert(abi.encodeWithSelector(Errors.CowSwapModule_OwnershipCannotBeRenounced.selector));
+        vm.prank(attacker);
+        module.renounceOwnership();
+    }
+}
+
+/*//////////////////////////////////////////////////////////////////////////
+                    ENCODE / DECODE PARAMS TESTS
+//////////////////////////////////////////////////////////////////////////*/
+
+contract CowSwapModuleForkEncodeDecodeTest is CowSwapModuleForkBase {
+    function test_EncodeDecodeParams_Roundtrip_PreservesAllFields() external view {
+        DataTypes.CowSwapParams memory original = DataTypes.CowSwapParams({
+            targetToken: WETH,
+            maxSlippageBps: SLIPPAGE_BPS,
+            sellTokenPriceFeed: USDC_USD_FEED,
+            buyTokenPriceFeed: ETH_USD_FEED,
+            maxStaleness: MAX_STALENESS,
+            validityDuration: DEFAULT_VALIDITY,
+            appData: DEFAULT_APP_DATA
+        });
+
+        bytes memory encoded = module.encodeParams(original);
+        DataTypes.CowSwapParams memory decoded = module.decodeParams(encoded);
+
+        assertEq(decoded.targetToken, original.targetToken);
+        assertEq(decoded.maxSlippageBps, original.maxSlippageBps);
+        assertEq(decoded.sellTokenPriceFeed, original.sellTokenPriceFeed);
+        assertEq(decoded.buyTokenPriceFeed, original.buyTokenPriceFeed);
+        assertEq(decoded.maxStaleness, original.maxStaleness);
+        assertEq(decoded.validityDuration, original.validityDuration);
+        assertEq(decoded.appData, original.appData);
+    }
+
+    function test_EncodeDecodeParams_DifferentTargetTokens_DifferentEncodings() external view {
+        DataTypes.CowSwapParams memory params1 = DataTypes.CowSwapParams({
+            targetToken: WETH,
+            maxSlippageBps: SLIPPAGE_BPS,
+            sellTokenPriceFeed: USDC_USD_FEED,
+            buyTokenPriceFeed: ETH_USD_FEED,
+            maxStaleness: MAX_STALENESS,
+            validityDuration: DEFAULT_VALIDITY,
+            appData: DEFAULT_APP_DATA
+        });
+
+        DataTypes.CowSwapParams memory params2 = DataTypes.CowSwapParams({
+            targetToken: DAI,
+            maxSlippageBps: SLIPPAGE_BPS,
+            sellTokenPriceFeed: USDC_USD_FEED,
+            buyTokenPriceFeed: DAI_USD_FEED,
+            maxStaleness: MAX_STALENESS,
+            validityDuration: DEFAULT_VALIDITY,
+            appData: DEFAULT_APP_DATA
+        });
+
+        bytes memory encoded1 = module.encodeParams(params1);
+        bytes memory encoded2 = module.encodeParams(params2);
+
+        assertTrue(keccak256(encoded1) != keccak256(encoded2));
+    }
+}
+
+/*//////////////////////////////////////////////////////////////////////////
+            INVALIDATE ORDER VERIFICATION ON REAL GPv2SETTLEMENT
+//////////////////////////////////////////////////////////////////////////*/
+
+contract CowSwapModuleForkInvalidateOrderTest is CowSwapModuleForkBase {
+    function test_CancelOrder_InvalidatesOrderOnRealSettlement() external givenPendingUsdcOrder {
+        DataTypes.CowOrderMetadata memory meta = module.getOrder(_orderId);
+        bytes memory orderUid = abi.encodePacked(_orderId, address(module), meta.validTo);
+
+        uint256 filledBefore = IGPv2Settlement(GPV2_SETTLEMENT).filledAmount(orderUid);
+        assertEq(filledBefore, 0, "Order should be unfilled before cancel");
+
+        vm.prank(owner);
+        module.cancelOrder(_orderId);
+
+        uint256 filledAfter = IGPv2Settlement(GPV2_SETTLEMENT).filledAmount(orderUid);
+        assertEq(filledAfter, type(uint256).max, "invalidateOrder must set filledAmount to max on real settlement");
+    }
+
+    function test_CancelOrder_InvalidatedOrderRejectedByIsValidSignature() external givenPendingUsdcOrder {
+        bytes memory sig = abi.encode(_orderId);
+        assertEq(module.isValidSignature(_orderId, sig), EIP1271_MAGIC, "Should be valid before cancel");
+
+        vm.prank(owner);
+        module.cancelOrder(_orderId);
+
+        // After cancel: module rejects the signature
+        bytes4 result = module.isValidSignature(_orderId, sig);
+        assertTrue(result != EIP1271_MAGIC, "Cancelled order must not return magic value");
+    }
+
+    function test_CancelOrder_ConcurrentOrders_OnlyInvalidatesCancelledOnSettlement() external {
+        bytes32 orderId1 = _initiateOrder(
+            USDC, USDC_SELL_AMOUNT, WETH, USDC_USD_FEED, ETH_USD_FEED, DEFAULT_VALIDITY, DEFAULT_APP_DATA
+        );
+        bytes32 orderId2 = _initiateOrder(
+            USDC, USDC_SELL_AMOUNT, WETH, USDC_USD_FEED, ETH_USD_FEED, DEFAULT_VALIDITY, keccak256("app-data-2")
+        );
+
+        DataTypes.CowOrderMetadata memory meta1 = module.getOrder(orderId1);
+        DataTypes.CowOrderMetadata memory meta2 = module.getOrder(orderId2);
+
+        bytes memory uid1 = abi.encodePacked(orderId1, address(module), meta1.validTo);
+        bytes memory uid2 = abi.encodePacked(orderId2, address(module), meta2.validTo);
+
+        vm.prank(owner);
+        module.cancelOrder(orderId1);
+
+        assertEq(
+            IGPv2Settlement(GPV2_SETTLEMENT).filledAmount(uid1),
+            type(uint256).max,
+            "Cancelled order must be invalidated"
+        );
+
+        assertEq(IGPv2Settlement(GPV2_SETTLEMENT).filledAmount(uid2), 0, "Uncancelled order must remain unfilled");
+
+        assertEq(module.isValidSignature(orderId2, abi.encode(orderId2)), EIP1271_MAGIC);
     }
 }
