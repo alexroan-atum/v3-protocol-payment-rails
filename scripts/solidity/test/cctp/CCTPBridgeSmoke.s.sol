@@ -4,6 +4,7 @@ pragma solidity >=0.8.29 <0.9.0;
 import { Script, console2 } from "forge-std/src/Script.sol";
 import { PaymentRails } from "../../../../src/core/PaymentRails.sol";
 import { CCTPBridgeModule } from "../../../../src/modules/bridges/CCTPBridgeModule.sol";
+import { DataTypes } from "../../../../src/types/DataTypes.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @title CCTPBridgeSmoke
@@ -17,7 +18,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 ///
 ///      OPTIONAL env vars (defaults = Ethereum Sepolia -> Base Sepolia):
 ///        SOURCE_USDC, DEST_DOMAIN, BRIDGE_AMOUNT, MIN_BALANCE, MINT_RECIPIENT,
-///        MAX_FEE, FINALITY, SKIP_CONFIGURE, SKIP_FUND
+///        MAX_FEE_BPS, FINALITY, SKIP_CONFIGURE, SKIP_FUND
 ///
 ///      Usage (testnet, first run - deploys paymentRails config + funds + executes):
 ///        source .env && forge script scripts/solidity/test/cctp/CCTPBridgeSmoke.s.sol \
@@ -37,7 +38,7 @@ contract CCTPBridgeSmoke is Script {
     uint32 internal constant DEFAULT_FINALITY = 2000;
     uint256 internal constant DEFAULT_BRIDGE_AMOUNT = 10_000_000;
     uint256 internal constant DEFAULT_MIN_BALANCE = 1_000_000;
-    uint256 internal constant DEFAULT_MAX_FEE = 0;
+    uint16 internal constant DEFAULT_MAX_FEE_BPS = 0; // 0 bps = zero fee
 
     struct Config {
         address usdc;
@@ -45,7 +46,7 @@ contract CCTPBridgeSmoke is Script {
         uint32 finality;
         uint256 bridgeAmount;
         uint256 minBalance;
-        uint256 maxFee;
+        uint16 maxFeeBps;
         address mintRecipient;
         bool skipConfigure;
         bool skipFund;
@@ -87,13 +88,15 @@ contract CCTPBridgeSmoke is Script {
         vm.startBroadcast(deployerKey);
 
         if (!cfg.skipConfigure) {
-            bytes memory moduleParams = abi.encode(
-                cfg.destDomain,
-                bytes32(uint256(uint160(cfg.mintRecipient))),
-                bytes32(0),
-                cfg.maxFee,
-                cfg.finality,
-                bytes("")
+            bytes memory moduleParams = module.encodeParams(
+                DataTypes.CCTPBridgeParams({
+                    destinationDomain: cfg.destDomain,
+                    mintRecipient: bytes32(uint256(uint160(cfg.mintRecipient))),
+                    destinationCaller: bytes32(0),
+                    maxFeeBps: cfg.maxFeeBps,
+                    minFinalityThreshold: cfg.finality,
+                    hookData: bytes("")
+                })
             );
             paymentRails.configureToken(cfg.usdc, "CCTP_BRIDGE", address(module), cfg.minBalance, moduleParams, true);
             console2.log("[NODE] Configured USDC -> CCTP_BRIDGE");
@@ -178,7 +181,7 @@ contract CCTPBridgeSmoke is Script {
         cfg.finality = uint32(vm.envOr("FINALITY", uint256(DEFAULT_FINALITY)));
         cfg.bridgeAmount = vm.envOr("BRIDGE_AMOUNT", DEFAULT_BRIDGE_AMOUNT);
         cfg.minBalance = vm.envOr("MIN_BALANCE", DEFAULT_MIN_BALANCE);
-        cfg.maxFee = vm.envOr("MAX_FEE", DEFAULT_MAX_FEE);
+        cfg.maxFeeBps = uint16(vm.envOr("MAX_FEE_BPS", uint256(DEFAULT_MAX_FEE_BPS)));
         cfg.mintRecipient = vm.envOr("MINT_RECIPIENT", address(0));
 
         string memory f = "false";

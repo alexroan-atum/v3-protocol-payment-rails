@@ -111,10 +111,9 @@ abstract contract CCTPBridgeModuleForkBase is Test {
     }
 
     function _buildParamsWithFee(uint32 domain, uint16 maxFeeBps) internal pure returns (bytes memory) {
-        return
-            abi.encode(
-                domain, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, maxFeeBps, FINALITY_STANDARD, bytes("")
-            );
+        return abi.encode(
+            domain, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, maxFeeBps, FINALITY_STANDARD, bytes("")
+        );
     }
 
     function _buildParamsWithFinality(uint32 domain, uint32 finality) internal pure returns (bytes memory) {

@@ -21,7 +21,7 @@ import { DataTypes } from "../../../src/types/DataTypes.sol";
 ///      Required env: ETH_FROM + PRIVATE_KEY (or MNEMONIC). Optional overrides:
 ///        USDC_MIN_BALANCE (default 1_000_000 = 1 USDC)
 ///        FORWARD_MIN_BALANCE (default 0)
-///        CCTP_MAX_FEE (default 0 = standard transfer, free)
+///        CCTP_MAX_FEE_BPS (default 0 = zero fee; in basis points, e.g. 50 = 0.5%)
 ///        CCTP_FINALITY (default 2000 = finalized; 1000 = fast)
 contract DeploySepoliaTestSetup is Script {
     // Sepolia CCTP V2 (Circle official)
@@ -45,7 +45,7 @@ contract DeploySepoliaTestSetup is Script {
     {
         uint256 usdcMinBalance = vm.envOr("USDC_MIN_BALANCE", uint256(1_000_000));
         uint256 forwardMinBalance = vm.envOr("FORWARD_MIN_BALANCE", uint256(0));
-        uint256 cctpMaxFee = vm.envOr("CCTP_MAX_FEE", uint256(0));
+        uint16 cctpMaxFeeBps = uint16(vm.envOr("CCTP_MAX_FEE_BPS", uint256(0)));
         uint32 cctpFinality = uint32(vm.envOr("CCTP_FINALITY", uint256(2000)));
 
         (address deployer, uint256 deployerKey) = _deriveDeployer();
@@ -64,13 +64,15 @@ contract DeploySepoliaTestSetup is Script {
         bridgeModule = new CCTPBridgeModule(TOKEN_MESSENGER_V2, USDC_SEPOLIA);
 
         // All routing info is now in moduleParams (CCTPBridgeModule is stateless).
-        bytes memory bridgeParams = abi.encode(
-            uint32(BASE_SEPOLIA_DOMAIN),
-            bytes32(uint256(uint160(CCTP_MINT_RECIPIENT))),
-            bytes32(uint256(uint160(CCTP_DESTINATION_CALLER))),
-            cctpMaxFee,
-            cctpFinality,
-            bytes("")
+        bytes memory bridgeParams = bridgeModule.encodeParams(
+            DataTypes.CCTPBridgeParams({
+                destinationDomain: BASE_SEPOLIA_DOMAIN,
+                mintRecipient: bytes32(uint256(uint160(CCTP_MINT_RECIPIENT))),
+                destinationCaller: bytes32(uint256(uint160(CCTP_DESTINATION_CALLER))),
+                maxFeeBps: cctpMaxFeeBps,
+                minFinalityThreshold: cctpFinality,
+                hookData: bytes("")
+            })
         );
         paymentRails.configureToken({
             token: USDC_SEPOLIA,
