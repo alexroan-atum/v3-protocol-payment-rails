@@ -65,6 +65,22 @@ contract DexSwapModule_Validate_Test is DexSwapModuleBase {
         assertEq(reason, "Invalid slippage bps", "reason");
     }
 
+    function test_WhenSlippageBpsExceeds10000_ReturnsFalse() external {
+        bytes memory params = _buildParamsCustom(
+            address(buyToken),
+            DEFAULT_FEE,
+            10_001,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_SWAP_DEADLINE
+        );
+        vm.prank(address(paymentRails));
+        (bool isValid, string memory reason) = module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, params);
+        assertFalse(isValid, "isValid");
+        assertEq(reason, "Invalid slippage bps", "reason");
+    }
+
     function test_WhenSellFeedIsZero_ReturnsFalse() external {
         bytes memory params = _buildParamsCustom(
             address(buyToken),
@@ -79,6 +95,22 @@ contract DexSwapModule_Validate_Test is DexSwapModuleBase {
         (bool isValid, string memory reason) = module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, params);
         assertFalse(isValid, "isValid");
         assertEq(reason, "Missing sell token price feed", "reason");
+    }
+
+    function test_WhenBuyFeedIsZero_ReturnsFalse() external {
+        bytes memory params = _buildParamsCustom(
+            address(buyToken),
+            DEFAULT_FEE,
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(0),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_SWAP_DEADLINE
+        );
+        vm.prank(address(paymentRails));
+        (bool isValid, string memory reason) = module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, params);
+        assertFalse(isValid, "isValid");
+        assertEq(reason, "Missing buy token price feed", "reason");
     }
 
     function test_WhenSwapDeadlineSecondsIsZero_ReturnsFalse() external {
@@ -207,5 +239,45 @@ contract DexSwapModule_Validate_Test is DexSwapModuleBase {
                 assertEq(valReason, result.failureReason, "shared validator reasons must match");
             }
         } catch { }
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                    MAX AMOUNT VALIDATION TESTS
+    //////////////////////////////////////////////////////////////////////////*/
+
+    function test_WhenExceedsMaxAmount_ReturnsFalse() external {
+        bytes memory params = _defaultParamsWithMaxAmount(500e18);
+        vm.prank(address(paymentRails));
+        (bool isValid, string memory reason) = module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, params);
+        assertFalse(isValid, "isValid");
+        assertEq(reason, "Exceeds max swap amount", "reason");
+    }
+
+    function test_WhenAmountEqualsMaxAmount_ReturnsTrue() external {
+        bytes memory params = _defaultParamsWithMaxAmount(DEFAULT_SELL_AMOUNT);
+        vm.prank(address(paymentRails));
+        (bool isValid,) = module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, params);
+        assertTrue(isValid, "exact maxAmount should validate");
+    }
+
+    function test_WhenMaxAmountZero_ReturnsTrue() external {
+        bytes memory params = _defaultParamsWithMaxAmount(0);
+        vm.prank(address(paymentRails));
+        (bool isValid,) = module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, params);
+        assertTrue(isValid, "zero maxAmount means no limit");
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+            VALIDATE / EXECUTE AGREEMENT: MAX AMOUNT
+    //////////////////////////////////////////////////////////////////////////*/
+
+    function test_ValidateExecuteAgree_ExceedsMaxAmount() external {
+        bytes memory params = _defaultParamsWithMaxAmount(500e18);
+
+        vm.prank(address(paymentRails));
+        (, string memory valReason) = module.validate(address(sellToken), DEFAULT_SELL_AMOUNT, params);
+        DataTypes.ExecutionResult memory result =
+            paymentRails.executeSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
+        assertEq(valReason, result.failureReason, "reasons must match");
     }
 }

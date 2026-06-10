@@ -17,17 +17,7 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.s
 /// @title DexSwapModule
 /// @author Credit Cooperative
 /// @notice Oracle-only synchronous swap module — the permissionless executor controls nothing.
-/// @dev See {IDexSwapModule} for the full architecture, security model, and execution flow.
-///
-/// All swap parameters are owner-configured in the static {DexSwapParams}. The executor calls
-/// `PaymentRails.executeAction(token, amount)` — no `executionData`, no caller-controlled values.
-///
-/// The module computes `amountOutMinimum` on-chain from Chainlink oracle prices:
-///   `oracleExpected * (10000 - maxSlippageBps) / 10000`
-/// Oracle feeds are mandatory — there is no fallback to caller-supplied slippage.
-///
-/// The router is immutable (set once at construction). No owner key, no whitelist, no mutable
-/// state. The module is fully stateless across transactions.
+/// @dev See {IDexSwapModule} for the full interface. Fee-on-transfer tokens are NOT supported.
 contract DexSwapModule is IDexSwapModule, ActionModuleBase, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -134,28 +124,12 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, ReentrancyGuard {
 
     /// @inheritdoc IDexSwapModule
     function encodeParams(DataTypes.DexSwapParams calldata params) external pure returns (bytes memory encoded) {
-        return abi.encode(
-            params.targetToken,
-            params.fee,
-            params.maxSlippageBps,
-            params.sellTokenPriceFeed,
-            params.buyTokenPriceFeed,
-            params.maxStaleness,
-            params.swapDeadlineSeconds
-        );
+        return abi.encode(params);
     }
 
     /// @inheritdoc IDexSwapModule
     function decodeParams(bytes calldata encoded) public pure returns (DataTypes.DexSwapParams memory params) {
-        (
-            params.targetToken,
-            params.fee,
-            params.maxSlippageBps,
-            params.sellTokenPriceFeed,
-            params.buyTokenPriceFeed,
-            params.maxStaleness,
-            params.swapDeadlineSeconds
-        ) = abi.decode(encoded, (address, uint24, uint16, address, address, uint256, uint256));
+        (params) = abi.decode(encoded, (DataTypes.DexSwapParams));
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -196,7 +170,7 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, ReentrancyGuard {
         pure
         returns (bool valid, string memory reason, DataTypes.DexSwapParams memory cfg)
     {
-        if (params.length < 224) {
+        if (params.length < 256) {
             return (false, "Invalid params encoding", cfg);
         }
 
@@ -206,6 +180,7 @@ contract DexSwapModule is IDexSwapModule, ActionModuleBase, ReentrancyGuard {
         if (cfg.targetToken == token) return (false, "Same input and output token", cfg);
         if (amount == 0) return (false, "Zero sell amount", cfg);
         if (cfg.maxSlippageBps == 0 || cfg.maxSlippageBps > 10_000) return (false, "Invalid slippage bps", cfg);
+        if (cfg.maxAmount != 0 && amount > cfg.maxAmount) return (false, "Exceeds max swap amount", cfg);
         if (cfg.sellTokenPriceFeed == address(0)) return (false, "Missing sell token price feed", cfg);
         if (cfg.buyTokenPriceFeed == address(0)) return (false, "Missing buy token price feed", cfg);
         if (cfg.swapDeadlineSeconds == 0) return (false, "Zero swap deadline", cfg);

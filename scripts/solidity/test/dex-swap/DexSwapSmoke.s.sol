@@ -195,7 +195,8 @@ contract DexSwapSmoke is Script {
                 sellTokenPriceFeed: cfg.sellTokenFeed,
                 buyTokenPriceFeed: cfg.buyTokenFeed,
                 maxStaleness: cfg.maxStaleness,
-                swapDeadlineSeconds: cfg.swapDeadlineSeconds
+                swapDeadlineSeconds: cfg.swapDeadlineSeconds,
+                maxAmount: 0
             })
         );
 

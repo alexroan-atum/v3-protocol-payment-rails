@@ -1,13 +1,13 @@
 DexSwapModule_EncodeDecodeParams
-├── given valid 7-field params
-│   └── it should round-trip correctly
+├── given valid params
+│   └── it should round-trip all fields correctly
+├── given params with a non-zero maxAmount
+│   └── it should round-trip the maxAmount
 ├── given zero address target token
 │   └── it should round-trip correctly
-├── given max address target token
+├── given max-value params
 │   └── it should round-trip correctly
 ├── given encoded length
-│   └── it should be 224 bytes (7 ABI words)
-├── given oracle config with all fields
-│   └── it should round-trip all 7 fields correctly
+│   └── it should be 256 bytes (8 ABI words)
 └── fuzz
     └── it should round-trip any params correctly

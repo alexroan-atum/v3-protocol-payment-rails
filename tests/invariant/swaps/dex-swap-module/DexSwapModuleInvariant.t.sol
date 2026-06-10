@@ -134,4 +134,18 @@ contract DexSwapModuleInvariant is Test {
             "INV-5: paymentRails buyToken balance must equal ghost total received"
         );
     }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                    INV-6: MAX AMOUNT GATING CONSISTENT
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @notice INV-6: For every fuzzed maxAmount, the module's success/failure outcome and
+    ///         failure reason must match the predicted gating, and a gated swap must move no tokens.
+    /// @dev The handler fuzzes maxAmount, exercising the per-call reject ceiling.
+    function invariant_MaxAmountGating() public view {
+        assertFalse(
+            handler.ghost_gatingInvariantViolated(),
+            "INV-6: module gating outcome disagreed with predicted maxAmount behavior"
+        );
+    }
 }

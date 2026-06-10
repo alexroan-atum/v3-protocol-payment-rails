@@ -78,6 +78,10 @@ contract DexSwapModuleHandler is Test {
     /// @dev Set to true when a view function reverted (invariant violation)
     bool public ghost_viewFunctionReverted;
 
+    /// @dev Set to true if the module's success/failure outcome disagrees with the
+    ///      predicted maxAmount gating (invariant violation).
+    bool public ghost_gatingInvariantViolated;
+
     /*//////////////////////////////////////////////////////////////////////////
                                 CONSTANTS
     //////////////////////////////////////////////////////////////////////////*/
@@ -116,22 +120,44 @@ contract DexSwapModuleHandler is Test {
                         SWAP EXECUTION ACTIONS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @dev Executes a successful swap with bounded fuzz inputs.
-    function handler_execute(uint256 sellAmount, uint256 buyAmount) external {
-        sellAmount = bound(sellAmount, 1, 100_000e18);
+    /// @dev Executes a swap with bounded fuzz inputs, fuzzing maxAmount so the module's
+    ///      per-call reject ceiling is meaningfully exercised. The handler predicts the
+    ///      gating outcome and asserts the module agrees.
+    function handler_execute(uint256 sellAmount, uint256 buyAmount, uint256 maxAmount) external {
+        // Lower bound keeps the oracle floor strictly positive so the only failure cause
+        // is the gating path we model (maxAmount), not floor-rounds-to-zero.
+        sellAmount = bound(sellAmount, 1e3, 100_000e18);
         uint256 oracleFloor = sellAmount * (10_000 - uint256(DEFAULT_SLIPPAGE_BPS)) / 10_000;
-        buyAmount = bound(buyAmount, oracleFloor > 0 ? oracleFloor : 1, sellAmount * 2);
+        buyAmount = bound(buyAmount, oracleFloor, sellAmount * 2);
+        maxAmount = bound(maxAmount, 0, 200_000e18);
 
         sellToken.mint(address(paymentRails), sellAmount);
         buyToken.mint(address(router), buyAmount);
 
-        bytes memory params = _defaultParams();
+        bytes memory params = _paramsWithLimits(maxAmount);
+        router.setShouldRevert(false);
         router.setOutputAmount(buyAmount);
+
+        // Keep oracles fresh after time warps so the only failure cause is the gating
+        // path we model (maxAmount), not oracle staleness.
+        sellFeed.setUpdatedAt(block.timestamp);
+        buyFeed.setUpdatedAt(block.timestamp);
+
+        // Predict the gating outcome: _validateParams rejects when amount exceeds maxAmount.
+        bool expectMaxAmountGate = maxAmount != 0 && sellAmount > maxAmount;
+        bool expectSuccess = !expectMaxAmountGate;
 
         uint256 prSellBefore = sellToken.balanceOf(address(paymentRails));
         uint256 prBuyBefore = buyToken.balanceOf(address(paymentRails));
 
         DataTypes.ExecutionResult memory result = paymentRails.executeSwap(address(sellToken), sellAmount, params);
+
+        if (result.success != expectSuccess) {
+            ghost_gatingInvariantViolated = true;
+        }
+        if (expectMaxAmountGate && !_eq(result.failureReason, "Exceeds max swap amount")) {
+            ghost_gatingInvariantViolated = true;
+        }
 
         if (result.success) {
             uint256 sellSpent = prSellBefore - sellToken.balanceOf(address(paymentRails));
@@ -139,7 +165,21 @@ contract DexSwapModuleHandler is Test {
             ghost_totalSellTokenSpent += sellSpent;
             ghost_totalBuyTokenReceived += buyReceived;
             ghost_successfulSwapCount++;
+        } else {
+            // A gated swap must move no tokens.
+            if (sellToken.balanceOf(address(paymentRails)) != prSellBefore) {
+                ghost_gatingInvariantViolated = true;
+            }
+            if (buyToken.balanceOf(address(paymentRails)) != prBuyBefore) {
+                ghost_gatingInvariantViolated = true;
+            }
         }
+    }
+
+    /// @dev Advances block time so oracle freshness windows are exercised during the fuzz run.
+    function handler_warp(uint256 secondsForward) external {
+        secondsForward = bound(secondsForward, 1, 14_400);
+        vm.warp(block.timestamp + secondsForward);
     }
 
     /// @dev Attempts a swap that should fail (router set to revert).
@@ -199,6 +239,10 @@ contract DexSwapModuleHandler is Test {
     //////////////////////////////////////////////////////////////////////////*/
 
     function _defaultParams() internal view returns (bytes memory) {
+        return _paramsWithLimits(0);
+    }
+
+    function _paramsWithLimits(uint256 maxAmount) internal view returns (bytes memory) {
         return abi.encode(
             address(buyToken),
             DEFAULT_FEE,
@@ -206,7 +250,12 @@ contract DexSwapModuleHandler is Test {
             address(sellFeed),
             address(buyFeed),
             DEFAULT_MAX_STALENESS,
-            DEFAULT_SWAP_DEADLINE
+            DEFAULT_SWAP_DEADLINE,
+            maxAmount
         );
+    }
+
+    function _eq(string memory a, string memory b) internal pure returns (bool) {
+        return keccak256(bytes(a)) == keccak256(bytes(b));
     }
 }

@@ -545,4 +545,53 @@ contract DexSwapModule_Execute_Test is DexSwapModuleBase {
 
         assertFalse(result.success, "should reject dust swap");
     }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                    MAX AMOUNT TESTS
+    //////////////////////////////////////////////////////////////////////////*/
+
+    function test_WhenExceedsMaxAmount_ReturnsFailedResult() external {
+        bytes memory params = _defaultParamsWithMaxAmount(500e18);
+        DataTypes.ExecutionResult memory result =
+            paymentRails.executeSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
+        assertFalse(result.success, "success");
+        assertEq(result.failureReason, "Exceeds max swap amount", "failureReason");
+    }
+
+    function test_WhenExceedsMaxAmount_DoesNotTransferTokens() external {
+        bytes memory params = _defaultParamsWithMaxAmount(500e18);
+        uint256 balBefore = sellToken.balanceOf(address(paymentRails));
+        paymentRails.executeSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
+        assertEq(sellToken.balanceOf(address(paymentRails)), balBefore, "no tokens moved");
+    }
+
+    function test_WhenAmountEqualsMaxAmount_Succeeds() external {
+        bytes memory params = _defaultParamsWithMaxAmount(DEFAULT_SELL_AMOUNT);
+        DataTypes.ExecutionResult memory result =
+            paymentRails.executeSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
+        assertTrue(result.success, "exact maxAmount should succeed");
+    }
+
+    function test_WhenAmountBelowMaxAmount_Succeeds() external {
+        bytes memory params = _defaultParamsWithMaxAmount(DEFAULT_SELL_AMOUNT * 2);
+        DataTypes.ExecutionResult memory result =
+            paymentRails.executeSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
+        assertTrue(result.success, "below maxAmount should succeed");
+    }
+
+    function test_WhenMaxAmountIsZero_NoLimit() external {
+        bytes memory params = _defaultParamsWithMaxAmount(0);
+        DataTypes.ExecutionResult memory result =
+            paymentRails.executeSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
+        assertTrue(result.success, "zero maxAmount means no limit");
+    }
+
+    function testFuzz_MaxAmountBoundary(uint256 maxAmt) external {
+        maxAmt = bound(maxAmt, 1, DEFAULT_SELL_AMOUNT - 1);
+        bytes memory params = _defaultParamsWithMaxAmount(maxAmt);
+        DataTypes.ExecutionResult memory result =
+            paymentRails.executeSwap(address(sellToken), DEFAULT_SELL_AMOUNT, params);
+        assertFalse(result.success, "amount > maxAmount must fail");
+        assertEq(result.failureReason, "Exceeds max swap amount");
+    }
 }

@@ -20,8 +20,17 @@ DexSwapModule::execute
 │   └── it should return failed result with zero swap deadline
 ├── when caller has insufficient balance
 │   └── it should return failed result with insufficient balance
+├── when amount exceeds maxAmount
+│   ├── it should return failed result with exceeds max swap amount
+│   └── it should not transfer any tokens
+├── when amount equals or is below maxAmount
+│   └── it should succeed
+├── when maxAmount is zero
+│   └── it should impose no limit
 ├── when oracle price is unavailable (negative, stale, or reverts)
 │   └── it should return failed result with oracle price unavailable
+├── when the oracle floor rounds to zero (dust amount)
+│   └── it should return failed result with amount too small for safe swap
 ├── when router call reverts
 │   ├── it should return failed result with router call failed
 │   ├── it should return all sell tokens to caller via leftover
@@ -60,4 +69,5 @@ DexSwapModule::execute
 │   ├── it should leave attacker balances unchanged
 │   └── it should allow subsequent swaps after blocked reentrancy
 └── fuzz
-    └── it should handle any valid sell amount and buy amount
+    ├── it should handle any valid sell amount and buy amount
+    └── it should reject any amount above maxAmount

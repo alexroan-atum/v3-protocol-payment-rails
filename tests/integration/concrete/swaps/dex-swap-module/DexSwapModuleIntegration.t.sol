@@ -45,6 +45,10 @@ contract DexSwapModuleIntegrationTest is Test {
         address indexed paymentRails, address indexed sellToken, address buyToken, uint256 amountIn, uint256 amountOut
     );
 
+    event ActionFailed(
+        address indexed token, string actionType, uint256 amountIn, string reason, address indexed executor
+    );
+
     /*//////////////////////////////////////////////////////////////////////////
                                 CONSTANTS
     //////////////////////////////////////////////////////////////////////////*/
@@ -328,7 +332,8 @@ contract DexSwapModuleIntegrationTest is Test {
             address(sellFeed),
             address(buyFeed),
             DEFAULT_MAX_STALENESS,
-            DEFAULT_SWAP_DEADLINE
+            DEFAULT_SWAP_DEADLINE,
+            uint256(0)
         );
         vm.prank(owner);
         paymentRails.configureToken(address(sellToken), "SWAP", address(module), MIN_BALANCE, params, true);
@@ -489,7 +494,8 @@ contract DexSwapModuleIntegrationTest is Test {
             address(sellFeed),
             address(buyFeed),
             DEFAULT_MAX_STALENESS,
-            DEFAULT_SWAP_DEADLINE
+            DEFAULT_SWAP_DEADLINE,
+            uint256(0)
         );
         vm.prank(owner);
         paymentRails.configureToken(address(sellToken), "SWAP", address(newModule), MIN_BALANCE, params, true);
@@ -498,6 +504,38 @@ contract DexSwapModuleIntegrationTest is Test {
         bool s2 = paymentRails.executeAction(address(sellToken), SELL_AMOUNT);
         assertTrue(s2, "Second swap with new module must succeed");
         assertEq(buyToken.balanceOf(address(paymentRails)), BUY_AMOUNT * 2, "Both swaps credited buyToken");
+    }
+
+    /*//////////////////////////////////////////////////////////////////////////
+            GROUP 10: MAX AMOUNT ENFORCEMENT THROUGH PAYMENTRAILS
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @dev Amount above maxAmount → module returns failure → PaymentRails returns false + emits ActionFailed.
+    function test_MaxAmount_ExceedsLimit_ReturnsFalseAndEmitsActionFailed() public {
+        _configureWithLimits(paymentRails, address(sellToken), MIN_BALANCE, SELL_AMOUNT / 2);
+
+        uint256 balBefore = sellToken.balanceOf(address(paymentRails));
+
+        vm.expectEmit(true, true, false, true, address(paymentRails));
+        emit ActionFailed(address(sellToken), "SWAP", SELL_AMOUNT, "Exceeds max swap amount", keeper);
+
+        vm.prank(keeper);
+        bool success = paymentRails.executeAction(address(sellToken), SELL_AMOUNT);
+
+        assertFalse(success, "swap above maxAmount must return false");
+        assertEq(sellToken.balanceOf(address(paymentRails)), balBefore, "no sellToken should move");
+        assertEq(sellToken.balanceOf(address(module)), 0, "module holds zero sellToken");
+    }
+
+    /// @dev Amount at or below maxAmount → swap completes through PaymentRails.
+    function test_MaxAmount_WithinLimit_SwapSucceeds() public {
+        _configureWithLimits(paymentRails, address(sellToken), MIN_BALANCE, SELL_AMOUNT);
+
+        vm.prank(keeper);
+        bool success = paymentRails.executeAction(address(sellToken), SELL_AMOUNT);
+
+        assertTrue(success, "swap at exactly maxAmount must succeed");
+        assertEq(buyToken.balanceOf(address(paymentRails)), BUY_AMOUNT, "buyToken credited");
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -512,8 +550,28 @@ contract DexSwapModuleIntegrationTest is Test {
             address(sellFeed),
             address(buyFeed),
             DEFAULT_MAX_STALENESS,
-            DEFAULT_SWAP_DEADLINE
+            DEFAULT_SWAP_DEADLINE,
+            uint256(0)
         );
+    }
+
+    function _moduleParamsWithLimits(uint256 maxAmount) internal view returns (bytes memory) {
+        return abi.encode(
+            address(buyToken),
+            DEFAULT_FEE,
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_SWAP_DEADLINE,
+            maxAmount
+        );
+    }
+
+    function _configureWithLimits(PaymentRails pr, address token, uint256 minBal, uint256 maxAmount) internal {
+        bytes memory params = _moduleParamsWithLimits(maxAmount);
+        vm.prank(owner);
+        pr.configureToken(token, "SWAP", address(module), minBal, params, true);
     }
 
     function _configurePaymentRails(address token, uint256 minBal) internal {

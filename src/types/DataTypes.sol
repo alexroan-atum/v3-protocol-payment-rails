@@ -47,14 +47,30 @@ library DataTypes {
     /// @notice Static configuration for DEX swaps (stored in PaymentRails.moduleParams).
     /// @dev Oracle feeds are mandatory. Both feeds MUST use the same quote currency (e.g., both
     /// TOKEN/USD) — mixing produces a silently incorrect oracle floor.
+    /// @dev `maxSlippageBps` is the value-protection lever; size `maxAmount` to the pool's actual
+    /// liquidity (not its fee tier), and never loosen slippage to force size through a thin pool.
     struct DexSwapParams {
+        /// @dev The required output token; must differ from the input token.
         address targetToken;
+        /// @dev Uniswap V3 pool fee tier in hundredths of a bip (3000 = 0.30% = 30 bps).
         uint24 fee;
+        /// @dev Max slippage vs the Chainlink oracle, in bps. Must exceed `fee`/100 + price impact.
         uint16 maxSlippageBps;
+        /// @dev Chainlink feed for the sell token. Mandatory; same quote currency as buy feed.
         address sellTokenPriceFeed;
+        /// @dev Chainlink feed for the buy token. Mandatory; same quote currency as sell feed.
         address buyTokenPriceFeed;
+        /// @dev Max age of a Chainlink answer before it is rejected as stale, in seconds.
         uint256 maxStaleness;
+        /// @dev Seconds added to `block.timestamp` to form the swap deadline. Must be non-zero.
         uint256 swapDeadlineSeconds;
+        /// @dev Per-call sandwich-profitability ceiling (token decimals); 0 = no limit. Keeper passes
+        ///      min(balance, maxAmount). This caps PER-SWAP profitability, NOT aggregate MEV — the
+        ///      aggregate value bound is maxSlippageBps (the oracle floor). Size below
+        ///      ~feeTier * IN-RANGE (active-tick) liquidity — NOT pool TVL — so each individual swap
+        ///      is unprofitable to sandwich; re-evaluate if liquidity migrates to another fee tier.
+        ///      Stable / low-fee pools: a tight maxSlippageBps alone keeps extractable slack below gas.
+        uint256 maxAmount;
     }
 
     /*//////////////////////////////////////////////////////////////////////////

@@ -108,7 +108,21 @@ abstract contract DexSwapModuleBase is Test {
             address(sellFeed),
             address(buyFeed),
             DEFAULT_MAX_STALENESS,
-            DEFAULT_SWAP_DEADLINE
+            DEFAULT_SWAP_DEADLINE,
+            uint256(0)
+        );
+    }
+
+    function _defaultParamsWithMaxAmount(uint256 maxAmount) internal view returns (bytes memory) {
+        return abi.encode(
+            address(buyToken),
+            DEFAULT_FEE,
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_SWAP_DEADLINE,
+            maxAmount
         );
     }
 
@@ -120,7 +134,8 @@ abstract contract DexSwapModuleBase is Test {
             address(sellFeed),
             address(buyFeed),
             DEFAULT_MAX_STALENESS,
-            DEFAULT_SWAP_DEADLINE
+            DEFAULT_SWAP_DEADLINE,
+            uint256(0)
         );
     }
 
@@ -137,7 +152,7 @@ abstract contract DexSwapModuleBase is Test {
         pure
         returns (bytes memory)
     {
-        return abi.encode(targetToken, fee, slippageBps, _sellFeed, _buyFeed, maxStaleness, deadlineSeconds);
+        return abi.encode(targetToken, fee, slippageBps, _sellFeed, _buyFeed, maxStaleness, deadlineSeconds, uint256(0));
     }
 
     function _computeExpectedOutput(uint256 sellAmount) internal pure returns (uint256) {

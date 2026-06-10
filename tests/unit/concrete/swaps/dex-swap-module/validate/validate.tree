@@ -19,6 +19,12 @@ DexSwapModule::validate
 │   └── it should return false with oracle price unavailable
 ├── when caller has insufficient balance
 │   └── it should return false with insufficient balance
+├── when amount exceeds maxAmount
+│   └── it should return false with exceeds max swap amount
+├── when amount equals or is below maxAmount
+│   └── it should return true
+├── when maxAmount is zero
+│   └── it should impose no limit and return true
 ├── when all validations pass
 │   └── it should return true with empty reason
 ├── validate and execute should agree on failure reasons (shared _validate)
@@ -26,6 +32,7 @@ DexSwapModule::validate
 │   ├── it should agree on zero target token
 │   ├── it should agree on zero sell amount
 │   ├── it should agree on same input and output token
-│   └── it should agree when both oracle and balance are bad
+│   ├── it should agree when both oracle and balance are bad
+│   └── it should agree on exceeds max swap amount
 └── fuzz: validate and execute agreement
     └── it should produce identical failure reasons for shared validation checks

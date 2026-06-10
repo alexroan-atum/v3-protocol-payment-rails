@@ -112,7 +112,8 @@ abstract contract DexSwapModuleForkBase is Test {
                 sellTokenPriceFeed: sellTokenPriceFeed,
                 buyTokenPriceFeed: buyTokenPriceFeed,
                 maxStaleness: ORACLE_MAX_STALENESS,
-                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
+                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS,
+                maxAmount: 0
             })
         );
     }
@@ -831,7 +832,8 @@ contract DexSwapModuleForkEncodeDecodeTest is DexSwapModuleForkBase {
             sellTokenPriceFeed: ETH_USD_FEED,
             buyTokenPriceFeed: USDC_USD_FEED,
             maxStaleness: ORACLE_MAX_STALENESS,
-            swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
+            swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS,
+            maxAmount: 0
         });
 
         bytes memory encoded = module.encodeParams(original);
@@ -876,7 +878,8 @@ contract DexSwapModuleForkFailureTest is DexSwapModuleForkBase {
                 sellTokenPriceFeed: ETH_USD_FEED,
                 buyTokenPriceFeed: USDC_USD_FEED,
                 maxStaleness: ORACLE_MAX_STALENESS,
-                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
+                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS,
+                maxAmount: 0
             })
         );
 
@@ -897,7 +900,8 @@ contract DexSwapModuleForkFailureTest is DexSwapModuleForkBase {
                 sellTokenPriceFeed: ETH_USD_FEED,
                 buyTokenPriceFeed: USDC_USD_FEED,
                 maxStaleness: ORACLE_MAX_STALENESS,
-                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
+                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS,
+                maxAmount: 0
             })
         );
 
@@ -921,7 +925,8 @@ contract DexSwapModuleForkFailureTest is DexSwapModuleForkBase {
                 sellTokenPriceFeed: ETH_USD_FEED,
                 buyTokenPriceFeed: USDC_USD_FEED,
                 maxStaleness: ORACLE_MAX_STALENESS,
-                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
+                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS,
+                maxAmount: 0
             })
         );
 
@@ -942,7 +947,8 @@ contract DexSwapModuleForkFailureTest is DexSwapModuleForkBase {
                 sellTokenPriceFeed: ETH_USD_FEED,
                 buyTokenPriceFeed: USDC_USD_FEED,
                 maxStaleness: ORACLE_MAX_STALENESS,
-                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
+                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS,
+                maxAmount: 0
             })
         );
 
@@ -969,7 +975,8 @@ contract DexSwapModuleForkFailureTest is DexSwapModuleForkBase {
                 sellTokenPriceFeed: ETH_USD_FEED,
                 buyTokenPriceFeed: USDC_USD_FEED,
                 maxStaleness: ORACLE_MAX_STALENESS,
-                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
+                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS,
+                maxAmount: 0
             })
         );
 
@@ -1002,7 +1009,8 @@ contract DexSwapModuleForkFailureTest is DexSwapModuleForkBase {
                 sellTokenPriceFeed: ETH_USD_FEED,
                 buyTokenPriceFeed: USDC_USD_FEED,
                 maxStaleness: ORACLE_MAX_STALENESS,
-                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
+                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS,
+                maxAmount: 0
             })
         );
         vm.prank(owner);
@@ -1023,7 +1031,8 @@ contract DexSwapModuleForkFailureTest is DexSwapModuleForkBase {
                 sellTokenPriceFeed: ETH_USD_FEED,
                 buyTokenPriceFeed: USDC_USD_FEED,
                 maxStaleness: 1,
-                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
+                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS,
+                maxAmount: 0
             })
         );
 
@@ -1048,7 +1057,8 @@ contract DexSwapModuleForkFailureTest is DexSwapModuleForkBase {
                 sellTokenPriceFeed: ETH_USD_FEED,
                 buyTokenPriceFeed: USDC_USD_FEED,
                 maxStaleness: 1,
-                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
+                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS,
+                maxAmount: 0
             })
         );
 
@@ -1084,7 +1094,8 @@ contract DexSwapModuleForkFailureTest is DexSwapModuleForkBase {
                 sellTokenPriceFeed: ETH_USD_FEED,
                 buyTokenPriceFeed: USDC_USD_FEED,
                 maxStaleness: 1,
-                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS
+                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS,
+                maxAmount: 0
             })
         );
 
@@ -1099,5 +1110,61 @@ contract DexSwapModuleForkFailureTest is DexSwapModuleForkBase {
         uint256 totalWethAfter = IERC20(WETH).balanceOf(address(paymentRails)) + IERC20(WETH).balanceOf(address(module));
 
         assertEq(totalWethAfter, totalWethBefore, "No WETH should be lost on stale oracle failure");
+    }
+}
+
+/*//////////////////////////////////////////////////////////////////////////
+            MAX AMOUNT ENFORCEMENT — REAL UNISWAP + CHAINLINK
+//////////////////////////////////////////////////////////////////////////*/
+
+contract DexSwapModuleForkMaxAmountTest is DexSwapModuleForkBase {
+    /// @dev cap = 1 WETH; configured for WETH -> USDC against the real Uniswap router.
+    function _maxAmountCappedParams() internal view returns (bytes memory) {
+        return module.encodeParams(
+            DataTypes.DexSwapParams({
+                targetToken: USDC,
+                fee: FEE_MEDIUM,
+                maxSlippageBps: 100,
+                sellTokenPriceFeed: ETH_USD_FEED,
+                buyTokenPriceFeed: USDC_USD_FEED,
+                maxStaleness: ORACLE_MAX_STALENESS,
+                swapDeadlineSeconds: DEFAULT_DEADLINE_SECONDS,
+                maxAmount: 1 ether
+            })
+        );
+    }
+
+    /// @dev Test A: a swap above the cap is rejected — the module returns a failed result and
+    ///      PaymentRails returns false before routing through Uniswap. No WETH moves.
+    function test_MaxAmount_ExceedsCap_Reverts() external {
+        bytes memory swapParams = _maxAmountCappedParams();
+
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
+
+        uint256 wethBefore = IERC20(WETH).balanceOf(address(paymentRails));
+
+        bool success = paymentRails.executeAction(WETH, 2 ether);
+
+        assertFalse(success, "swap above cap must return false");
+        assertEq(IERC20(WETH).balanceOf(address(paymentRails)), wethBefore, "no WETH should move");
+        assertEq(IERC20(WETH).balanceOf(address(module)), 0, "module holds no WETH");
+    }
+
+    /// @dev Test B: a swap exactly at the cap routes through the real Uniswap router and succeeds.
+    function test_MaxAmount_AtCap_Succeeds() external {
+        bytes memory swapParams = _maxAmountCappedParams();
+
+        vm.prank(owner);
+        paymentRails.configureToken(WETH, "SWAP", address(module), WETH_SELL_AMOUNT, swapParams, true);
+
+        uint256 usdcBefore = IERC20(USDC).balanceOf(address(paymentRails));
+
+        bool success = paymentRails.executeAction(WETH, 1 ether);
+        assertTrue(success, "swap at exactly the cap must succeed against real router");
+
+        assertGt(IERC20(USDC).balanceOf(address(paymentRails)), usdcBefore, "PaymentRails USDC should increase");
+        assertEq(IERC20(WETH).balanceOf(address(module)), 0, "module holds no WETH");
+        assertEq(IERC20(USDC).balanceOf(address(module)), 0, "module holds no USDC");
     }
 }
