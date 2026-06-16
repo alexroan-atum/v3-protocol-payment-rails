@@ -30,8 +30,8 @@ contract ForwardModuleEstimateOutputTest is ForwardModuleBase {
     }
 
     function test_ReturnsSameOutputRegardlessOfParams() external view {
-        bytes memory params1 = _buildParams(recipient, false, 0);
-        bytes memory params2 = _buildParams(address(0), true, type(uint256).max);
+        bytes memory params1 = _buildParams(recipient, 0);
+        bytes memory params2 = _buildParams(address(0), type(uint256).max);
 
         (uint256 output1, address token1) = module.estimateOutput(address(token), DEFAULT_AMOUNT, params1);
         (uint256 output2, address token2) = module.estimateOutput(address(token), DEFAULT_AMOUNT, params2);

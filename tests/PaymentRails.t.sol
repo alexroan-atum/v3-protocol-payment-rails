@@ -51,8 +51,7 @@ contract PaymentRailsTest is Test {
 
     function test_ConfigureToken() public {
         // Encode forward params
-        DataTypes.ForwardParams memory params =
-            DataTypes.ForwardParams({ recipient: recipient, requireSuccessfulReceipt: false, minAmount: 0 });
+        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({ recipient: recipient, minAmount: 0 });
         bytes memory encodedParams = forwardModule.encodeParams(params);
 
         // Configure token
@@ -74,8 +73,7 @@ contract PaymentRailsTest is Test {
 
     function test_ExecuteForwardAction() public {
         // Setup: Configure token
-        DataTypes.ForwardParams memory params =
-            DataTypes.ForwardParams({ recipient: recipient, requireSuccessfulReceipt: false, minAmount: 0 });
+        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({ recipient: recipient, minAmount: 0 });
         bytes memory encodedParams = forwardModule.encodeParams(params);
 
         paymentRails.configureToken(
@@ -104,8 +102,7 @@ contract PaymentRailsTest is Test {
 
     function test_ExecuteAction_PublicExecution() public {
         // Configure token
-        DataTypes.ForwardParams memory params =
-            DataTypes.ForwardParams({ recipient: recipient, requireSuccessfulReceipt: false, minAmount: 0 });
+        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({ recipient: recipient, minAmount: 0 });
 
         paymentRails.configureToken(
             address(token), "FORWARD", address(forwardModule), 100 * 10 ** 18, forwardModule.encodeParams(params), true
@@ -123,8 +120,7 @@ contract PaymentRailsTest is Test {
 
     function test_ExecuteAction_BelowMinimumBalance() public {
         // Configure with minimum balance of 100 tokens
-        DataTypes.ForwardParams memory params =
-            DataTypes.ForwardParams({ recipient: recipient, requireSuccessfulReceipt: false, minAmount: 0 });
+        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({ recipient: recipient, minAmount: 0 });
 
         paymentRails.configureToken(
             address(token),
@@ -144,8 +140,7 @@ contract PaymentRailsTest is Test {
 
     function test_ExecuteAction_PartialAmount() public {
         // Configure token
-        DataTypes.ForwardParams memory params =
-            DataTypes.ForwardParams({ recipient: recipient, requireSuccessfulReceipt: false, minAmount: 0 });
+        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({ recipient: recipient, minAmount: 0 });
 
         paymentRails.configureToken(
             address(token),
@@ -174,8 +169,7 @@ contract PaymentRailsTest is Test {
 
     function test_ExecuteAction_InsufficientBalance() public {
         // Configure token
-        DataTypes.ForwardParams memory params =
-            DataTypes.ForwardParams({ recipient: recipient, requireSuccessfulReceipt: false, minAmount: 0 });
+        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({ recipient: recipient, minAmount: 0 });
 
         paymentRails.configureToken(
             address(token), "FORWARD", address(forwardModule), 100 * 10 ** 18, forwardModule.encodeParams(params), true
@@ -194,8 +188,7 @@ contract PaymentRailsTest is Test {
         paymentRails.previewExecution(address(token));
 
         // Configure token
-        DataTypes.ForwardParams memory params =
-            DataTypes.ForwardParams({ recipient: recipient, requireSuccessfulReceipt: false, minAmount: 0 });
+        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({ recipient: recipient, minAmount: 0 });
 
         paymentRails.configureToken(
             address(token), "FORWARD", address(forwardModule), 100 * 10 ** 18, forwardModule.encodeParams(params), true
@@ -213,8 +206,7 @@ contract PaymentRailsTest is Test {
     }
 
     function test_PreviewExecution_NotEnabled() public {
-        DataTypes.ForwardParams memory params =
-            DataTypes.ForwardParams({ recipient: recipient, requireSuccessfulReceipt: false, minAmount: 0 });
+        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({ recipient: recipient, minAmount: 0 });
 
         // Configure but disabled
         paymentRails.configureToken(
@@ -232,8 +224,7 @@ contract PaymentRailsTest is Test {
 
     function test_DisableToken() public {
         // Configure token as enabled
-        DataTypes.ForwardParams memory params =
-            DataTypes.ForwardParams({ recipient: recipient, requireSuccessfulReceipt: false, minAmount: 0 });
+        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({ recipient: recipient, minAmount: 0 });
 
         paymentRails.configureToken(
             address(token), "FORWARD", address(forwardModule), 100 * 10 ** 18, forwardModule.encodeParams(params), true
@@ -261,8 +252,7 @@ contract PaymentRailsTest is Test {
 
     function test_ReconfigureToken() public {
         // Configure token
-        DataTypes.ForwardParams memory params =
-            DataTypes.ForwardParams({ recipient: recipient, requireSuccessfulReceipt: false, minAmount: 0 });
+        DataTypes.ForwardParams memory params = DataTypes.ForwardParams({ recipient: recipient, minAmount: 0 });
 
         paymentRails.configureToken(
             address(token), "FORWARD", address(forwardModule), 100 * 10 ** 18, forwardModule.encodeParams(params), true
@@ -270,8 +260,7 @@ contract PaymentRailsTest is Test {
 
         // Reconfigure with new recipient
         address newRecipient = makeAddr("newRecipient");
-        DataTypes.ForwardParams memory newParams =
-            DataTypes.ForwardParams({ recipient: newRecipient, requireSuccessfulReceipt: false, minAmount: 0 });
+        DataTypes.ForwardParams memory newParams = DataTypes.ForwardParams({ recipient: newRecipient, minAmount: 0 });
 
         paymentRails.configureToken(
             address(token),

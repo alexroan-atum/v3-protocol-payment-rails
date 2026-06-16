@@ -24,4 +24,11 @@ contract MockCowSettlement {
     function filledAmountByDigest(bytes32 orderDigest) external view returns (uint256) {
         return _filledAmounts[orderDigest];
     }
+
+    mapping(bytes32 => bool) public invalidatedOrders;
+
+    function invalidateOrder(bytes calldata orderUid) external {
+        bytes32 orderDigest = bytes32(orderUid[:32]);
+        invalidatedOrders[orderDigest] = true;
+    }
 }

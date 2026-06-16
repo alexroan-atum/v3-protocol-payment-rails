@@ -1,4 +1,11 @@
 CowSwapModule_Execute
+├── when caller is not authorized payment rails
+│   ├── it should return failed result with caller is not authorized PaymentRails reason
+│   └── it should not transfer any tokens
+├── when params are malformed
+│   ├── it should return failed result with invalid params encoding reason
+│   ├── it should not create an order
+│   └── it should not transfer tokens
 ├── when amount is zero
 │   ├── it should return failed result with zero sell amount reason
 │   └── it should not create an order or lock tokens
@@ -6,13 +13,21 @@ CowSwapModule_Execute
 │   └── it should return failed result with zero target token reason
 ├── when target token equals sell token
 │   └── it should return failed result with same sell and buy token reason
-├── when min buy amount is zero
-│   └── it should return failed result with zero minimum buy amount reason
+├── when slippage bps is invalid
+│   └── it should return failed result with invalid slippage bps reason
+├── when sell token price feed is missing
+│   └── it should return failed result with missing sell token price feed reason
+├── when buy token price feed is missing
+│   └── it should return failed result with missing buy token price feed reason
 ├── when validity duration is zero
 │   └── it should return failed result with zero validity duration reason
 ├── when validity duration overflows uint32
 │   ├── it should return failed result with validity duration overflow reason
 │   └── it should not lock any tokens
+├── when oracle price is unavailable
+│   └── it should return failed result with oracle price unavailable reason
+├── when oracle floor rounds to zero
+│   └── it should return failed result with amount too small for safe swap reason
 ├── when order id collides with existing order
 │   ├── it should return failed result with order id collision reason
 │   ├── it should not overwrite existing order metadata
@@ -22,21 +37,44 @@ CowSwapModule_Execute
 │   └── it should create two independent orders with distinct order ids
 ├── when paymentRails has insufficient sell token balance
 │   └── it should return failed result with insufficient balance reason
-├── when token transfer fails
-│   └── it should return failed result with token transfer failed reason
+├── when token transfer fails (returns false)
+│   ├── it should return failed result with token transfer failed reason
+│   ├── it should clean up order metadata (CEI rollback — no stale collision)
+│   ├── it should zero all struct fields in _orders mapping
+│   └── it should cause isValidSignature to return FAILURE for the cleaned-up orderId
+├── when token transfer reverts
+│   └── it should clean up order metadata (CEI rollback — no stale collision)
+├── when sell token reenters execute during transferFrom
+│   ├── it should revert the reentrant call (ReentrancyGuard)
+│   └── it should leave module state clean after blocked reentry
+├── when sell token reenters cancelOrder during execute transferFrom
+│   └── it should revert the reentrant cancelOrder (shared ReentrancyGuard lock)
+├── when L2 sequencer is down
+│   └── it should return failed result with oracle price unavailable
+├── when L2 sequencer is in grace period
+│   └── it should return failed result with oracle price unavailable
+├── when L2 sequencer is up past grace period
+│   └── it should succeed
+├── when L2 sequencer feed reverts
+│   └── it should return failed result with oracle price unavailable
+├── when no-return sell token (e.g. USDT)
+│   └── it should succeed and store order metadata
+├── when fee-on-transfer sell token
+│   ├── it should succeed but module receives less than recorded sellAmount
+│   └── it should prevent solver from pulling full sellAmount
 ├── when concurrent orders share the same sell token
-│   ├── it should use accumulated approval after second order
-│   ├── it should preserve second order approval after first order is mark filled
-│   └── it should preserve second order approval after first order is cancelled
+│   ├── it should use max approval after second order
+│   └── it should preserve max approval after first order is cancelled
 └── when all parameters are valid
     ├── it should transfer sell token from paymentRails to module
-    ├── it should approve cow settlement for sell amount
-    ├── it should store order metadata with pending status
+    ├── it should approve vault relayer for max amount
+    ├── it should set max approval only once across multiple orders
+    ├── it should store order metadata with cancelled false
     ├── it should store correct paymentRails address in metadata
     ├── it should store correct sell token in metadata
     ├── it should store correct buy token in metadata
     ├── it should store correct sell amount in metadata
-    ├── it should store correct min buy amount in metadata
+    ├── it should store correct validTo in metadata
     ├── it should emit OrderCreated event
     ├── it should return success equals true
     ├── it should return amountOut equals zero

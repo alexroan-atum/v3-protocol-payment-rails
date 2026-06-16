@@ -16,4 +16,10 @@ contract PaymentRailsConstructorTest is Test {
         PaymentRails paymentRails = new PaymentRails(expectedOwner);
         assertEq(paymentRails.owner(), expectedOwner);
     }
+
+    function test_WhenInitialOwnerIsValid_PendingOwnerIsZero() external {
+        address expectedOwner = makeAddr("owner");
+        PaymentRails paymentRails = new PaymentRails(expectedOwner);
+        assertEq(paymentRails.pendingOwner(), address(0));
+    }
 }

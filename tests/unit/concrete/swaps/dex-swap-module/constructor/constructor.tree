@@ -1,5 +1,10 @@
-DexSwapModule_Constructor
-├── when owner is zero address
-│   └── it should revert with OwnableInvalidOwner
-└── when owner is valid
-    └── it should set owner correctly
+DexSwapModule::constructor
+├── when router is zero address
+│   └── it should revert with DexSwapModule_ZeroRouter
+├── when router has no code (EOA)
+│   └── it should revert with DexSwapModule_RouterNotContract
+└── when router is a valid contract
+    ├── it should set the immutable router address
+    ├── it should store sequencerUptimeFeed as immutable
+    ├── it should store sequencerGracePeriod as immutable
+    └── it should return "SWAP" from moduleType()

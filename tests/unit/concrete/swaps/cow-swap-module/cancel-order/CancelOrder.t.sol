@@ -3,12 +3,10 @@ pragma solidity ^0.8.29;
 
 import { CowSwapModuleBase } from "../CowSwapModuleBase.t.sol";
 import { Errors } from "../../../../../../src/libraries/Errors.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
 /// @notice Unit tests for CowSwapModule.cancelOrder()
 /// @dev Tree: tests/unit/concrete/cow-swap-module/cancel-order/cancelOrder.tree
-///
-/// Access model: only the module owner (set at construction, address(this) in tests) may cancel.
-/// Tokens always return to meta.paymentRails (the PaymentRails that placed the order), regardless of caller.
 contract CowSwapModule_CancelOrder_Test is CowSwapModuleBase {
     // -----------------------------------------------------------------------
     // when order is unknown
@@ -30,26 +28,46 @@ contract CowSwapModule_CancelOrder_Test is CowSwapModuleBase {
     // -----------------------------------------------------------------------
 
     function test_RevertWhen_CallerIsNotOwner() external givenPendingOrder {
-        vm.expectRevert(abi.encodeWithSelector(Errors.CowSwapModule_NotOwner.selector, attacker, address(this)));
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, attacker));
         vm.prank(attacker);
         module.cancelOrder(_orderId);
     }
 
     function test_RevertWhen_CallerIsPaymentRails_NotOwner() external givenPendingOrder {
-        vm.expectRevert(
-            abi.encodeWithSelector(Errors.CowSwapModule_NotOwner.selector, address(paymentRails), address(this))
-        );
+        vm.expectRevert(abi.encodeWithSelector(Ownable.OwnableUnauthorizedAccount.selector, address(paymentRails)));
         vm.prank(address(paymentRails));
         module.cancelOrder(_orderId);
     }
 
     // -----------------------------------------------------------------------
-    // given order status is already cancelled
+    // given order is already cancelled
     // -----------------------------------------------------------------------
 
-    function test_RevertGiven_OrderStatusIsCancelled() external givenCancelledOrder {
+    function test_RevertGiven_OrderAlreadyCancelled() external givenCancelledOrder {
         vm.expectRevert(abi.encodeWithSelector(Errors.CowSwapModule_OrderAlreadyCancelled.selector, _orderId));
         module.cancelOrder(_orderId);
+    }
+
+    // -----------------------------------------------------------------------
+    // given order is already filled by solver
+    // -----------------------------------------------------------------------
+
+    function test_RevertGiven_OrderAlreadyFilled() external givenPendingOrder {
+        cowSettlement.setFilledAmount(_orderId, DEFAULT_SELL_AMOUNT);
+        vm.expectRevert(abi.encodeWithSelector(Errors.CowSwapModule_OrderAlreadyFilled.selector, _orderId));
+        module.cancelOrder(_orderId);
+    }
+
+    function test_RevertGiven_OrderAlreadyFilled_Overfilled() external givenPendingOrder {
+        cowSettlement.setFilledAmount(_orderId, DEFAULT_SELL_AMOUNT + 1);
+        vm.expectRevert(abi.encodeWithSelector(Errors.CowSwapModule_OrderAlreadyFilled.selector, _orderId));
+        module.cancelOrder(_orderId);
+    }
+
+    function test_GivenOrderPartiallyFilled_CancelSucceeds() external givenPendingOrder {
+        cowSettlement.setFilledAmount(_orderId, DEFAULT_SELL_AMOUNT - 1);
+        module.cancelOrder(_orderId);
+        assertTrue(module.getOrder(_orderId).cancelled);
     }
 
     // -----------------------------------------------------------------------
@@ -122,8 +140,25 @@ contract CowSwapModule_CancelOrder_Test is CowSwapModuleBase {
 
     function test_GivenSellTokenStillInModule_IsValidSignatureReturnsFailure() external givenPendingOrder {
         module.cancelOrder(_orderId);
-        // EIP-1271 should reject — order is cancelled
         assertEq(module.isValidSignature(_orderId, abi.encode(_orderId)), EIP1271_FAILURE);
+    }
+
+    // -----------------------------------------------------------------------
+    // given cancel succeeds — propagates invalidation to settlement contract
+    // -----------------------------------------------------------------------
+
+    function test_GivenSellTokenStillInModule_InvalidatesOrderOnSettlement() external givenPendingOrder {
+        module.cancelOrder(_orderId);
+        assertTrue(cowSettlement.invalidatedOrders(_orderId));
+    }
+
+    function test_GivenSolverAlreadyPulledSellToken_InvalidatesOrderOnSettlement()
+        external
+        givenPendingOrder
+        givenSolverPulledSellToken
+    {
+        module.cancelOrder(_orderId);
+        assertTrue(cowSettlement.invalidatedOrders(_orderId));
     }
 
     // -----------------------------------------------------------------------
@@ -131,24 +166,19 @@ contract CowSwapModule_CancelOrder_Test is CowSwapModuleBase {
     // -----------------------------------------------------------------------
 
     function test_FullLifecycle_ExecuteCancelRecover() external {
-        // 1. Initiate order
         bytes32 orderId = _initiateDefaultOrder();
         uint256 paymentRailsBalanceAfterExecute = sellToken.balanceOf(address(paymentRails));
 
-        // 2. Verify tokens locked in module, max approval set
         assertEq(sellToken.balanceOf(address(module)), DEFAULT_SELL_AMOUNT);
         assertEq(sellToken.allowance(address(module), module.vaultRelayer()), type(uint256).max);
 
-        // 3. Module owner (address(this)) cancels — tokens go to meta.paymentRails (paymentRails)
         module.cancelOrder(orderId);
 
-        // 4. Verify recovery: tokens returned, cancelled flag set, approval stays max
         assertEq(sellToken.balanceOf(address(paymentRails)), paymentRailsBalanceAfterExecute + DEFAULT_SELL_AMOUNT);
         assertEq(sellToken.balanceOf(address(module)), 0);
         assertEq(sellToken.allowance(address(module), module.vaultRelayer()), type(uint256).max);
         assertTrue(module.getOrder(orderId).cancelled);
 
-        // 5. Verify can't cancel again
         vm.expectRevert(abi.encodeWithSelector(Errors.CowSwapModule_OrderAlreadyCancelled.selector, orderId));
         module.cancelOrder(orderId);
     }

@@ -6,9 +6,10 @@ import { DexSwapModuleBase } from "../DexSwapModuleBase.t.sol";
 /// @notice Unit tests for DexSwapModule.estimateOutput()
 /// @dev Tree: tests/unit/concrete/swaps/dex-swap-module/estimate-output/estimateOutput.tree
 contract DexSwapModule_EstimateOutput_Test is DexSwapModuleBase {
-    function test_ReturnsZeroAsEstimatedOutput() external view {
+    function test_ReturnsOracleExpectedOutput() external view {
         (uint256 estimated,) = module.estimateOutput(address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams());
-        assertEq(estimated, 0, "estimated output should be zero");
+        uint256 expectedOutput = _computeExpectedOutput(DEFAULT_SELL_AMOUNT);
+        assertEq(estimated, expectedOutput, "estimated output should match oracle computation");
     }
 
     function test_ReturnsTargetTokenAsOutputToken() external view {
@@ -16,25 +17,23 @@ contract DexSwapModule_EstimateOutput_Test is DexSwapModuleBase {
         assertEq(outputToken, address(buyToken), "output token should be target token");
     }
 
-    function test_IgnoresSellAmount() external view {
-        (, address outputA) = module.estimateOutput(address(sellToken), 0, _defaultParams());
-        (, address outputB) = module.estimateOutput(address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams());
-        (, address outputC) = module.estimateOutput(address(sellToken), type(uint256).max, _defaultParams());
-        assertEq(outputA, address(buyToken));
-        assertEq(outputB, address(buyToken));
-        assertEq(outputC, address(buyToken));
+    function test_ScalesLinearly() external view {
+        (uint256 est1,) = module.estimateOutput(address(sellToken), 1e18, _defaultParams());
+        (uint256 est10,) = module.estimateOutput(address(sellToken), 10e18, _defaultParams());
+        assertEq(est10, est1 * 10, "Output should scale linearly with input");
     }
 
-    function test_IgnoresSellTokenAddress() external view {
-        (, address outputA) = module.estimateOutput(address(0), DEFAULT_SELL_AMOUNT, _defaultParams());
-        (, address outputB) = module.estimateOutput(address(buyToken), DEFAULT_SELL_AMOUNT, _defaultParams());
-        assertEq(outputA, address(buyToken));
-        assertEq(outputB, address(buyToken));
+    function test_WhenOracleFails_ReturnsZero() external {
+        sellFeed.setShouldRevert(true);
+        (uint256 estimated, address outputToken) =
+            module.estimateOutput(address(sellToken), DEFAULT_SELL_AMOUNT, _defaultParams());
+        assertEq(estimated, 0, "Should return zero when oracle fails");
+        assertEq(outputToken, address(buyToken), "Should still return target token");
     }
 
-    function testFuzz_AlwaysReturnsZeroAndTargetToken(uint256 amount, address token) external view {
-        (uint256 estimated, address outputToken) = module.estimateOutput(token, amount, _defaultParams());
-        assertEq(estimated, 0);
+    function testFuzz_AlwaysReturnsTargetToken(uint256 amount) external view {
+        amount = bound(amount, 0, type(uint128).max);
+        (, address outputToken) = module.estimateOutput(address(sellToken), amount, _defaultParams());
         assertEq(outputToken, address(buyToken));
     }
 }

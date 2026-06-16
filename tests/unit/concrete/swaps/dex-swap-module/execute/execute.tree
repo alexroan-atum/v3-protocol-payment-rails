@@ -1,9 +1,6 @@
-DexSwapModule_Execute
+DexSwapModule::execute
 ├── when params are too short
 │   ├── it should return failed result with invalid params encoding
-│   └── it should not transfer any tokens
-├── when execution data is empty
-│   ├── it should return failed result with missing execution data
 │   └── it should not transfer any tokens
 ├── when amount is zero
 │   └── it should return failed result with zero sell amount
@@ -11,43 +8,66 @@ DexSwapModule_Execute
 │   └── it should return failed result with zero target token
 ├── when target token equals sell token
 │   └── it should return failed result with same input and output token
-├── when router is not whitelisted
-│   └── it should return failed result with router not allowed
-├── when min amount out is zero
-│   └── it should return failed result with zero min amount out
-├── when deadline has expired
-│   └── it should return failed result with deadline expired
+├── when maxSlippageBps is zero
+│   └── it should return failed result with invalid slippage bps
+├── when maxSlippageBps exceeds 10000
+│   └── it should return failed result with invalid slippage bps
+├── when sell token price feed is zero address
+│   └── it should return failed result with missing sell token price feed
+├── when buy token price feed is zero address
+│   └── it should return failed result with missing buy token price feed
+├── when swap deadline seconds is zero
+│   └── it should return failed result with zero swap deadline
 ├── when caller has insufficient balance
 │   └── it should return failed result with insufficient balance
+├── when amount exceeds maxAmount
+│   ├── it should return failed result with exceeds max swap amount
+│   └── it should not transfer any tokens
+├── when amount equals or is below maxAmount
+│   └── it should succeed
+├── when maxAmount is zero
+│   └── it should impose no limit
+├── when oracle price is unavailable (negative, stale, or reverts)
+│   └── it should return failed result with oracle price unavailable
+├── when the oracle floor rounds to zero (dust amount)
+│   └── it should return failed result with amount too small for safe swap
 ├── when router call reverts
 │   ├── it should return failed result with router call failed
 │   ├── it should return all sell tokens to caller via leftover
 │   └── it should leave module with zero sell token balance
-├── when router call succeeds but output is below minimum
+├── when router output is below oracle floor
 │   ├── it should revert with DexSwapModule_InsufficientOutput
 │   └── it should not transfer sell tokens (atomic rollback)
-├── when router steals sell tokens but sends no buy tokens
-│   └── it should revert with DexSwapModule_InsufficientOutput (atomic rollback)
-├── when router does nothing (noop)
-│   └── it should revert with DexSwapModule_InsufficientOutput
-├── when fee-on-transfer sell token
-│   ├── it should use balance-diff for actual received amount
-│   ├── it should approve router for actual received (not requested) amount
-│   └── it should return leftover correctly
+├── when router sends no buy tokens
+│   └── it should revert atomically
 ├── when router partially consumes sell token
-│   ├── it should succeed if output meets minimum
+│   ├── it should succeed if output meets oracle floor
 │   └── it should return unconsumed sell tokens to caller
 ├── when all validations pass
-│   ├── it should transfer sell tokens from caller to module then to router
+│   ├── it should transfer sell tokens from caller to router
 │   ├── it should increase caller buy token balance by amountOut
 │   ├── it should return success true
 │   ├── it should return correct amountOut
 │   ├── it should return outputToken equal to target token
-│   ├── it should return encoded router in data field
+│   ├── it should return empty data field
 │   ├── it should emit SwapExecuted with correct params
 │   ├── it should leave module with zero sell token balance
 │   ├── it should leave module with zero buy token balance
 │   ├── it should revoke router approval after swap
 │   └── it should not hold any residual state between swaps
+├── when L2 sequencer is down
+│   └── it should return failed result with oracle price unavailable
+├── when L2 sequencer is in grace period
+│   └── it should return failed result with oracle price unavailable
+├── when L2 sequencer is up past grace period
+│   └── it should succeed
+├── when L2 sequencer feed reverts
+│   └── it should return failed result with oracle price unavailable
+├── when router re-enters execute during swap callback
+│   ├── it should revert the reentrant call with ReentrancyGuardReentrantCall
+│   ├── it should complete the original swap successfully
+│   ├── it should leave attacker balances unchanged
+│   └── it should allow subsequent swaps after blocked reentrancy
 └── fuzz
-    └── it should handle any valid sell amount and buy amount
+    ├── it should handle any valid sell amount and buy amount
+    └── it should reject any amount above maxAmount

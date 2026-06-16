@@ -1,6 +1,6 @@
 {
   "name": "@credit-cooperative/payment-rails",
-  "description": "",
+  "description": "Modular cross-chain token routing rails for automated forwarding, swapping, and bridging",
   "private": true,
   "version": "1.0.0",
   "author": {
@@ -25,7 +25,6 @@
     "foundry",
     "smart-contracts",
     "solidity",
-    "template",
     "credit-cooperative"
   ],
   "scripts": {

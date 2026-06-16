@@ -16,13 +16,12 @@ contract MockDexSwapPaymentRails {
     function executeSwap(
         address token,
         uint256 amount,
-        bytes calldata params,
-        bytes calldata executionData
+        bytes calldata params
     )
         external
         returns (DataTypes.ExecutionResult memory)
     {
         IERC20(token).approve(address(module), amount);
-        return module.execute(token, amount, params, executionData);
+        return module.execute(token, amount, params);
     }
 }

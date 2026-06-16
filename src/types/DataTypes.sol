@@ -2,20 +2,13 @@
 pragma solidity 0.8.29;
 
 /// @title DataTypes
-/// @notice Centralized type definitions for the Receivables PaymentRails system
-/// @dev This library contains all struct definitions used across PaymentRails, modules, and interfaces
+/// @notice Centralized type definitions for the Receivables PaymentRails system.
 library DataTypes {
     /*//////////////////////////////////////////////////////////////////////////
                                 PAYMENT RAILS TYPES
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Configuration for a token's action in the PaymentRails
-    /// @dev Stored per token address in the paymentRails's configuration mapping
-    /// @param actionType String identifier for the action (e.g., "FORWARD", "SWAP", "BRIDGE")
-    /// @param actionModule Address of the action module contract that will handle execution
-    /// @param enabled Master switch to enable/disable this token's action
-    /// @param minBalance Minimum balance threshold required to trigger execution
-    /// @param moduleParams ABI-encoded module-specific parameters
+    /// @notice Configuration for a token's action in the PaymentRails.
     struct TokenConfig {
         string actionType;
         address actionModule;
@@ -28,13 +21,7 @@ library DataTypes {
                                 ACTION MODULE TYPES
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Result of an action execution
-    /// @dev Returned by all action module execute() functions
-    /// @param success Whether the action completed successfully
-    /// @param amountOut Amount of output token produced
-    /// @param outputToken Address of the output token (may differ from input token)
-    /// @param data Additional result data (module-specific, can be empty)
-    /// @param failureReason Error message if execution failed (empty if successful)
+    /// @notice Result of an action execution, returned by all module execute() functions.
     struct ExecutionResult {
         bool success;
         uint256 amountOut;
@@ -47,14 +34,9 @@ library DataTypes {
                             FORWARD MODULE TYPES
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Forward configuration parameters
-    /// @dev Used by ForwardModule to configure simple token transfers
-    /// @param recipient Destination address for tokens
-    /// @param requireSuccessfulReceipt Whether to revert if recipient cannot receive tokens
-    /// @param minAmount Minimum amount required to forward (0 = no minimum)
+    /// @notice Forward configuration parameters.
     struct ForwardParams {
         address recipient;
-        bool requireSuccessfulReceipt;
         uint256 minAmount;
     }
 
@@ -63,68 +45,54 @@ library DataTypes {
     //////////////////////////////////////////////////////////////////////////*/
 
     /// @notice Static configuration for DEX swaps (stored in PaymentRails.moduleParams).
-    /// @param targetToken Required output token — module rejects any swap producing a different token.
-    /// @param maxSlippageBps Owner-configured maximum slippage in basis points (e.g., 200 = 2%).
-    ///        Only enforced when both price feeds are non-zero. Set to 0 to disable oracle enforcement.
-    /// @param sellTokenPriceFeed Chainlink AggregatorV3 address for the sell token's USD price.
-    ///        Set to `address(0)` to disable oracle-based slippage enforcement.
-    /// @param buyTokenPriceFeed Chainlink AggregatorV3 address for the buy token's USD price.
-    ///        Set to `address(0)` to disable oracle-based slippage enforcement.
-    /// @param maxStaleness Maximum acceptable age (in seconds) for oracle price data.
-    ///        Reverts if `block.timestamp - updatedAt > maxStaleness`.
+    /// @dev Oracle feeds are mandatory. Both feeds MUST use the same quote currency (e.g., both
+    /// TOKEN/USD) — mixing produces a silently incorrect oracle floor.
+    /// @dev `maxSlippageBps` is the value-protection lever; size `maxAmount` to the pool's actual
+    /// liquidity (not its fee tier), and never loosen slippage to force size through a thin pool.
     struct DexSwapParams {
+        /// @dev The required output token; must differ from the input token.
         address targetToken;
+        /// @dev Uniswap V3 pool fee tier in hundredths of a bip (3000 = 0.30% = 30 bps).
+        uint24 fee;
+        /// @dev Max slippage vs the Chainlink oracle, in bps. Must exceed `fee`/100 + price impact.
         uint16 maxSlippageBps;
+        /// @dev Chainlink feed for the sell token. Mandatory; same quote currency as buy feed.
         address sellTokenPriceFeed;
+        /// @dev Chainlink feed for the buy token. Mandatory; same quote currency as sell feed.
         address buyTokenPriceFeed;
+        /// @dev Max age of a Chainlink answer before it is rejected as stale, in seconds.
         uint256 maxStaleness;
-    }
-
-    /// @notice Per-execution data for DEX swaps (passed as `executionData`).
-    /// @dev Constructed off-chain from a DEX router quote. The module validates every field
-    ///      against the static {DexSwapParams} constraints before executing.
-    /// @param router DEX router contract to call. Must be whitelisted in the module.
-    /// @param minAmountOut Minimum acceptable output (slippage-adjusted amount from the quote).
-    /// @param deadline Transaction deadline — reverts if `block.timestamp > deadline`.
-    /// @param routerCalldata ABI-encoded call to the router. Must route output tokens
-    ///        directly to the PaymentRails (msg.sender in the module's execute context).
-    struct DexSwapExecutionData {
-        address router;
-        uint256 minAmountOut;
-        uint256 deadline;
-        bytes routerCalldata;
+        /// @dev Seconds added to `block.timestamp` to form the swap deadline. Must be non-zero.
+        uint256 swapDeadlineSeconds;
+        /// @dev Per-call sandwich-profitability ceiling (token decimals); 0 = no limit. Keeper passes
+        ///      min(balance, maxAmount). This caps PER-SWAP profitability, NOT aggregate MEV — the
+        ///      aggregate value bound is maxSlippageBps (the oracle floor). Size below
+        ///      ~feeTier * IN-RANGE (active-tick) liquidity — NOT pool TVL — so each individual swap
+        ///      is unprofitable to sandwich; re-evaluate if liquidity migrates to another fee tier.
+        ///      Stable / low-fee pools: a tight maxSlippageBps alone keeps extractable slack below gas.
+        uint256 maxAmount;
     }
 
     /*//////////////////////////////////////////////////////////////////////////
                             COWSWAP MODULE TYPES
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Parameters for configuring a CowSwap order-book swap
-    /// @dev Stored in PaymentRails's moduleParams and decoded by CowSwapModule
-    /// @param targetToken Token to receive (buy token)
-    /// @param minBuyAmount Absolute floor on output — order rejected if CowSwap cannot
-    ///        meet this. Not a per-execution slippage; set conservatively.
-    /// @param validityDuration Seconds from block.timestamp the order remains valid.
-    ///        CowSwap solvers will not settle an expired order. Typical: 1800–3600.
-    /// @param appData CowSwap app data hash. Use keccak256("receivables-paymentRails-v1")
-    ///        or a custom hash registered via the CowSwap AppData API.
+    /// @notice Parameters for configuring a CowSwap order-book swap.
+    /// @dev Oracle feeds are mandatory and MUST share the same quote currency (see DexSwapParams).
+    /// buyAmount is computed on-chain: `oracleExpected * (10000 - maxSlippageBps) / 10000`.
     struct CowSwapParams {
         address targetToken;
-        uint256 minBuyAmount;
+        uint16 maxSlippageBps;
+        address sellTokenPriceFeed;
+        address buyTokenPriceFeed;
+        uint256 maxStaleness;
         uint32 validityDuration;
         bytes32 appData;
     }
 
-    /// @notice On-chain metadata stored per CowSwap order
-    /// @dev Keyed by orderId (= GPv2Order digest) in CowSwapModule._orders
-    /// @param paymentRails         PaymentRails contract that initiated the order via execute()
-    /// @param sellToken    Token sold (input token); returned on cancel
-    /// @param buyToken     Token bought (output token); goes directly to PaymentRails via receiver=paymentRails
-    /// @param sellAmount   Exact sell amount locked in the module; used to cap cancelOrder return
-    /// @param validTo      Unix timestamp after which the order has expired (stored directly to
-    ///                     avoid uint32 recomputation overflow)
-    /// @param cancelled    True if the owner explicitly cancelled this order via cancelOrder().
-    ///                     SETTLED state is derived live from GPv2Settlement.filledAmounts().
+    /// @notice On-chain metadata stored per CowSwap order, keyed by orderId (GPv2Order digest).
+    /// @dev validTo stored directly to avoid uint32 recomputation overflow.
+    /// SETTLED state is derived live from GPv2Settlement.filledAmount().
     struct CowOrderMetadata {
         address paymentRails;
         address sellToken;
@@ -138,36 +106,23 @@ library DataTypes {
                         CCTP BRIDGE MODULE TYPES
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Parameters stored in PaymentRails's moduleParams for a CCTP bridge action.
-    /// @dev Intentionally minimal — just a domain pointer. All routing details live in the
-    ///      module's per-domain config ({CCTPDomainConfig}).
-    /// @param destinationDomain CCTP domain ID of the destination chain (NOT an EVM chain ID).
-    ///        Ethereum = 0, Avalanche = 1, OP Mainnet = 2, Arbitrum = 3, Base = 6, Polygon = 7.
+    /// @notice Routing parameters for a CCTP bridge action, stored in PaymentRails's moduleParams.
+    /// @dev destinationDomain is CCTP domain ID (NOT EVM chain ID). maxFeeBps is used to compute
+    ///      the maxFee passed to Circle's TokenMessengerV2 at execution time:
+    ///      `maxFee = amount * maxFeeBps / 10_000`. This replaces a static maxFee to match Circle's
+    ///      percentage-based fee model and scale correctly with any bridge amount.
     struct CCTPBridgeParams {
+        /// @dev CCTP domain ID of the destination chain (NOT an EVM chain ID).
         uint32 destinationDomain;
-    }
-
-    /// @notice Per-domain routing configuration stored in the CCTPBridgeModule.
-    /// @dev Set by the module owner via `setDomainConfig()`. Looked up during `execute()` using the
-    ///      `destinationDomain` decoded from the PaymentRails's moduleParams.
-    /// @param isValid        Whether this domain config is active. Set to true by `setDomainConfig()`,
-    ///                       cleared by `removeDomainConfig()`.
-    /// @param mintRecipient  Recipient address on the destination chain, left-padded to bytes32.
-    ///                       For EVM chains: `bytes32(uint256(uint160(addr)))`. Typically another PaymentRails.
-    /// @param destinationCaller Who may call `receiveMessage` on the destination chain.
-    ///                          `bytes32(0)` = anyone can relay (recommended).
-    /// @param maxFee         Maximum USDC fee the module is willing to pay per transfer.
-    ///                       0 = standard transfer only (free, ~15-19 min).
-    ///                       > 0 = enables fast transfer (~8-20 s); fee is deducted on destination.
-    /// @param minFinalityThreshold 1000 = fast (confirmed), 2000 = standard (finalized).
-    /// @param hookData       Optional bytes for destination-chain post-mint automation (CCTP V2 hooks).
-    ///                       Empty = `depositForBurn()`. Non-empty = `depositForBurnWithHook()`.
-    struct CCTPDomainConfig {
-        bool isValid;
+        /// @dev Recipient address on the destination chain, left-padded to bytes32.
         bytes32 mintRecipient;
+        /// @dev Address allowed to call `receiveMessage` on the destination. `bytes32(0)` = anyone.
         bytes32 destinationCaller;
-        uint256 maxFee;
+        /// @dev Fee ceiling in basis points. `maxFee = amount * maxFeeBps / 10_000`.
+        uint16 maxFeeBps;
+        /// @dev 1000 for fast (confirmed) or 2000 for standard (finalized) finality.
         uint32 minFinalityThreshold;
+        /// @dev Arbitrary bytes for destination-chain post-mint automation. Empty = no hook.
         bytes hookData;
     }
 }

@@ -1,6 +1,14 @@
 CowSwapModule_Constructor
 ├── when cow settlement is zero address
-│   └── it should revert with ZeroTargetToken
-└── when cow settlement is valid
+│   └── it should revert with CowSwapModule_ZeroCowSettlement
+├── when owner is zero address
+│   └── it should revert with OwnableInvalidOwner
+├── when payment rails is zero address
+│   └── it should revert with CowSwapModule_ZeroPaymentRails
+└── when all parameters are valid
     ├── it should store cow settlement as immutable
-    └── it should cache cow domain separator from settlement contract
+    ├── it should cache cow domain separator from settlement contract
+    ├── it should set owner
+    ├── it should store payment rails as immutable
+    ├── it should store sequencerUptimeFeed as immutable
+    └── it should store sequencerGracePeriod as immutable

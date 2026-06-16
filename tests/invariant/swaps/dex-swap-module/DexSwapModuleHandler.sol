@@ -8,6 +8,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { MockERC20 } from "../../../shared/mocks/MockERC20.sol";
 import { MockRouter } from "../../../shared/mocks/MockRouter.sol";
+import { MockChainlinkAggregator } from "../../../shared/mocks/MockChainlinkAggregator.sol";
 
 /// @dev Minimal PaymentRails proxy — holds tokens, approves module, and forwards execute() calls.
 contract SwapPaymentRailsProxy is Test {
@@ -20,14 +21,13 @@ contract SwapPaymentRailsProxy is Test {
     function executeSwap(
         address token,
         uint256 amount,
-        bytes calldata params,
-        bytes calldata executionData
+        bytes calldata params
     )
         external
         returns (DataTypes.ExecutionResult memory)
     {
         IERC20(token).approve(address(module), amount);
-        return module.execute(token, amount, params, executionData);
+        return module.execute(token, amount, params);
     }
 }
 
@@ -39,17 +39,16 @@ contract SwapPaymentRailsProxy is Test {
 /// @notice Foundry invariant handler for DexSwapModule.
 /// @dev Tracks ghost variables to enable invariant assertions.
 ///
-/// Ghost variables mirror on-chain state so invariant functions can check
-/// properties without requiring internal storage access.
+/// Architecture: DexSwapModule has an immutable router (set at construction) and
+/// computes amountOutMinimum on-chain from Chainlink oracle prices. No executionData,
+/// no router whitelist, no owner.
 ///
 /// Supported invariants:
 ///   INV-1: Module balance is always zero after any completed action
 ///   INV-2: Router approval from module is always zero after any completed action
 ///   INV-3: moduleType() always returns "SWAP"
-///   INV-4: Router whitelist integrity — on-chain matches ghost state
-///   INV-5: View functions never revert on arbitrary inputs
-///   INV-6: Ownership consistency — on-chain matches ghost
-///   INV-7: Token conservation — total sold by paymentRails == total received as buyToken
+///   INV-4: View functions never revert on arbitrary inputs
+///   INV-5: Token conservation — total sold by paymentRails == total received as buyToken
 contract DexSwapModuleHandler is Test {
     /*//////////////////////////////////////////////////////////////////////////
                                 MODULE UNDER TEST
@@ -60,22 +59,12 @@ contract DexSwapModuleHandler is Test {
     MockERC20 internal sellToken;
     MockERC20 internal buyToken;
     MockRouter internal router;
+    MockChainlinkAggregator internal sellFeed;
+    MockChainlinkAggregator internal buyFeed;
 
     /*//////////////////////////////////////////////////////////////////////////
                                 GHOST VARIABLES
     //////////////////////////////////////////////////////////////////////////*/
-
-    /// @dev All router addresses ever added (may include removed ones)
-    address[] public ghost_allRouters;
-
-    /// @dev Per router: whether it is currently whitelisted
-    mapping(address => bool) public ghost_routerIsAllowed;
-
-    /// @dev Current owner of the module
-    address public ghost_currentOwner;
-
-    /// @dev Pending owner for Ownable2Step
-    address public ghost_pendingOwner;
 
     /// @dev Total sellToken spent by paymentRails across all successful swaps
     uint256 public ghost_totalSellTokenSpent;
@@ -89,8 +78,21 @@ contract DexSwapModuleHandler is Test {
     /// @dev Set to true when a view function reverted (invariant violation)
     bool public ghost_viewFunctionReverted;
 
-    /// @dev Tracks pending owner for acceptOwnership
-    address internal pendingAcceptor;
+    /// @dev Set to true if the module's success/failure outcome disagrees with the
+    ///      predicted maxAmount gating (invariant violation).
+    bool public ghost_gatingInvariantViolated;
+
+    /*//////////////////////////////////////////////////////////////////////////
+                                CONSTANTS
+    //////////////////////////////////////////////////////////////////////////*/
+
+    uint24 internal constant DEFAULT_FEE = 3000;
+    uint16 internal constant DEFAULT_SLIPPAGE_BPS = 100;
+    uint256 internal constant DEFAULT_MAX_STALENESS = 3600;
+    uint256 internal constant DEFAULT_SWAP_DEADLINE = 300;
+
+    int256 internal constant SELL_PRICE = 1e8;
+    int256 internal constant BUY_PRICE = 1e8;
 
     /*//////////////////////////////////////////////////////////////////////////
                                     SETUP
@@ -102,48 +104,60 @@ contract DexSwapModuleHandler is Test {
         MockERC20 _sellToken,
         MockERC20 _buyToken,
         MockRouter _router,
-        address _initialOwner
+        MockChainlinkAggregator _sellFeed,
+        MockChainlinkAggregator _buyFeed
     ) {
         module = _module;
         paymentRails = _paymentRails;
         sellToken = _sellToken;
         buyToken = _buyToken;
         router = _router;
-        ghost_currentOwner = _initialOwner;
-
-        ghost_allRouters.push(address(_router));
-        ghost_routerIsAllowed[address(_router)] = true;
+        sellFeed = _sellFeed;
+        buyFeed = _buyFeed;
     }
 
     /*//////////////////////////////////////////////////////////////////////////
                         SWAP EXECUTION ACTIONS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @dev Executes a successful swap with bounded fuzz inputs.
-    function handler_execute(uint256 sellAmount, uint256 buyAmount) external {
-        sellAmount = bound(sellAmount, 1, 100_000e18);
-        buyAmount = bound(buyAmount, 1, sellAmount);
+    /// @dev Executes a swap with bounded fuzz inputs, fuzzing maxAmount so the module's
+    ///      per-call reject ceiling is meaningfully exercised. The handler predicts the
+    ///      gating outcome and asserts the module agrees.
+    function handler_execute(uint256 sellAmount, uint256 buyAmount, uint256 maxAmount) external {
+        // Lower bound keeps the oracle floor strictly positive so the only failure cause
+        // is the gating path we model (maxAmount), not floor-rounds-to-zero.
+        sellAmount = bound(sellAmount, 1e3, 100_000e18);
+        uint256 oracleFloor = sellAmount * (10_000 - uint256(DEFAULT_SLIPPAGE_BPS)) / 10_000;
+        buyAmount = bound(buyAmount, oracleFloor, sellAmount * 2);
+        maxAmount = bound(maxAmount, 0, 200_000e18);
 
         sellToken.mint(address(paymentRails), sellAmount);
         buyToken.mint(address(router), buyAmount);
 
-        uint256 minAmountOut = buyAmount;
-        bytes memory params = abi.encode(address(buyToken), uint16(0), address(0), address(0), uint256(0));
-        bytes memory routerCalldata = abi.encodeWithSelector(
-            MockRouter.swap.selector,
-            address(sellToken),
-            sellAmount,
-            address(buyToken),
-            address(paymentRails),
-            buyAmount
-        );
-        bytes memory executionData = abi.encode(address(router), minAmountOut, type(uint256).max, routerCalldata);
+        bytes memory params = _paramsWithLimits(maxAmount);
+        router.setShouldRevert(false);
+        router.setOutputAmount(buyAmount);
+
+        // Keep oracles fresh after time warps so the only failure cause is the gating
+        // path we model (maxAmount), not oracle staleness.
+        sellFeed.setUpdatedAt(block.timestamp);
+        buyFeed.setUpdatedAt(block.timestamp);
+
+        // Predict the gating outcome: _validateParams rejects when amount exceeds maxAmount.
+        bool expectMaxAmountGate = maxAmount != 0 && sellAmount > maxAmount;
+        bool expectSuccess = !expectMaxAmountGate;
 
         uint256 prSellBefore = sellToken.balanceOf(address(paymentRails));
         uint256 prBuyBefore = buyToken.balanceOf(address(paymentRails));
 
-        DataTypes.ExecutionResult memory result =
-            paymentRails.executeSwap(address(sellToken), sellAmount, params, executionData);
+        DataTypes.ExecutionResult memory result = paymentRails.executeSwap(address(sellToken), sellAmount, params);
+
+        if (result.success != expectSuccess) {
+            ghost_gatingInvariantViolated = true;
+        }
+        if (expectMaxAmountGate && !_eq(result.failureReason, "Exceeds max swap amount")) {
+            ghost_gatingInvariantViolated = true;
+        }
 
         if (result.success) {
             uint256 sellSpent = prSellBefore - sellToken.balanceOf(address(paymentRails));
@@ -151,7 +165,21 @@ contract DexSwapModuleHandler is Test {
             ghost_totalSellTokenSpent += sellSpent;
             ghost_totalBuyTokenReceived += buyReceived;
             ghost_successfulSwapCount++;
+        } else {
+            // A gated swap must move no tokens.
+            if (sellToken.balanceOf(address(paymentRails)) != prSellBefore) {
+                ghost_gatingInvariantViolated = true;
+            }
+            if (buyToken.balanceOf(address(paymentRails)) != prBuyBefore) {
+                ghost_gatingInvariantViolated = true;
+            }
         }
+    }
+
+    /// @dev Advances block time so oracle freshness windows are exercised during the fuzz run.
+    function handler_warp(uint256 secondsForward) external {
+        secondsForward = bound(secondsForward, 1, 14_400);
+        vm.warp(block.timestamp + secondsForward);
     }
 
     /// @dev Attempts a swap that should fail (router set to revert).
@@ -162,14 +190,9 @@ contract DexSwapModuleHandler is Test {
 
         router.setShouldRevert(true);
 
-        bytes memory params = abi.encode(address(buyToken), uint16(0), address(0), address(0), uint256(0));
-        bytes memory routerCalldata = abi.encodeWithSelector(
-            MockRouter.swap.selector, address(sellToken), sellAmount, address(buyToken), address(paymentRails), 1
-        );
-        bytes memory executionData = abi.encode(address(router), uint256(1), type(uint256).max, routerCalldata);
+        bytes memory params = _defaultParams();
 
-        DataTypes.ExecutionResult memory result =
-            paymentRails.executeSwap(address(sellToken), sellAmount, params, executionData);
+        DataTypes.ExecutionResult memory result = paymentRails.executeSwap(address(sellToken), sellAmount, params);
 
         assertFalse(result.success, "Failing swap must not succeed");
 
@@ -177,116 +200,62 @@ contract DexSwapModuleHandler is Test {
     }
 
     /*//////////////////////////////////////////////////////////////////////////
-                        ROUTER MANAGEMENT ACTIONS
-    //////////////////////////////////////////////////////////////////////////*/
-
-    /// @dev Adds a new router (creates a fresh MockRouter).
-    function handler_addRouter(uint256) external {
-        if (ghost_currentOwner == address(0)) return;
-
-        MockRouter newRouter = new MockRouter();
-        address newRouterAddr = address(newRouter);
-
-        vm.prank(ghost_currentOwner);
-        try module.addRouter(newRouterAddr) {
-            ghost_allRouters.push(newRouterAddr);
-            ghost_routerIsAllowed[newRouterAddr] = true;
-        } catch { }
-    }
-
-    /// @dev Removes an existing router from the whitelist.
-    function handler_removeRouter(uint256 routerIndex) external {
-        if (ghost_currentOwner == address(0)) return;
-        uint256 len = ghost_allRouters.length;
-        if (len == 0) return;
-        routerIndex = bound(routerIndex, 0, len - 1);
-        address target = ghost_allRouters[routerIndex];
-
-        if (!ghost_routerIsAllowed[target]) return;
-        // Do not remove the primary router used for swaps
-        if (target == address(router)) return;
-
-        vm.prank(ghost_currentOwner);
-        try module.removeRouter(target) {
-            ghost_routerIsAllowed[target] = false;
-        } catch { }
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                        OWNERSHIP ACTIONS
-    //////////////////////////////////////////////////////////////////////////*/
-
-    /// @dev Transfers ownership to a new address.
-    function handler_transferOwnership(uint256 newOwnerSeed) external {
-        if (ghost_currentOwner == address(0)) return;
-
-        address newOwner = makeAddr(string(abi.encodePacked("owner", newOwnerSeed)));
-        pendingAcceptor = newOwner;
-
-        vm.prank(ghost_currentOwner);
-        try module.transferOwnership(newOwner) {
-            ghost_pendingOwner = newOwner;
-        } catch { }
-    }
-
-    /// @dev Accepts pending ownership.
-    function handler_acceptOwnership() external {
-        if (pendingAcceptor == address(0)) return;
-
-        vm.prank(pendingAcceptor);
-        try module.acceptOwnership() {
-            ghost_currentOwner = pendingAcceptor;
-            ghost_pendingOwner = address(0);
-            pendingAcceptor = address(0);
-        } catch { }
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
                         VIEW FUNCTION PROBING
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @dev INV-5: Calls view functions to verify they never revert.
-    /// validate() requires a real ERC20 (calls balanceOf), so we use known tokens.
-    /// estimateOutput, isRouterAllowed, moduleType are tested with arbitrary inputs.
-    function handler_callViewFunctions(address arbitraryAddr, uint256 amount) external {
-        bytes memory params = abi.encode(address(buyToken), uint16(0), address(0), address(0), uint256(0));
+    /// @dev INV-4: Calls view functions to verify they never revert.
+    function handler_callViewFunctions(uint256 amount) external {
+        amount = bound(amount, 0, type(uint128).max);
+        bytes memory params = _defaultParams();
 
-        // validate with real sellToken: must never revert
-        try module.validate(address(sellToken), amount, params, "") returns (bool, string memory) { }
+        try module.validate(address(sellToken), amount, params) returns (bool, string memory) { }
         catch {
             ghost_viewFunctionReverted = true;
         }
 
-        // validate with real buyToken as sell (same-token path): must never revert
-        try module.validate(address(buyToken), amount, params, "") returns (bool, string memory) { }
+        try module.validate(address(buyToken), amount, params) returns (bool, string memory) { }
         catch {
             ghost_viewFunctionReverted = true;
         }
 
-        // estimateOutput: pure function, must never revert
-        try module.estimateOutput(arbitraryAddr, amount, params) returns (uint256, address) { }
+        try module.estimateOutput(address(sellToken), amount, params) returns (uint256, address) { }
         catch {
             ghost_viewFunctionReverted = true;
         }
 
-        // isRouterAllowed: reads a mapping, must never revert
-        try module.isRouterAllowed(arbitraryAddr) returns (bool) { }
-        catch {
-            ghost_viewFunctionReverted = true;
-        }
-
-        // moduleType: pure function, must never revert
         try module.moduleType() returns (string memory) { }
         catch {
             ghost_viewFunctionReverted = true;
         }
+
+        try module.router() returns (address) { }
+        catch {
+            ghost_viewFunctionReverted = true;
+        }
     }
 
     /*//////////////////////////////////////////////////////////////////////////
-                                GHOST HELPERS
+                                    HELPERS
     //////////////////////////////////////////////////////////////////////////*/
 
-    function ghost_allRoutersLength() external view returns (uint256) {
-        return ghost_allRouters.length;
+    function _defaultParams() internal view returns (bytes memory) {
+        return _paramsWithLimits(0);
+    }
+
+    function _paramsWithLimits(uint256 maxAmount) internal view returns (bytes memory) {
+        return abi.encode(
+            address(buyToken),
+            DEFAULT_FEE,
+            DEFAULT_SLIPPAGE_BPS,
+            address(sellFeed),
+            address(buyFeed),
+            DEFAULT_MAX_STALENESS,
+            DEFAULT_SWAP_DEADLINE,
+            maxAmount
+        );
+    }
+
+    function _eq(string memory a, string memory b) internal pure returns (bool) {
+        return keccak256(bytes(a)) == keccak256(bytes(b));
     }
 }

@@ -22,6 +22,6 @@ contract MockBridgePaymentRails {
         returns (DataTypes.ExecutionResult memory)
     {
         IERC20(token).approve(address(module), amount);
-        return module.execute(token, amount, params, "");
+        return module.execute(token, amount, params);
     }
 }

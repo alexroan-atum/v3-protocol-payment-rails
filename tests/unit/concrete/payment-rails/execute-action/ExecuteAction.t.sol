@@ -25,7 +25,6 @@ contract ReentrantModule is IActionModule {
     function execute(
         address tkn,
         uint256 amount,
-        bytes calldata,
         bytes calldata
     )
         external
@@ -46,17 +45,7 @@ contract ReentrantModule is IActionModule {
             });
     }
 
-    function validate(
-        address,
-        uint256,
-        bytes calldata,
-        bytes calldata
-    )
-        external
-        pure
-        override
-        returns (bool, string memory)
-    {
+    function validate(address, uint256, bytes calldata) external pure override returns (bool, string memory) {
         return (true, "");
     }
 
@@ -207,6 +196,15 @@ contract PaymentRailsExecuteActionTest is PaymentRailsBase {
         }
     }
 
+    function test_WhenModuleReturnsFalse_EmitsActionFailed() external givenTokenConfigured {
+        actionModule.setExecuteSuccess(false);
+
+        vm.expectEmit(true, true, false, true);
+        emit ActionFailed(address(token), ACTION_TYPE, INITIAL_BALANCE, "Module execution failed", address(this));
+
+        paymentRails.executeAction(address(token), INITIAL_BALANCE);
+    }
+
     /*//////////////////////////////////////////////////////////////////////////
                     FAILURE TESTS — module reverts
     //////////////////////////////////////////////////////////////////////////*/
@@ -244,6 +242,15 @@ contract PaymentRailsExecuteActionTest is PaymentRailsBase {
         for (uint256 i = 0; i < logs.length; i++) {
             assertTrue(logs[i].topics[0] != ACTION_EXECUTED_TOPIC, "ActionExecuted should not be emitted on revert");
         }
+    }
+
+    function test_WhenModuleReverts_EmitsActionFailed() external givenTokenConfigured {
+        actionModule.setExecuteRevert(true, "internal error");
+
+        vm.expectEmit(true, true, false, true);
+        emit ActionFailed(address(token), ACTION_TYPE, INITIAL_BALANCE, "Module execution reverted", address(this));
+
+        paymentRails.executeAction(address(token), INITIAL_BALANCE);
     }
 
     /*//////////////////////////////////////////////////////////////////////////

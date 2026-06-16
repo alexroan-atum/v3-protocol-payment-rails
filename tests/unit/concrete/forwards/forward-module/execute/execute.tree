@@ -21,6 +21,8 @@ ForwardModule_Execute
     ├── it should return encoded recipient in data field
     ├── it should succeed when amount equals minimum
     ├── it should succeed with zero minAmount
+    ├── when no-return token (e.g. USDT)
+    │   └── it should transfer successfully despite missing return value
     ├── when fee-on-transfer token
     │   └── it should report amountOut equal to input amount
     └── it should handle any valid amount and minAmount [fuzz]

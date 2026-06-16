@@ -1,19 +1,29 @@
 CowSwapModule_CancelOrder
 ├── when order is unknown
-│   └── it should revert with UnknownOrder
-├── when caller is not the order paymentRails
-│   └── it should revert with NotOrderOwner
-├── given order status is settled
-│   └── it should revert with OrderNotPending
-├── given order status is cancelled
-│   └── it should revert with OrderNotPending
-└── given order is pending
-    ├── given solver already pulled sell token
-    │   ├── it should set order status to cancelled
-    │   ├── it should emit OrderCancelled with zero amount
-    │   └── it should not transfer any tokens
-    └── given sell token is still in module
-        ├── it should set order status to cancelled
-        ├── it should revoke sell token approval to cow settlement
-        ├── it should transfer sell tokens back to paymentRails
-        └── it should emit OrderCancelled event
+│   ├── it should revert with CowSwapModule_UnknownOrder (zero id)
+│   └── it should revert with CowSwapModule_UnknownOrder (arbitrary id)
+├── when caller is not the module owner
+│   ├── it should revert with OwnableUnauthorizedAccount (attacker)
+│   └── it should revert with OwnableUnauthorizedAccount (paymentRails)
+├── given order is already cancelled
+│   └── it should revert with CowSwapModule_OrderAlreadyCancelled
+├── given order is already filled by solver
+│   ├── it should revert with CowSwapModule_OrderAlreadyFilled (exact fill)
+│   ├── it should revert with CowSwapModule_OrderAlreadyFilled (overfilled)
+│   └── given order is partially filled it should succeed
+├── given order is pending
+│   ├── given solver already pulled sell token
+│   │   ├── it should set cancelled to true
+│   │   ├── it should emit OrderCancelled with zero return amount
+│   │   ├── it should not transfer any tokens
+│   │   ├── it should not revert
+│   │   └── it should invalidate order on settlement contract
+│   └── given sell token is still in module
+│       ├── it should set cancelled to true
+│       ├── it should leave max approval unchanged
+│       ├── it should transfer sell tokens back to paymentRails
+│       ├── it should emit OrderCancelled event
+│       ├── it should cause isValidSignature to return FAILURE
+│       └── it should invalidate order on settlement contract
+└── full lifecycle
+    └── it should execute then cancel then recover tokens

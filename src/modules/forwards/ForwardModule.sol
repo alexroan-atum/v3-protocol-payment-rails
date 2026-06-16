@@ -18,8 +18,7 @@ contract ForwardModule is IForwardModule, ActionModuleBase {
     function execute(
         address token,
         uint256 amount,
-        bytes calldata params,
-        bytes calldata /* executionData */
+        bytes calldata params
     )
         external
         override(ActionModuleBase, IActionModule)
@@ -56,8 +55,7 @@ contract ForwardModule is IForwardModule, ActionModuleBase {
     function validate(
         address token,
         uint256 amount,
-        bytes calldata params,
-        bytes calldata /* executionData */
+        bytes calldata params
     )
         external
         view
@@ -106,12 +104,11 @@ contract ForwardModule is IForwardModule, ActionModuleBase {
 
     /// @inheritdoc IForwardModule
     function encodeParams(DataTypes.ForwardParams calldata params) external pure returns (bytes memory) {
-        return abi.encode(params.recipient, params.requireSuccessfulReceipt, params.minAmount);
+        return abi.encode(params.recipient, params.minAmount);
     }
 
     /// @inheritdoc IForwardModule
     function decodeParams(bytes calldata encoded) public pure returns (DataTypes.ForwardParams memory params) {
-        (params.recipient, params.requireSuccessfulReceipt, params.minAmount) =
-            abi.decode(encoded, (address, bool, uint256));
+        (params.recipient, params.minAmount) = abi.decode(encoded, (address, uint256));
     }
 }

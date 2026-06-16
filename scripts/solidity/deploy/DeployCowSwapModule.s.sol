@@ -12,18 +12,28 @@ import { BaseScript } from "../Base.s.sol";
 ///
 ///      Usage:
 ///        source .env && forge script scripts/solidity/deploy/DeployCowSwapModule.s.sol \
-///          --sig "run(address)" <OWNER_ADDRESS> \
-///          --rpc-url $BASE_RPC_URL --broadcast -vvvv
+///          --sig "run(address,address,address,uint256)" <OWNER> <PAYMENT_RAILS> <SEQUENCER_FEED_OR_0x0> <GRACE_PERIOD>
+/// \ --rpc-url $BASE_RPC_URL --broadcast -vvvv
 contract DeployCowSwapModule is BaseScript {
     address internal constant GPV2_SETTLEMENT = 0x9008D19f58AAbD9eD0D60971565AA8510560ab41;
 
-    function run(address owner) public broadcast returns (CowSwapModule module) {
-        module = new CowSwapModule(GPV2_SETTLEMENT, owner);
+    function run(
+        address owner,
+        address _paymentRails,
+        address _sequencerUptimeFeed,
+        uint256 _sequencerGracePeriod
+    )
+        public
+        broadcast
+        returns (CowSwapModule module)
+    {
+        module = new CowSwapModule(GPV2_SETTLEMENT, owner, _paymentRails, _sequencerUptimeFeed, _sequencerGracePeriod);
 
         console2.log("=============================================================");
         console2.log("  DeployCowSwapModule - Complete");
         console2.log("=============================================================");
         console2.log("Owner:            ", owner);
+        console2.log("PaymentRails:     ", _paymentRails);
         console2.log("CowSwapModule:    ", address(module));
         console2.log("GPv2Settlement:   ", GPV2_SETTLEMENT);
         console2.log("VaultRelayer:     ", module.vaultRelayer());

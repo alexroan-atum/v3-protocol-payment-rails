@@ -2,7 +2,6 @@ CCTPBridgeModuleFork
 ├── constructor
 │   ├── it should set tokenMessenger to real TokenMessengerV2 address
 │   ├── it should set usdc to real USDC address
-│   ├── it should set owner
 │   └── it should return CCTP_BRIDGE as moduleType
 ├── ABI compatibility
 │   ├── it should confirm TokenMessengerV2 is deployed at fork block
@@ -14,7 +13,7 @@ CCTPBridgeModuleFork
 │   ├── it should revoke module approval to TokenMessengerV2 after burn
 │   ├── it should emit BridgeInitiated event
 │   ├── it should return success result with correct amountOut
-│   ├── given domain configured with hook data
+│   ├── given params with hook data
 │   │   ├── it should burn USDC successfully
 │   │   └── it should emit BridgeInitiated with hookData
 │   ├── it should succeed on consecutive bridges
@@ -24,34 +23,25 @@ CCTPBridgeModuleFork
 │   ├── it should return true for valid params
 │   ├── it should return false for non-USDC token
 │   ├── it should return false for zero amount
-│   ├── it should return false for unconfigured domain
-│   └── it should return false for insufficient balance
+│   ├── it should return false for zero mint recipient
+│   ├── it should return false for invalid finality threshold
+│   ├── it should return false when maxFee exceeds amount
+│   ├── it should return false for insufficient balance
+│   └── it should return false for invalid params encoding
 ├── estimateOutput
 │   ├── it should return full amount when maxFee is zero
 │   ├── it should return amount minus maxFee
-│   └── it should return zero for unconfigured domain
-├── domain config
-│   ├── it should store correct config values
-│   ├── it should support multiple domains simultaneously
-│   ├── it should emit DomainConfigSet event
-│   ├── it should clear domain on removal
-│   └── it should return failure when executing after domain removal
+│   └── it should return zero for invalid params
 ├── paymentRails integration lifecycle
 │   ├── it should bridge successfully via PaymentRails.executeAction end-to-end
 │   ├── it should emit ActionExecuted from PaymentRails
 │   ├── it should return correct previewExecution values
 │   ├── it should succeed on consecutive executions draining the paymentRails
-│   └── it should bridge from two nodes sharing one module
-├── ownership
-│   ├── it should complete full Ownable2Step transfer flow
-│   ├── it should allow new owner to reconfigure after transfer
-│   ├── it should block old owner after transfer
-│   └── it should still bridge after ownership transfer
+│   └── it should bridge from two paymentRails sharing one module
 └── security
     ├── it should always have zero approval to TokenMessengerV2 after execute
     ├── it should hold no USDC after multiple bridges
     ├── it should allow any address to execute (permissionless)
-    ├── it should block non-owner from setting domain config
     ├── it should confirm real USDC has 6 decimals
     ├── it should confirm real USDC burn reduces total supply
     └── it should consume paymentRails-to-module approval after execute

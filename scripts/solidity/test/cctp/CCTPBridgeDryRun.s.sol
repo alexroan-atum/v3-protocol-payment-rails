@@ -11,7 +11,8 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 /// @title CCTPBridgeDryRun
 /// @author Credit Cooperative
 /// @notice Full simulation: deploy + configure + fund + execute. Validates the entire CCTP bridge
-///         flow without spending gas.
+///         flow without spending gas. CCTPBridgeModule is stateless — all routing params are in
+///         PaymentRails's moduleParams.
 ///
 ///      Usage (Ethereum Sepolia -> Base Sepolia):
 ///        source .env && forge script scripts/solidity/test/cctp/CCTPBridgeDryRun.s.sol \
@@ -36,7 +37,7 @@ contract CCTPBridgeDryRun is Script, StdCheats {
     uint32 internal constant DEFAULT_FINALITY = 2000; // standard
     uint256 internal constant DEFAULT_BRIDGE_AMOUNT = 10_000_000; // 10 USDC
     uint256 internal constant DEFAULT_MIN_BALANCE = 1_000_000; // 1 USDC
-    uint256 internal constant DEFAULT_MAX_FEE = 0; // standard = free
+    uint16 internal constant DEFAULT_MAX_FEE_BPS = 0; // 0 bps = zero fee
 
     struct Config {
         address tokenMessenger;
@@ -45,7 +46,7 @@ contract CCTPBridgeDryRun is Script, StdCheats {
         uint32 finality;
         uint256 bridgeAmount;
         uint256 minBalance;
-        uint256 maxFee;
+        uint16 maxFeeBps;
         address mintRecipient;
     }
 
@@ -55,7 +56,7 @@ contract CCTPBridgeDryRun is Script, StdCheats {
 
     function run() public {
         Config memory cfg = _loadConfig();
-        (address deployer, uint256 deployerKey) = _deriveDeployer();
+        (address deployer,) = _deriveDeployer();
 
         if (cfg.mintRecipient == address(0)) cfg.mintRecipient = deployer;
 
@@ -69,46 +70,43 @@ contract CCTPBridgeDryRun is Script, StdCheats {
         console2.log("Dest domain:       ", uint256(cfg.destDomain));
         console2.log("Finality:          ", uint256(cfg.finality));
         console2.log("Bridge amount:     ", cfg.bridgeAmount);
-        console2.log("Max fee:           ", cfg.maxFee);
+        console2.log("Max fee bps:       ", uint256(cfg.maxFeeBps));
         console2.log("Mint recipient:    ", cfg.mintRecipient);
         console2.log("=============================================================");
 
-        vm.startBroadcast(deployerKey);
+        vm.startPrank(deployer);
 
         // --- Deploy ---
         PaymentRails paymentRails = new PaymentRails(deployer);
-        CCTPBridgeModule module = new CCTPBridgeModule(cfg.tokenMessenger, cfg.usdc, deployer);
-        console2.log("[DEPLOYED] PaymentRails:             ", address(paymentRails));
+        CCTPBridgeModule module = new CCTPBridgeModule(cfg.tokenMessenger, cfg.usdc);
+        console2.log("[DEPLOYED] PaymentRails:     ", address(paymentRails));
         console2.log("[DEPLOYED] CCTPBridgeModule: ", address(module));
 
-        // --- Configure domain ---
-        bytes32 recipient = bytes32(uint256(uint160(cfg.mintRecipient)));
-        module.setDomainConfig(cfg.destDomain, recipient, bytes32(0), cfg.maxFee, cfg.finality, "");
-        console2.log("[CONFIGURED] Domain %s", vm.toString(uint256(cfg.destDomain)));
-
-        // --- Configure PaymentRails ---
-        bytes memory moduleParams = abi.encode(cfg.destDomain);
+        // --- Configure PaymentRails (all routing info in moduleParams) ---
+        bytes memory moduleParams = module.encodeParams(
+            DataTypes.CCTPBridgeParams({
+                destinationDomain: cfg.destDomain,
+                mintRecipient: bytes32(uint256(uint160(cfg.mintRecipient))),
+                destinationCaller: bytes32(0),
+                maxFeeBps: cfg.maxFeeBps,
+                minFinalityThreshold: cfg.finality,
+                hookData: bytes("")
+            })
+        );
         paymentRails.configureToken(cfg.usdc, "CCTP_BRIDGE", address(module), cfg.minBalance, moduleParams, true);
         console2.log("[CONFIGURED] USDC -> CCTP_BRIDGE on PaymentRails");
 
-        // --- Fund ---
-        uint256 deployerBal = IERC20(cfg.usdc).balanceOf(deployer);
-        if (deployerBal >= cfg.bridgeAmount) {
-            IERC20(cfg.usdc).transfer(address(paymentRails), cfg.bridgeAmount);
-            console2.log("[FUNDED] From deployer wallet: %s", vm.toString(cfg.bridgeAmount));
-        } else {
-            vm.stopBroadcast();
-            deal(cfg.usdc, address(paymentRails), cfg.bridgeAmount);
-            vm.startBroadcast(deployerKey);
-            console2.log("[FUNDED] Via deal() (simulation only): %s", vm.toString(cfg.bridgeAmount));
-        }
+        vm.stopPrank();
+
+        // --- Fund PaymentRails ---
+        deal(cfg.usdc, address(paymentRails), cfg.bridgeAmount);
+        console2.log("[FUNDED] PaymentRails via deal(): %s", vm.toString(cfg.bridgeAmount));
 
         // --- Execute ---
+        vm.prank(deployer);
         bool success = paymentRails.executeAction(cfg.usdc, cfg.bridgeAmount);
         require(success, "executeAction failed");
         console2.log("[EXECUTED] depositForBurn called");
-
-        vm.stopBroadcast();
 
         // --- Verify ---
         _verify(cfg, module, paymentRails);
@@ -122,19 +120,15 @@ contract CCTPBridgeDryRun is Script, StdCheats {
         uint256 moduleBalance = IERC20(cfg.usdc).balanceOf(address(module));
         uint256 paymentRailsBalance = IERC20(cfg.usdc).balanceOf(address(paymentRails));
 
-        DataTypes.CCTPDomainConfig memory domainCfg = module.getDomainConfig(cfg.destDomain);
-
         console2.log("");
         console2.log("=============================================================");
         console2.log("  VERIFICATION");
         console2.log("=============================================================");
         console2.log("Module USDC balance: ", moduleBalance, " (expected: 0, burned by CCTP)");
         console2.log("PaymentRails USDC balance:   ", paymentRailsBalance, " (expected: 0, transferred out)");
-        console2.log("Domain configured:   ", domainCfg.isValid);
-        console2.log("Mint recipient:      ", vm.toString(domainCfg.mintRecipient));
 
+        require(moduleBalance == 0, "Module still holds USDC");
         require(paymentRailsBalance == 0, "PaymentRails still holds USDC");
-        require(domainCfg.isValid, "Domain config not set");
 
         console2.log("");
         console2.log("=============================================================");
@@ -150,7 +144,7 @@ contract CCTPBridgeDryRun is Script, StdCheats {
         cfg.finality = uint32(vm.envOr("FINALITY", uint256(DEFAULT_FINALITY)));
         cfg.bridgeAmount = vm.envOr("BRIDGE_AMOUNT", DEFAULT_BRIDGE_AMOUNT);
         cfg.minBalance = vm.envOr("MIN_BALANCE", DEFAULT_MIN_BALANCE);
-        cfg.maxFee = vm.envOr("MAX_FEE", DEFAULT_MAX_FEE);
+        cfg.maxFeeBps = uint16(vm.envOr("MAX_FEE_BPS", uint256(DEFAULT_MAX_FEE_BPS)));
         cfg.mintRecipient = vm.envOr("MINT_RECIPIENT", address(0));
     }
 

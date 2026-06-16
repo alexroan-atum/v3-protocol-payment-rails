@@ -19,12 +19,14 @@ PaymentRails_ExecuteAction
 │   │   ├── it should return false
 │   │   ├── it should not move tokens from paymentRails
 │   │   ├── it should revoke module approval to zero
-│   │   └── it should not emit ActionExecuted
+│   │   ├── it should not emit ActionExecuted
+│   │   └── it should emit ActionFailed with module failure reason
 │   ├── when module reverts
 │   │   ├── it should return false
 │   │   ├── it should not move tokens from paymentRails
 │   │   ├── it should revoke module approval to zero
-│   │   └── it should not emit ActionExecuted
+│   │   ├── it should not emit ActionExecuted
+│   │   └── it should emit ActionFailed with revert reason
 │   ├── when called by non-owner (permissionless)
 │   │   └── it should succeed
 │   ├── when module attempts reentrancy

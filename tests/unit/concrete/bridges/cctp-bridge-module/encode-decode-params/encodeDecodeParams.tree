@@ -1,7 +1,9 @@
 CCTPBridgeModule_EncodeDecodeParams
 ├── when encoding valid params
-│   └── it should produce abi-encoded destinationDomain
+│   └── it should produce abi-encoded routing parameters
 ├── when decoding valid encoded bytes
-│   └── it should return the original destinationDomain
-└── when round-tripping encode then decode
-    └── it should recover the original params
+│   └── it should return all original routing parameters
+├── when round-tripping encode then decode
+│   └── it should recover the original params including hookData
+└── fuzz
+    └── it should round-trip any valid domain, recipient, maxFee, and finality [fuzz]

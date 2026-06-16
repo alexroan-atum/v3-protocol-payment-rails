@@ -3,6 +3,7 @@ pragma solidity ^0.8.29;
 
 import { CCTPBridgeModuleBase } from "../CCTPBridgeModuleBase.t.sol";
 import { CCTPBridgeModule } from "../../../../../../src/modules/bridges/CCTPBridgeModule.sol";
+import { MockBridgePaymentRails } from "../../../../../shared/mocks/MockBridgePaymentRails.sol";
 import { DataTypes } from "../../../../../../src/types/DataTypes.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -11,99 +12,152 @@ contract CCTPBridgeModuleExecuteTest is CCTPBridgeModuleBase {
                         FAILED-RESULT TESTS (no revert, returns failure)
     //////////////////////////////////////////////////////////////////////////*/
 
-    function test_WhenParamsLengthLessThan32() external {
+    function test_WhenParamsLengthLessThanMinimum() external {
         vm.prank(address(paymentRails));
-        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, hex"00", "");
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, hex"00");
         assertFalse(result.success);
         assertEq(result.failureReason, "Invalid params encoding");
     }
 
     function test_WhenParamsEmpty() external {
         vm.prank(address(paymentRails));
-        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, "", "");
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, "");
         assertFalse(result.success);
         assertEq(result.failureReason, "Invalid params encoding");
     }
 
-    function test_WhenAmountIsZero() external givenDomainConfigured {
+    function test_WhenAmountIsZero() external {
         vm.prank(address(paymentRails));
-        DataTypes.ExecutionResult memory result = module.execute(address(usdc), 0, _defaultParams(), "");
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), 0, _defaultParams());
         assertFalse(result.success);
         assertEq(result.failureReason, "Zero bridge amount");
     }
 
-    function test_WhenTokenIsNotUSDC() external givenDomainConfigured {
+    function test_WhenTokenIsNotUSDC() external {
         vm.prank(address(paymentRails));
         DataTypes.ExecutionResult memory result =
-            module.execute(address(otherToken), DEFAULT_BRIDGE_AMOUNT, _defaultParams(), "");
+            module.execute(address(otherToken), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
         assertFalse(result.success);
         assertEq(result.failureReason, "Only USDC supported");
     }
 
-    function test_WhenDomainNotConfigured() external {
+    function test_WhenMintRecipientIsZero() external {
+        bytes memory params = _encodeParams(
+            DOMAIN_BASE, bytes32(0), DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE_BPS, FINALITY_FAST, DEFAULT_HOOK_DATA
+        );
         vm.prank(address(paymentRails));
-        DataTypes.ExecutionResult memory result =
-            module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams(), "");
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, params);
         assertFalse(result.success);
-        assertEq(result.failureReason, "Domain not configured");
+        assertEq(result.failureReason, "Zero mint recipient");
     }
 
-    function test_WhenMaxFeeEqualsAmount() external givenDomainConfigured {
+    function test_WhenFinalityThresholdIsInvalid() external {
+        bytes memory params = _encodeParams(
+            DOMAIN_BASE, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, DEFAULT_MAX_FEE_BPS, 500, DEFAULT_HOOK_DATA
+        );
         vm.prank(address(paymentRails));
-        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_MAX_FEE, _defaultParams(), "");
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, params);
         assertFalse(result.success);
-        assertEq(result.failureReason, "Max fee exceeds amount");
+        assertEq(result.failureReason, "Invalid finality threshold");
     }
 
-    function test_WhenMaxFeeExceedsAmount() external givenDomainConfigured {
+    function test_WhenMaxFeeBpsEquals10000() external {
+        bytes memory params = _encodeParams(
+            DOMAIN_BASE,
+            DEFAULT_MINT_RECIPIENT,
+            DEFAULT_DESTINATION_CALLER,
+            uint16(10_000),
+            FINALITY_FAST,
+            DEFAULT_HOOK_DATA
+        );
         vm.prank(address(paymentRails));
-        DataTypes.ExecutionResult memory result =
-            module.execute(address(usdc), DEFAULT_MAX_FEE - 1, _defaultParams(), "");
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, params);
         assertFalse(result.success);
-        assertEq(result.failureReason, "Max fee exceeds amount");
+        assertEq(result.failureReason, "Invalid max fee bps");
     }
 
-    function test_WhenCallerHasInsufficientBalance() external givenDomainConfigured {
+    function test_WhenMaxFeeBpsExceeds10000() external {
+        bytes memory params = _encodeParams(
+            DOMAIN_BASE,
+            DEFAULT_MINT_RECIPIENT,
+            DEFAULT_DESTINATION_CALLER,
+            uint16(15_000),
+            FINALITY_FAST,
+            DEFAULT_HOOK_DATA
+        );
+        vm.prank(address(paymentRails));
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, params);
+        assertFalse(result.success);
+        assertEq(result.failureReason, "Invalid max fee bps");
+    }
+
+    function test_WhenCallerHasInsufficientBalance() external {
         vm.prank(attacker);
-        DataTypes.ExecutionResult memory result =
-            module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams(), "");
+        DataTypes.ExecutionResult memory result = module.execute(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
         assertFalse(result.success);
         assertEq(result.failureReason, "Insufficient balance");
     }
 
     function test_WhenTokenTransferFails() external {
-        CCTPBridgeModule failModule = new CCTPBridgeModule(address(tokenMessenger), address(failToken), owner);
-        failModule.setDomainConfig(
+        CCTPBridgeModule failModule = new CCTPBridgeModule(address(tokenMessenger), address(failToken));
+        bytes memory params = _encodeParams(
             DOMAIN_BASE,
             DEFAULT_MINT_RECIPIENT,
             DEFAULT_DESTINATION_CALLER,
-            DEFAULT_MAX_FEE,
+            DEFAULT_MAX_FEE_BPS,
             FINALITY_FAST,
             DEFAULT_HOOK_DATA
         );
 
         vm.startPrank(address(paymentRails));
         IERC20(address(failToken)).approve(address(failModule), DEFAULT_BRIDGE_AMOUNT);
-        DataTypes.ExecutionResult memory result =
-            failModule.execute(address(failToken), DEFAULT_BRIDGE_AMOUNT, _defaultParams(), "");
+        DataTypes.ExecutionResult memory result = failModule.execute(address(failToken), DEFAULT_BRIDGE_AMOUNT, params);
         vm.stopPrank();
 
         assertFalse(result.success);
         assertEq(result.failureReason, "Token transfer failed");
     }
 
+    /// @dev Regression test for Certora finding: non-standard ERC20 tokens that return no data
+    /// from transferFrom must be treated as successful, not failed.
+    function test_WhenNoReturnToken_SucceedsAndBridges() external {
+        CCTPBridgeModule nrtModule = new CCTPBridgeModule(address(tokenMessenger), address(noReturnToken));
+        bytes memory params = _encodeParams(
+            DOMAIN_BASE,
+            DEFAULT_MINT_RECIPIENT,
+            DEFAULT_DESTINATION_CALLER,
+            DEFAULT_MAX_FEE_BPS,
+            FINALITY_FAST,
+            DEFAULT_HOOK_DATA
+        );
+
+        MockBridgePaymentRails nrtPaymentRails = new MockBridgePaymentRails(address(nrtModule));
+        noReturnToken.mint(address(nrtPaymentRails), DEFAULT_BRIDGE_AMOUNT * 10);
+
+        DataTypes.ExecutionResult memory result =
+            nrtPaymentRails.initiateBridge(address(noReturnToken), DEFAULT_BRIDGE_AMOUNT, params);
+
+        assertTrue(result.success, "should succeed with no-return token");
+        assertEq(
+            result.amountOut,
+            DEFAULT_BRIDGE_AMOUNT - _computeMaxFee(DEFAULT_BRIDGE_AMOUNT, DEFAULT_MAX_FEE_BPS),
+            "amountOut"
+        );
+        assertEq(tokenMessenger.getDepositCallCount(), 1, "depositForBurn called");
+    }
+
     /*//////////////////////////////////////////////////////////////////////////
                     SUCCESS TESTS — depositForBurn (no hook)
     //////////////////////////////////////////////////////////////////////////*/
 
-    function test_GivenNoHook_CallsDepositForBurn() external givenDomainConfigured {
+    function test_GivenNoHook_CallsDepositForBurn() external {
         _executeBridgeFromPaymentRails(DEFAULT_BRIDGE_AMOUNT);
 
         assertEq(tokenMessenger.getDepositCallCount(), 1);
         assertEq(tokenMessenger.getDepositWithHookCallCount(), 0);
     }
 
-    function test_GivenNoHook_PassesCorrectArguments() external givenDomainConfigured {
+    function test_GivenNoHook_PassesCorrectArguments() external {
         _executeBridgeFromPaymentRails(DEFAULT_BRIDGE_AMOUNT);
 
         (
@@ -121,25 +175,27 @@ contract CCTPBridgeModuleExecuteTest is CCTPBridgeModuleBase {
         assertEq(mintRecipient, DEFAULT_MINT_RECIPIENT);
         assertEq(burnToken, address(usdc));
         assertEq(destinationCaller, DEFAULT_DESTINATION_CALLER);
-        assertEq(maxFee, DEFAULT_MAX_FEE);
+        assertEq(maxFee, _computeMaxFee(DEFAULT_BRIDGE_AMOUNT, DEFAULT_MAX_FEE_BPS));
         assertEq(minFinalityThreshold, FINALITY_FAST);
     }
 
-    function test_GivenNoHook_RevokesApprovalAfterBurn() external givenDomainConfigured {
+    function test_GivenNoHook_RevokesApprovalAfterBurn() external {
         _executeBridgeFromPaymentRails(DEFAULT_BRIDGE_AMOUNT);
 
         uint256 allowance = usdc.allowance(address(module), address(tokenMessenger));
         assertEq(allowance, 0);
     }
 
-    function test_GivenNoHook_EmitsBridgeInitiated() external givenDomainConfigured {
+    function test_GivenNoHook_EmitsBridgeInitiated() external {
+        uint256 computedMaxFee = _computeMaxFee(DEFAULT_BRIDGE_AMOUNT, DEFAULT_MAX_FEE_BPS);
+
         vm.expectEmit(true, true, false, true);
         emit BridgeInitiated(
             address(paymentRails),
             DEFAULT_BRIDGE_AMOUNT,
             DOMAIN_BASE,
             DEFAULT_MINT_RECIPIENT,
-            DEFAULT_MAX_FEE,
+            computedMaxFee,
             FINALITY_FAST,
             DEFAULT_HOOK_DATA
         );
@@ -147,16 +203,16 @@ contract CCTPBridgeModuleExecuteTest is CCTPBridgeModuleBase {
         paymentRails.initiateBridge(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
     }
 
-    function test_GivenNoHook_ReturnsSuccessResult() external givenDomainConfigured {
+    function test_GivenNoHook_ReturnsSuccessResult() external {
         DataTypes.ExecutionResult memory result = _executeBridgeFromPaymentRails(DEFAULT_BRIDGE_AMOUNT);
 
         assertTrue(result.success);
-        assertEq(result.amountOut, DEFAULT_BRIDGE_AMOUNT - DEFAULT_MAX_FEE);
+        assertEq(result.amountOut, DEFAULT_BRIDGE_AMOUNT - _computeMaxFee(DEFAULT_BRIDGE_AMOUNT, DEFAULT_MAX_FEE_BPS));
         assertEq(result.outputToken, address(usdc));
         assertEq(result.failureReason, "");
     }
 
-    function test_GivenNoHook_ReturnsEncodedDomainAndRecipientInData() external givenDomainConfigured {
+    function test_GivenNoHook_ReturnsEncodedDomainAndRecipientInData() external {
         DataTypes.ExecutionResult memory result = _executeBridgeFromPaymentRails(DEFAULT_BRIDGE_AMOUNT);
 
         (uint32 decodedDomain, bytes32 decodedRecipient) = abi.decode(result.data, (uint32, bytes32));
@@ -164,7 +220,7 @@ contract CCTPBridgeModuleExecuteTest is CCTPBridgeModuleBase {
         assertEq(decodedRecipient, DEFAULT_MINT_RECIPIENT);
     }
 
-    function test_GivenNoHook_TransfersUSDCFromCallerToModule() external givenDomainConfigured {
+    function test_GivenNoHook_TransfersUSDCFromCallerToModule() external {
         uint256 paymentRailsBalanceBefore = usdc.balanceOf(address(paymentRails));
 
         _executeBridgeFromPaymentRails(DEFAULT_BRIDGE_AMOUNT);
@@ -177,40 +233,43 @@ contract CCTPBridgeModuleExecuteTest is CCTPBridgeModuleBase {
                     SUCCESS TESTS — depositForBurnWithHook
     //////////////////////////////////////////////////////////////////////////*/
 
-    function test_GivenHookData_CallsDepositForBurnWithHook() external givenDomainConfiguredWithHook {
-        _executeBridgeFromPaymentRails(DEFAULT_BRIDGE_AMOUNT);
+    function test_GivenHookData_CallsDepositForBurnWithHook() external {
+        paymentRails.initiateBridge(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParamsWithHook());
 
         assertEq(tokenMessenger.getDepositCallCount(), 0);
         assertEq(tokenMessenger.getDepositWithHookCallCount(), 1);
     }
 
-    function test_GivenHookData_PassesHookDataToTokenMessenger() external givenDomainConfiguredWithHook {
-        _executeBridgeFromPaymentRails(DEFAULT_BRIDGE_AMOUNT);
+    function test_GivenHookData_PassesHookDataToTokenMessenger() external {
+        paymentRails.initiateBridge(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParamsWithHook());
 
         (,,,,,,, bytes memory hookData) = tokenMessenger.depositWithHookCalls(0);
         assertEq(hookData, hex"deadbeef");
     }
 
-    function test_GivenHookData_EmitsBridgeInitiatedWithHookData() external givenDomainConfiguredWithHook {
+    function test_GivenHookData_EmitsBridgeInitiatedWithHookData() external {
+        uint256 computedMaxFee = _computeMaxFee(DEFAULT_BRIDGE_AMOUNT, DEFAULT_MAX_FEE_BPS);
+
         vm.expectEmit(true, true, false, true);
         emit BridgeInitiated(
             address(paymentRails),
             DEFAULT_BRIDGE_AMOUNT,
             DOMAIN_BASE,
             DEFAULT_MINT_RECIPIENT,
-            DEFAULT_MAX_FEE,
+            computedMaxFee,
             FINALITY_FAST,
             hex"deadbeef"
         );
 
-        paymentRails.initiateBridge(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParams());
+        paymentRails.initiateBridge(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParamsWithHook());
     }
 
-    function test_GivenHookData_ReturnsSuccessResult() external givenDomainConfiguredWithHook {
-        DataTypes.ExecutionResult memory result = _executeBridgeFromPaymentRails(DEFAULT_BRIDGE_AMOUNT);
+    function test_GivenHookData_ReturnsSuccessResult() external {
+        DataTypes.ExecutionResult memory result =
+            paymentRails.initiateBridge(address(usdc), DEFAULT_BRIDGE_AMOUNT, _defaultParamsWithHook());
 
         assertTrue(result.success);
-        assertEq(result.amountOut, DEFAULT_BRIDGE_AMOUNT - DEFAULT_MAX_FEE);
+        assertEq(result.amountOut, DEFAULT_BRIDGE_AMOUNT - _computeMaxFee(DEFAULT_BRIDGE_AMOUNT, DEFAULT_MAX_FEE_BPS));
     }
 
     /*//////////////////////////////////////////////////////////////////////////
@@ -218,16 +277,16 @@ contract CCTPBridgeModuleExecuteTest is CCTPBridgeModuleBase {
     //////////////////////////////////////////////////////////////////////////*/
 
     function test_GivenStandardFinality_PassesFinalityThreshold2000() external {
-        module.setDomainConfig(
+        bytes memory params = _encodeParams(
             DOMAIN_BASE,
             DEFAULT_MINT_RECIPIENT,
             DEFAULT_DESTINATION_CALLER,
-            DEFAULT_MAX_FEE,
+            DEFAULT_MAX_FEE_BPS,
             FINALITY_STANDARD,
             DEFAULT_HOOK_DATA
         );
 
-        _executeBridgeFromPaymentRails(DEFAULT_BRIDGE_AMOUNT);
+        paymentRails.initiateBridge(address(usdc), DEFAULT_BRIDGE_AMOUNT, params);
 
         (,,,,,, uint32 minFinalityThreshold,) = tokenMessenger.depositCalls(0);
         assertEq(minFinalityThreshold, FINALITY_STANDARD);
@@ -237,7 +296,7 @@ contract CCTPBridgeModuleExecuteTest is CCTPBridgeModuleBase {
                     REVERT TESTS — tokenMessenger reverts
     //////////////////////////////////////////////////////////////////////////*/
 
-    function test_WhenTokenMessengerReverts_PropagatesRevert() external givenDomainConfigured {
+    function test_WhenTokenMessengerReverts_PropagatesRevert() external {
         tokenMessenger.setRevert(true, "CCTP: burn limit exceeded");
 
         vm.expectRevert("CCTP: burn limit exceeded");
@@ -248,26 +307,26 @@ contract CCTPBridgeModuleExecuteTest is CCTPBridgeModuleBase {
                             FUZZ TESTS
     //////////////////////////////////////////////////////////////////////////*/
 
-    function testFuzz_Execute_SuccessPath(uint256 amount) external givenDomainConfigured {
-        amount = bound(amount, DEFAULT_MAX_FEE + 1, DEFAULT_BRIDGE_AMOUNT * 10);
+    function testFuzz_Execute_SuccessPath(uint256 amount) external {
+        amount = bound(amount, 1, DEFAULT_BRIDGE_AMOUNT * 10);
         usdc.mint(address(paymentRails), amount);
 
         DataTypes.ExecutionResult memory result = _executeBridgeFromPaymentRails(amount);
 
         assertTrue(result.success);
-        assertEq(result.amountOut, amount - DEFAULT_MAX_FEE);
+        assertEq(result.amountOut, amount - _computeMaxFee(amount, DEFAULT_MAX_FEE_BPS));
         assertEq(tokenMessenger.getDepositCallCount(), 1);
     }
 
-    function testFuzz_Execute_ZeroMaxFee(uint256 amount) external {
+    function testFuzz_Execute_ZeroMaxFeeBps(uint256 amount) external {
         amount = bound(amount, 1, DEFAULT_BRIDGE_AMOUNT * 10);
         usdc.mint(address(paymentRails), amount);
 
-        module.setDomainConfig(
-            DOMAIN_BASE, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, 0, FINALITY_FAST, DEFAULT_HOOK_DATA
+        bytes memory params = _encodeParams(
+            DOMAIN_BASE, DEFAULT_MINT_RECIPIENT, DEFAULT_DESTINATION_CALLER, uint16(0), FINALITY_FAST, DEFAULT_HOOK_DATA
         );
 
-        DataTypes.ExecutionResult memory result = _executeBridgeFromPaymentRails(amount);
+        DataTypes.ExecutionResult memory result = paymentRails.initiateBridge(address(usdc), amount, params);
 
         assertTrue(result.success);
         assertEq(result.amountOut, amount);
@@ -277,7 +336,7 @@ contract CCTPBridgeModuleExecuteTest is CCTPBridgeModuleBase {
                     CONSECUTIVE EXECUTION TEST
     //////////////////////////////////////////////////////////////////////////*/
 
-    function test_WhenExecutedConsecutively_EachSucceeds() external givenDomainConfigured {
+    function test_WhenExecutedConsecutively_EachSucceeds() external {
         DataTypes.ExecutionResult memory result1 = _executeBridgeFromPaymentRails(DEFAULT_BRIDGE_AMOUNT);
         DataTypes.ExecutionResult memory result2 = _executeBridgeFromPaymentRails(DEFAULT_BRIDGE_AMOUNT);
 
@@ -290,14 +349,14 @@ contract CCTPBridgeModuleExecuteTest is CCTPBridgeModuleBase {
                     DIFFERENT DOMAIN EXECUTION TEST
     //////////////////////////////////////////////////////////////////////////*/
 
-    function test_WhenBridgingToDifferentDomains() external givenDomainConfigured {
+    function test_WhenBridgingToDifferentDomains() external {
         bytes32 recipientArb = bytes32(uint256(uint160(0xaAaAaAaaAaAaAaaAaAAAAAAAAaaaAaAaAaaAaaAa)));
-        module.setDomainConfig(
-            DOMAIN_ARBITRUM, recipientArb, DEFAULT_DESTINATION_CALLER, 0, FINALITY_STANDARD, DEFAULT_HOOK_DATA
+        bytes memory arbParams = _encodeParams(
+            DOMAIN_ARBITRUM, recipientArb, DEFAULT_DESTINATION_CALLER, uint16(0), FINALITY_STANDARD, DEFAULT_HOOK_DATA
         );
 
         _executeBridgeFromPaymentRails(DEFAULT_BRIDGE_AMOUNT);
-        paymentRails.initiateBridge(address(usdc), DEFAULT_BRIDGE_AMOUNT, _encodeParams(DOMAIN_ARBITRUM));
+        paymentRails.initiateBridge(address(usdc), DEFAULT_BRIDGE_AMOUNT, arbParams);
 
         assertEq(tokenMessenger.getDepositCallCount(), 2);
 
@@ -315,11 +374,11 @@ contract CCTPBridgeModuleExecuteTest is CCTPBridgeModuleBase {
 
     function test_WhenDestinationCallerIsSet_PassesItToTokenMessenger() external {
         bytes32 specificCaller = bytes32(uint256(uint160(0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF)));
-        module.setDomainConfig(
-            DOMAIN_BASE, DEFAULT_MINT_RECIPIENT, specificCaller, DEFAULT_MAX_FEE, FINALITY_FAST, DEFAULT_HOOK_DATA
+        bytes memory params = _encodeParams(
+            DOMAIN_BASE, DEFAULT_MINT_RECIPIENT, specificCaller, DEFAULT_MAX_FEE_BPS, FINALITY_FAST, DEFAULT_HOOK_DATA
         );
 
-        _executeBridgeFromPaymentRails(DEFAULT_BRIDGE_AMOUNT);
+        paymentRails.initiateBridge(address(usdc), DEFAULT_BRIDGE_AMOUNT, params);
 
         (,,,, bytes32 destinationCaller,,,) = tokenMessenger.depositCalls(0);
         assertEq(destinationCaller, specificCaller);
@@ -329,7 +388,7 @@ contract CCTPBridgeModuleExecuteTest is CCTPBridgeModuleBase {
                     PERMISSIONLESS EXECUTION
     //////////////////////////////////////////////////////////////////////////*/
 
-    function test_WhenCalledByNonOwner_Succeeds() external givenDomainConfigured {
+    function test_WhenCalledByNonOwner_Succeeds() external {
         DataTypes.ExecutionResult memory result = _executeBridgeFromPaymentRails(DEFAULT_BRIDGE_AMOUNT);
         assertTrue(result.success);
     }
@@ -338,8 +397,8 @@ contract CCTPBridgeModuleExecuteTest is CCTPBridgeModuleBase {
                     BOUNDARY CONDITION TESTS
     //////////////////////////////////////////////////////////////////////////*/
 
-    function test_WhenAmountEqualsMaxFeePlusOne_SucceedsWithAmountOutOne() external givenDomainConfigured {
-        uint256 amount = DEFAULT_MAX_FEE + 1;
+    function test_WhenAmountIsOne_ComputedMaxFeeRoundsToZero() external {
+        uint256 amount = 1;
         usdc.mint(address(paymentRails), amount);
 
         DataTypes.ExecutionResult memory result = _executeBridgeFromPaymentRails(amount);

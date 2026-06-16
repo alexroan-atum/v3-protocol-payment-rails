@@ -18,4 +18,10 @@ interface IGPv2Settlement {
     /// orders. CowSwap solvers may free this storage slot after order expiry to reclaim gas.
     /// @param orderUid The 56-byte order UID: digest (32) ++ owner (20) ++ validTo (4).
     function filledAmount(bytes calldata orderUid) external view returns (uint256);
+
+    /// @notice Invalidates an order so the settlement contract rejects it without calling isValidSignature().
+    /// @dev Must be called by the order's owner (the EIP-1271 signer). Marks the order as invalidated
+    /// in the settlement contract's storage, signaling solvers to skip it.
+    /// @param orderUid The 56-byte order UID: digest (32) ++ owner (20) ++ validTo (4).
+    function invalidateOrder(bytes calldata orderUid) external;
 }

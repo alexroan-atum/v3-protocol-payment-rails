@@ -24,6 +24,10 @@ abstract contract PaymentRailsBase is Test {
         address indexed executor
     );
 
+    event ActionFailed(
+        address indexed token, string actionType, uint256 amount, string reason, address indexed executor
+    );
+
     /*//////////////////////////////////////////////////////////////////////////
                                     CONSTANTS
     //////////////////////////////////////////////////////////////////////////*/

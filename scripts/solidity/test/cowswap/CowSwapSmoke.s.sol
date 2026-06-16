@@ -10,55 +10,22 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 /// @title CowSwapSmoke
 /// @author Credit Cooperative
 /// @notice Smoke test for the CowSwap module against already-deployed contracts.
-/// @dev Operates on an existing PaymentRails + CowSwapModule deployment. Does NOT deploy new contracts.
-///      Configures the token route, funds the PaymentRails, calls executeAction(), and logs:
-///        - The exact curl command to submit the order to the CowSwap API
-///        - The CowSwap Explorer link to monitor settlement
-///        - Cast commands to verify balances and cancel if needed
-///
-///      REQUIRED environment variables:
-///        PAYMENT_RAILS_ADDRESS    - Deployed PaymentRails contract address
-///        MODULE_ADDRESS  - Deployed CowSwapModule contract address
-///
-///      OPTIONAL environment variables (defaults are for Ethereum mainnet USDC->WETH):
-///        SELL_TOKEN          - Token to sell            (default: mainnet USDC)
-///        BUY_TOKEN           - Token to receive         (default: mainnet WETH)
-///        SELL_AMOUNT         - Amount in wei             (default: 5000000 = 5 USDC)
-///        MIN_BUY_AMOUNT      - Floor on output in wei    (default: 1000000000000000 = 0.001 WETH)
-///        VALIDITY_DURATION   - Order TTL in seconds      (default: 1800 = 30 min)
-///        MIN_BALANCE         - PaymentRails minBalance threshold  (default: 1000000 = 1 USDC)
-///        COWSWAP_API         - API base URL              (default: https://api.cow.fi/mainnet)
-///        SKIP_CONFIGURE      - Set to "true" to skip configureToken (already configured)
-///        SKIP_FUND           - Set to "true" to skip funding (PaymentRails already has balance)
-///
-///      IMPORTANT: Token addresses differ per chain. When running on Base, Arbitrum, etc.
-///      you MUST set SELL_TOKEN, BUY_TOKEN, and COWSWAP_API for that chain.
-///
-///      Usage (Ethereum mainnet, default 5 USDC -> WETH):
-///        source .env && forge script scripts/solidity/test/cowswap/CowSwapSmoke.s.sol \
-///          --rpc-url $ETHEREUM_RPC_URL --broadcast -vvvv
-///
-///      Usage (Base, USDC -> WETH, recommended for cheap smoke tests):
-///        SELL_TOKEN=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 \
-///        BUY_TOKEN=0x4200000000000000000000000000000000000006 \
-///        COWSWAP_API=https://api.cow.fi/base \
-///        forge script scripts/solidity/test/cowswap/CowSwapSmoke.s.sol \
-///          --rpc-url $BASE_RPC_URL --broadcast -vvvv
-///
-///      Usage (subsequent runs - skip configure and fund):
-///        SKIP_CONFIGURE=true SKIP_FUND=true \
-///        forge script scripts/solidity/test/cowswap/CowSwapSmoke.s.sol \
-///          --rpc-url $BASE_RPC_URL --broadcast -vvvv
+/// @dev Requires PAYMENT_RAILS_ADDRESS and MODULE_ADDRESS env vars. Override token addresses for non-mainnet chains.
+/// Set SKIP_CONFIGURE=true / SKIP_FUND=true for subsequent runs.
 contract CowSwapSmoke is Script {
     /*//////////////////////////////////////////////////////////////////////////
                                     CONSTANTS
     //////////////////////////////////////////////////////////////////////////*/
 
     address internal constant DEFAULT_SELL_TOKEN = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48; // USDC
-    address internal constant DEFAULT_BUY_TOKEN = 0xc02AAA39B223fe8d0A0e5595ab2d3EB9fa40Fc9E; // WETH
+    address internal constant DEFAULT_BUY_TOKEN = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2; // WETH
+
+    address internal constant DEFAULT_SELL_TOKEN_FEED = 0x8fFfFfd4AfB6115b954Bd326cbe7B4BA576818f6; // USDC/USD
+    address internal constant DEFAULT_BUY_TOKEN_FEED = 0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419; // ETH/USD
 
     uint256 internal constant DEFAULT_SELL_AMOUNT = 1_000_000; // 1 USDC
-    uint256 internal constant DEFAULT_MIN_BUY_AMOUNT = 200_000_000_000_000; // 0.0002 WETH (~$0.42 floor)
+    uint16 internal constant DEFAULT_SLIPPAGE_BPS = 500; // 5%
+    uint256 internal constant DEFAULT_MAX_STALENESS = 3600; // 1 hour
     uint256 internal constant DEFAULT_MIN_BALANCE = 1_000_000; // 1 USDC
     uint32 internal constant DEFAULT_VALIDITY_DURATION = 1800; // 30 minutes
 
@@ -70,8 +37,11 @@ contract CowSwapSmoke is Script {
     struct Config {
         address sellToken;
         address buyToken;
+        address sellTokenFeed;
+        address buyTokenFeed;
         uint256 sellAmount;
-        uint256 minBuyAmount;
+        uint16 maxSlippageBps;
+        uint256 maxStaleness;
         uint256 minBalance;
         uint32 validityDuration;
         bytes32 appData;
@@ -85,30 +55,18 @@ contract CowSwapSmoke is Script {
     //////////////////////////////////////////////////////////////////////////*/
 
     function run() public {
-        // =====================================================================
-        // Load deployed contract addresses (required)
-        // =====================================================================
         address paymentRailsAddr = vm.envAddress("PAYMENT_RAILS_ADDRESS");
         address moduleAddr = vm.envAddress("MODULE_ADDRESS");
 
         PaymentRails paymentRails = PaymentRails(paymentRailsAddr);
         CowSwapModule module = CowSwapModule(moduleAddr);
 
-        // =====================================================================
-        // Load swap config (optional, has defaults)
-        // =====================================================================
         Config memory cfg = _loadConfig();
 
-        // =====================================================================
-        // Derive broadcaster
-        // =====================================================================
         address deployer;
         uint256 deployerKey;
         (deployer, deployerKey) = _deriveDeployer();
 
-        // =====================================================================
-        // Log header
-        // =====================================================================
         console2.log("=============================================================");
         console2.log("  CowSwap Smoke Test");
         console2.log("=============================================================");
@@ -118,20 +76,14 @@ contract CowSwapSmoke is Script {
         console2.log("Sell token:     ", cfg.sellToken);
         console2.log("Buy token:      ", cfg.buyToken);
         console2.log("Sell amount:    ", cfg.sellAmount);
-        console2.log("Min buy:        ", cfg.minBuyAmount);
+        console2.log("Slippage bps:   ", uint256(cfg.maxSlippageBps));
         console2.log("Validity (sec): ", uint256(cfg.validityDuration));
         console2.log("Skip configure: ", cfg.skipConfigure);
         console2.log("Skip fund:      ", cfg.skipFund);
         console2.log("=============================================================");
 
-        // =====================================================================
-        // Pre-flight checks
-        // =====================================================================
         _preflight(cfg, module, paymentRails, deployer);
 
-        // =====================================================================
-        // Broadcast: configure, fund, execute
-        // =====================================================================
         vm.startBroadcast(deployerKey);
 
         if (!cfg.skipConfigure) {
@@ -149,14 +101,7 @@ contract CowSwapSmoke is Script {
 
         vm.stopBroadcast();
 
-        // =====================================================================
-        // Post-broadcast instructions
-        // =====================================================================
-        // NOTE: We cannot compute the real orderId here because block.timestamp
-        // at script-read-time differs from the actual mined block timestamp.
-        // The orderId depends on validTo (= block.timestamp + duration), so even
-        // a few seconds of drift produces a completely different EIP-712 digest.
-        // The bash helper script parses the broadcast JSON to get the real values.
+        // orderId depends on mined block.timestamp — use cowswap-submit.sh to parse broadcast JSON
         console2.log("");
         console2.log("=============================================================");
         console2.log("  BROADCAST COMPLETE");
@@ -177,8 +122,11 @@ contract CowSwapSmoke is Script {
     function _loadConfig() internal view returns (Config memory cfg) {
         cfg.sellToken = vm.envOr("SELL_TOKEN", DEFAULT_SELL_TOKEN);
         cfg.buyToken = vm.envOr("BUY_TOKEN", DEFAULT_BUY_TOKEN);
+        cfg.sellTokenFeed = vm.envOr("SELL_TOKEN_FEED", DEFAULT_SELL_TOKEN_FEED);
+        cfg.buyTokenFeed = vm.envOr("BUY_TOKEN_FEED", DEFAULT_BUY_TOKEN_FEED);
         cfg.sellAmount = vm.envOr("SELL_AMOUNT", DEFAULT_SELL_AMOUNT);
-        cfg.minBuyAmount = vm.envOr("MIN_BUY_AMOUNT", DEFAULT_MIN_BUY_AMOUNT);
+        cfg.maxSlippageBps = uint16(vm.envOr("MAX_SLIPPAGE_BPS", uint256(DEFAULT_SLIPPAGE_BPS)));
+        cfg.maxStaleness = vm.envOr("MAX_STALENESS", DEFAULT_MAX_STALENESS);
         cfg.minBalance = vm.envOr("MIN_BALANCE", DEFAULT_MIN_BALANCE);
         cfg.validityDuration = uint32(vm.envOr("VALIDITY_DURATION", uint256(DEFAULT_VALIDITY_DURATION)));
 
@@ -189,8 +137,6 @@ contract CowSwapSmoke is Script {
         cfg.skipConfigure = keccak256(bytes(vm.envOr("SKIP_CONFIGURE", defaultFalse))) == keccak256("true");
         cfg.skipFund = keccak256(bytes(vm.envOr("SKIP_FUND", defaultFalse))) == keccak256("true");
 
-        // Use zero appData (registered with CowSwap as "{}").
-        // Order ID uniqueness comes from different block.timestamp -> different validTo.
         cfg.appData = bytes32(0);
     }
 
@@ -215,29 +161,28 @@ contract CowSwapSmoke is Script {
         internal
         view
     {
-        // Verify contracts exist
         require(address(module).code.length > 0, "MODULE_ADDRESS is not a contract");
         require(address(paymentRails).code.length > 0, "PAYMENT_RAILS_ADDRESS is not a contract");
-
-        // Verify module is a CowSwapModule (check cowSettlement is set)
         require(module.cowSettlement() != address(0), "Module cowSettlement is zero");
         console2.log("[OK] Module cowSettlement:", module.cowSettlement());
 
-        // Verify PaymentRails ownership (deployer must be owner to configure)
+        require(
+            module.paymentRails() == address(paymentRails), "Module paymentRails does not match PAYMENT_RAILS_ADDRESS"
+        );
+        console2.log("[OK] Module paymentRails:", module.paymentRails());
+
         if (!cfg.skipConfigure) {
             address paymentRailsOwner = paymentRails.owner();
             require(paymentRailsOwner == deployer, "Deployer is not PaymentRails owner - cannot configure");
             console2.log("[OK] Deployer is PaymentRails owner");
         }
 
-        // Verify deployer has enough sellToken to fund (unless skipping)
         if (!cfg.skipFund) {
             uint256 balance = IERC20(cfg.sellToken).balanceOf(deployer);
             require(balance >= cfg.sellAmount, "Deployer has insufficient sell token");
             console2.log("[OK] Deployer sell token balance:", balance);
         }
 
-        // If skipping fund, verify PaymentRails already has enough balance
         if (cfg.skipFund) {
             uint256 paymentRailsBalance = IERC20(cfg.sellToken).balanceOf(address(paymentRails));
             require(paymentRailsBalance >= cfg.sellAmount, "PaymentRails has insufficient sell token balance");
@@ -249,7 +194,10 @@ contract CowSwapSmoke is Script {
         bytes memory moduleParams = module.encodeParams(
             DataTypes.CowSwapParams({
                 targetToken: cfg.buyToken,
-                minBuyAmount: cfg.minBuyAmount,
+                maxSlippageBps: cfg.maxSlippageBps,
+                sellTokenPriceFeed: cfg.sellTokenFeed,
+                buyTokenPriceFeed: cfg.buyTokenFeed,
+                maxStaleness: cfg.maxStaleness,
                 validityDuration: cfg.validityDuration,
                 appData: cfg.appData
             })

@@ -1,13 +1,31 @@
 CowSwapModule_Validate
+├── when params are malformed
+│   ├── it should return false with invalid params encoding reason
+│   └── it should match execute failure reason
+├── when amount is zero
+│   ├── it should return false with zero sell amount reason
+│   └── it should match execute failure reason
 ├── when target token is zero address
 │   └── it should return false with zero target token reason
 ├── when target token equals sell token
 │   └── it should return false with same sell and buy token reason
-├── when min buy amount is zero
-│   └── it should return false with zero minimum buy amount reason
+├── when slippage bps is invalid
+│   └── it should return false with invalid slippage bps reason
+├── when sell token price feed is missing
+│   └── it should return false with missing sell token price feed reason
+├── when buy token price feed is missing
+│   └── it should return false with missing buy token price feed reason
 ├── when validity duration is zero
 │   └── it should return false with zero validity duration reason
+├── when validity duration overflows uint32
+│   ├── it should return false with validity duration overflow reason
+│   └── it should match execute failure reason
+├── when oracle price is unavailable
+│   └── it should return false with oracle price unavailable reason
+├── when oracle floor rounds to zero
+│   └── it should return false with amount too small for safe swap reason
 ├── when caller has insufficient balance
 │   └── it should return false with insufficient balance reason
 └── when all parameters are valid
-    └── it should return true with empty reason
+    ├── it should return true
+    └── it should return empty reason string

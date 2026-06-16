@@ -57,7 +57,7 @@ fi
 
 # --- Extract fields from the event ---
 ORDER_ID=$(echo "$ORDER_LOG" | jq -r '.topics[1]')
-NODE_RAW=$(echo "$ORDER_LOG" | jq -r '.topics[2]')
+PAYMENT_RAILS_RAW=$(echo "$ORDER_LOG" | jq -r '.topics[2]')
 MODULE=$(echo "$ORDER_LOG" | jq -r '.address')
 DATA=$(echo "$ORDER_LOG" | jq -r '.data')
 
@@ -76,8 +76,8 @@ SELL_AMOUNT=$(printf '%d' "0x$SELL_AMOUNT_HEX")
 MIN_BUY_AMOUNT=$(printf '%d' "0x$MIN_BUY_HEX")
 VALID_TO=$(printf '%d' "0x$VALID_TO_HEX")
 
-# Node address from indexed topic (strip 0x000...000 padding)
-NODE="0x${NODE_RAW: -40}"
+# PaymentRails address from indexed topic (strip 0x000...000 padding)
+PAYMENT_RAILS="0x${PAYMENT_RAILS_RAW: -40}"
 
 # Checksummed module address (use as-is from log, cast can fix casing)
 MODULE_ADDR="$MODULE"
@@ -108,7 +108,7 @@ echo "============================================================="
 echo "  Order extracted from broadcast"
 echo "============================================================="
 echo "Order ID:       $ORDER_ID"
-echo "Node:           $NODE"
+echo "PaymentRails:   $PAYMENT_RAILS"
 echo "Module:         $MODULE_ADDR"
 echo "Sell Token:     $SELL_TOKEN"
 echo "Buy Token:      $BUY_TOKEN"
@@ -125,7 +125,7 @@ CURL_CMD="curl -X POST '${COWSWAP_API}/api/v1/orders' \\
   -d '{
     \"sellToken\": \"${SELL_TOKEN}\",
     \"buyToken\": \"${BUY_TOKEN}\",
-    \"receiver\": \"${NODE}\",
+    \"receiver\": \"${PAYMENT_RAILS}\",
     \"sellAmount\": \"${SELL_AMOUNT}\",
     \"buyAmount\": \"${MIN_BUY_AMOUNT}\",
     \"validTo\": ${VALID_TO},
@@ -167,8 +167,8 @@ echo ""
 echo "# Check if filled:"
 echo "#   cast call 0x9008D19f58AAbD9eD0D60971565AA8510560ab41 'filledAmount(bytes)(uint256)' ${ORDER_UID}"
 echo ""
-echo "# Check buyToken at Node:"
-echo "#   cast call ${BUY_TOKEN} 'balanceOf(address)(uint256)' ${NODE}"
+echo "# Check buyToken at PaymentRails:"
+echo "#   cast call ${BUY_TOKEN} 'balanceOf(address)(uint256)' ${PAYMENT_RAILS}"
 echo ""
 echo "# Cancel (owner only):"
 echo "#   cast send ${MODULE_ADDR} 'cancelOrder(bytes32)' ${ORDER_ID}"

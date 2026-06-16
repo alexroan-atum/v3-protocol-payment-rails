@@ -31,7 +31,6 @@ contract MockActionModule is IActionModule {
     function execute(
         address token,
         uint256 amount,
-        bytes calldata,
         bytes calldata
     )
         external
@@ -52,17 +51,7 @@ contract MockActionModule is IActionModule {
         }
     }
 
-    function validate(
-        address,
-        uint256,
-        bytes calldata,
-        bytes calldata
-    )
-        external
-        view
-        override
-        returns (bool, string memory)
-    {
+    function validate(address, uint256, bytes calldata) external view override returns (bool, string memory) {
         return (validationResult, validationReason);
     }
 

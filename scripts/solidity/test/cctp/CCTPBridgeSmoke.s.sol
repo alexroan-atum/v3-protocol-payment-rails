@@ -4,26 +4,28 @@ pragma solidity >=0.8.29 <0.9.0;
 import { Script, console2 } from "forge-std/src/Script.sol";
 import { PaymentRails } from "../../../../src/core/PaymentRails.sol";
 import { CCTPBridgeModule } from "../../../../src/modules/bridges/CCTPBridgeModule.sol";
+import { DataTypes } from "../../../../src/types/DataTypes.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @title CCTPBridgeSmoke
 /// @author Credit Cooperative
 /// @notice Smoke test against deployed PaymentRails + CCTPBridgeModule. Configures, funds, and executes
 ///         a CCTP bridge in a single broadcast. Prints the bash command to poll attestation and relay.
+///         CCTPBridgeModule is stateless — all routing params are in PaymentRails's moduleParams.
 ///
 ///      REQUIRED env vars:
 ///        PAYMENT_RAILS_ADDRESS, BRIDGE_MODULE
 ///
 ///      OPTIONAL env vars (defaults = Ethereum Sepolia -> Base Sepolia):
 ///        SOURCE_USDC, DEST_DOMAIN, BRIDGE_AMOUNT, MIN_BALANCE, MINT_RECIPIENT,
-///        MAX_FEE, FINALITY, SKIP_CONFIGURE, SKIP_DOMAIN_CONFIG, SKIP_FUND
+///        MAX_FEE_BPS, FINALITY, SKIP_CONFIGURE, SKIP_FUND
 ///
-///      Usage (testnet, first run - deploys domain config + paymentRails config + funds + executes):
+///      Usage (testnet, first run - deploys paymentRails config + funds + executes):
 ///        source .env && forge script scripts/solidity/test/cctp/CCTPBridgeSmoke.s.sol \
 ///          --rpc-url $SOURCE_RPC_URL --broadcast -vvvv
 ///
 ///      Usage (subsequent runs - skip config, just fund and execute):
-///        source .env && SKIP_CONFIGURE=true SKIP_DOMAIN_CONFIG=true \
+///        source .env && SKIP_CONFIGURE=true \
 ///          forge script scripts/solidity/test/cctp/CCTPBridgeSmoke.s.sol \
 ///            --rpc-url $SOURCE_RPC_URL --broadcast -vvvv
 contract CCTPBridgeSmoke is Script {
@@ -36,7 +38,7 @@ contract CCTPBridgeSmoke is Script {
     uint32 internal constant DEFAULT_FINALITY = 2000;
     uint256 internal constant DEFAULT_BRIDGE_AMOUNT = 10_000_000;
     uint256 internal constant DEFAULT_MIN_BALANCE = 1_000_000;
-    uint256 internal constant DEFAULT_MAX_FEE = 0;
+    uint16 internal constant DEFAULT_MAX_FEE_BPS = 0; // 0 bps = zero fee
 
     struct Config {
         address usdc;
@@ -44,10 +46,9 @@ contract CCTPBridgeSmoke is Script {
         uint32 finality;
         uint256 bridgeAmount;
         uint256 minBalance;
-        uint256 maxFee;
+        uint16 maxFeeBps;
         address mintRecipient;
         bool skipConfigure;
-        bool skipDomainConfig;
         bool skipFund;
     }
 
@@ -72,14 +73,13 @@ contract CCTPBridgeSmoke is Script {
         console2.log("=============================================================");
         console2.log("Chain ID:          ", block.chainid);
         console2.log("Deployer:          ", deployer);
-        console2.log("PaymentRails:              ", paymentRailsAddr);
+        console2.log("PaymentRails:      ", paymentRailsAddr);
         console2.log("Module:            ", moduleAddr);
         console2.log("USDC:              ", cfg.usdc);
         console2.log("Dest domain:       ", uint256(cfg.destDomain));
         console2.log("Bridge amount:     ", cfg.bridgeAmount);
         console2.log("Mint recipient:    ", cfg.mintRecipient);
-        console2.log("Skip domain cfg:   ", cfg.skipDomainConfig);
-        console2.log("Skip paymentRails cfg:     ", cfg.skipConfigure);
+        console2.log("Skip paymentRails cfg: ", cfg.skipConfigure);
         console2.log("Skip fund:         ", cfg.skipFund);
         console2.log("=============================================================");
 
@@ -87,16 +87,19 @@ contract CCTPBridgeSmoke is Script {
 
         vm.startBroadcast(deployerKey);
 
-        if (!cfg.skipDomainConfig) {
-            bytes32 recipient = bytes32(uint256(uint160(cfg.mintRecipient)));
-            module.setDomainConfig(cfg.destDomain, recipient, bytes32(0), cfg.maxFee, cfg.finality, "");
-            console2.log("[DOMAIN] Configured domain %s", vm.toString(uint256(cfg.destDomain)));
-        }
-
         if (!cfg.skipConfigure) {
-            bytes memory moduleParams = abi.encode(cfg.destDomain);
+            bytes memory moduleParams = module.encodeParams(
+                DataTypes.CCTPBridgeParams({
+                    destinationDomain: cfg.destDomain,
+                    mintRecipient: bytes32(uint256(uint160(cfg.mintRecipient))),
+                    destinationCaller: bytes32(0),
+                    maxFeeBps: cfg.maxFeeBps,
+                    minFinalityThreshold: cfg.finality,
+                    hookData: bytes("")
+                })
+            );
             paymentRails.configureToken(cfg.usdc, "CCTP_BRIDGE", address(module), cfg.minBalance, moduleParams, true);
-            console2.log("[NODE] Configured USDC -> CCTP_BRIDGE");
+            console2.log("[CONFIGURED] USDC -> CCTP_BRIDGE");
         }
 
         if (!cfg.skipFund) {
@@ -133,14 +136,9 @@ contract CCTPBridgeSmoke is Script {
         console2.log("[OK] Module USDC:          ", module.usdc());
         console2.log("[OK] TokenMessengerV2:     ", module.tokenMessenger());
 
-        if (!cfg.skipDomainConfig || !cfg.skipConfigure) {
+        if (!cfg.skipConfigure) {
             require(paymentRails.owner() == deployer, "Deployer is not PaymentRails owner");
             console2.log("[OK] Deployer is PaymentRails owner");
-        }
-
-        if (!cfg.skipDomainConfig) {
-            require(module.owner() == deployer, "Deployer is not Module owner");
-            console2.log("[OK] Deployer is Module owner");
         }
 
         if (!cfg.skipFund) {
@@ -150,7 +148,7 @@ contract CCTPBridgeSmoke is Script {
         } else {
             uint256 paymentRailsBalance = IERC20(cfg.usdc).balanceOf(address(paymentRails));
             require(paymentRailsBalance >= cfg.bridgeAmount, "PaymentRails USDC insufficient");
-            console2.log("[OK] PaymentRails USDC:            ", paymentRailsBalance);
+            console2.log("[OK] PaymentRails USDC:    ", paymentRailsBalance);
         }
     }
 
@@ -183,12 +181,11 @@ contract CCTPBridgeSmoke is Script {
         cfg.finality = uint32(vm.envOr("FINALITY", uint256(DEFAULT_FINALITY)));
         cfg.bridgeAmount = vm.envOr("BRIDGE_AMOUNT", DEFAULT_BRIDGE_AMOUNT);
         cfg.minBalance = vm.envOr("MIN_BALANCE", DEFAULT_MIN_BALANCE);
-        cfg.maxFee = vm.envOr("MAX_FEE", DEFAULT_MAX_FEE);
+        cfg.maxFeeBps = uint16(vm.envOr("MAX_FEE_BPS", uint256(DEFAULT_MAX_FEE_BPS)));
         cfg.mintRecipient = vm.envOr("MINT_RECIPIENT", address(0));
 
         string memory f = "false";
         cfg.skipConfigure = keccak256(bytes(vm.envOr("SKIP_CONFIGURE", f))) == keccak256("true");
-        cfg.skipDomainConfig = keccak256(bytes(vm.envOr("SKIP_DOMAIN_CONFIG", f))) == keccak256("true");
         cfg.skipFund = keccak256(bytes(vm.envOr("SKIP_FUND", f))) == keccak256("true");
     }
 

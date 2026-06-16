@@ -52,40 +52,25 @@ library Errors {
                             DEX SWAP MODULE ERRORS
     //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Thrown when a router address is the zero address (addRouter / executionData).
+    /// @notice Thrown when the router address is the zero address in the constructor.
     error DexSwapModule_ZeroRouter();
 
-    /// @notice Thrown when a router address has no deployed code (is an EOA).
+    /// @notice Thrown when the router address has no deployed code in the constructor.
     /// @param router The EOA address that was rejected.
     error DexSwapModule_RouterNotContract(address router);
 
-    /// @notice Thrown when the caller supplies a router that is not whitelisted.
-    /// @param router The disallowed router address.
-    error DexSwapModule_RouterNotAllowed(address router);
-
-    /// @notice Thrown when the router already exists in the whitelist.
-    /// @param router The duplicate router address.
-    error DexSwapModule_RouterAlreadyAdded(address router);
-
-    /// @notice Thrown when actual swap output is below the caller-supplied minimum.
+    /// @notice Thrown when actual swap output is below the oracle-computed floor.
     /// @param amountOut Actual output from the swap.
-    /// @param minAmountOut Minimum acceptable output.
-    error DexSwapModule_InsufficientOutput(uint256 amountOut, uint256 minAmountOut);
+    /// @param oracleFloor Oracle-computed minimum after applying `maxSlippageBps`.
+    error DexSwapModule_InsufficientOutput(uint256 amountOut, uint256 oracleFloor);
 
-    /// @notice Thrown when a Chainlink price feed returns a non-positive answer.
-    /// @param feed The price feed address that returned invalid data.
-    error DexSwapModule_OraclePriceNonPositive(address feed);
+    /*//////////////////////////////////////////////////////////////////////////
+                            OWNERSHIP ERRORS
+    //////////////////////////////////////////////////////////////////////////*/
 
-    /// @notice Thrown when a Chainlink price feed's data exceeds the configured max staleness.
-    /// @param feed The stale price feed address.
-    /// @param updatedAt Timestamp of the last feed update.
-    /// @param maxStaleness Owner-configured maximum age in seconds.
-    error DexSwapModule_OraclePriceStale(address feed, uint256 updatedAt, uint256 maxStaleness);
-
-    /// @notice Thrown when the caller's `minAmountOut` is below the oracle-enforced floor.
-    /// @param callerMinAmountOut The caller-supplied minimum output.
-    /// @param oracleFloor The oracle-computed minimum after applying `maxSlippageBps`.
-    error DexSwapModule_SlippageExceedsOracleFloor(uint256 callerMinAmountOut, uint256 oracleFloor);
+    /// @notice Thrown when renounceOwnership() is called on PaymentRails.
+    /// @dev Ownership renunciation is permanently disabled to prevent locking the contract.
+    error PaymentRails_OwnershipCannotBeRenounced();
 
     /*//////////////////////////////////////////////////////////////////////////
                             COWSWAP MODULE ERRORS
@@ -93,6 +78,9 @@ library Errors {
 
     /// @notice Thrown when the CowSwap GPv2Settlement address is the zero address
     error CowSwapModule_ZeroCowSettlement();
+
+    /// @notice Thrown when the PaymentRails address is the zero address in the constructor
+    error CowSwapModule_ZeroPaymentRails();
 
     /// @notice Thrown when attempting to act on an orderId that was never created
     /// @param orderId The unknown order digest
@@ -102,15 +90,15 @@ library Errors {
     /// @param orderId The order digest
     error CowSwapModule_OrderAlreadyCancelled(bytes32 orderId);
 
-    /// @notice Thrown when cancelOrder is called by an address that is not the module owner
-    /// @param caller   Address that attempted cancellation
-    /// @param owner    Module owner address (set at construction via Ownable2Step)
-    error CowSwapModule_NotOwner(address caller, address owner);
-
     /// @notice Thrown when cancelOrder is called on an order already filled by a CowSwap solver
-    /// @dev Verified via GPv2Settlement.filledAmounts(orderId) >= meta.sellAmount
+    /// @dev Verified via GPv2Settlement.filledAmount(orderUid) >= meta.sellAmount
     /// @param orderId The order digest
     error CowSwapModule_OrderAlreadyFilled(bytes32 orderId);
+
+    /// @notice Thrown when renounceOwnership() is called on CowSwapModule.
+    /// @dev Ownership renunciation is permanently disabled because it would lock
+    /// all pending orders' sell tokens with no way to cancel them.
+    error CowSwapModule_OwnershipCannotBeRenounced();
 
     /*//////////////////////////////////////////////////////////////////////////
                         CCTP BRIDGE MODULE ERRORS
@@ -121,15 +109,4 @@ library Errors {
 
     /// @notice Thrown when the USDC address is the zero address in the constructor.
     error CCTPBridgeModule_ZeroUSDC();
-
-    /// @notice Thrown when the mint recipient is `bytes32(0)` in `setDomainConfig()`.
-    error CCTPBridgeModule_ZeroMintRecipient();
-
-    /// @notice Thrown when `minFinalityThreshold` is not 1000 or 2000.
-    /// @param threshold The invalid finality threshold value.
-    error CCTPBridgeModule_InvalidFinalityThreshold(uint32 threshold);
-
-    /// @notice Thrown when attempting to remove a domain config that does not exist.
-    /// @param destinationDomain The CCTP domain ID that is not configured.
-    error CCTPBridgeModule_DomainNotConfigured(uint32 destinationDomain);
 }

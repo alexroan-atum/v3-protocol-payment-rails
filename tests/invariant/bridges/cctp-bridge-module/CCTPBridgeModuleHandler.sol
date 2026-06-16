@@ -25,7 +25,7 @@ contract BridgePaymentRailsProxy is Test {
         returns (DataTypes.ExecutionResult memory)
     {
         IERC20(token).approve(address(module), amount);
-        return module.execute(token, amount, params, "");
+        return module.execute(token, amount, params);
     }
 }
 
@@ -36,193 +36,144 @@ contract CCTPBridgeModuleHandler is Test {
     MockERC20 internal otherToken;
     MockTokenMessengerV2 internal tokenMessenger;
 
-    uint32[] public ghost_configuredDomains;
-    mapping(uint32 => bool) public ghost_domainIsConfigured;
-    mapping(uint32 => uint256) public ghost_domainMaxFee;
-    mapping(uint32 => bool) public ghost_domainHasHookData;
-
-    address public ghost_currentOwner;
-    address public ghost_pendingOwner;
-
     uint256 public ghost_totalMintedToPaymentRails;
 
+    bytes32 internal constant MINT_RECIPIENT = bytes32(uint256(uint160(0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB)));
+    uint16 internal constant MAX_FEE_BPS = 20; // 0.2%
     uint32 internal constant MAX_DOMAIN = 10;
-
-    address internal pendingAcceptor;
 
     constructor(
         CCTPBridgeModule _module,
-        BridgePaymentRailsProxy _node,
+        BridgePaymentRailsProxy _paymentRails,
         MockERC20 _usdc,
         MockERC20 _otherToken,
-        MockTokenMessengerV2 _tokenMessenger,
-        address _initialOwner
+        MockTokenMessengerV2 _tokenMessenger
     ) {
         module = _module;
-        paymentRails = _node;
+        paymentRails = _paymentRails;
         usdc = _usdc;
         otherToken = _otherToken;
         tokenMessenger = _tokenMessenger;
-        ghost_currentOwner = _initialOwner;
     }
 
     /*//////////////////////////////////////////////////////////////////////////
-                        DOMAIN CONFIG ACTIONS
+                            EXECUTION ACTIONS
     //////////////////////////////////////////////////////////////////////////*/
 
-    function handler_setDomainConfig(uint32 domain, uint256 maxFee, bool useHookData) external {
-        if (ghost_currentOwner == address(0)) return;
+    function handler_execute(uint256 amount, uint32 domain, bool useFastFinality) external {
+        amount = bound(amount, 2, 100_000e6);
         domain = uint32(bound(domain, 0, MAX_DOMAIN));
-        maxFee = bound(maxFee, 0, 10e6);
-
-        bytes32 mintRecipient = bytes32(uint256(uint160(0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB)));
-        bytes memory hookData = useHookData ? bytes(hex"deadbeef") : bytes("");
-
-        vm.prank(ghost_currentOwner);
-        try module.setDomainConfig(domain, mintRecipient, bytes32(0), maxFee, 1000, hookData) {
-            if (!ghost_domainIsConfigured[domain]) {
-                ghost_configuredDomains.push(domain);
-                ghost_domainIsConfigured[domain] = true;
-            }
-            ghost_domainMaxFee[domain] = maxFee;
-            ghost_domainHasHookData[domain] = useHookData;
-        } catch { }
-    }
-
-    function handler_removeDomainConfig(uint256 domainIndex) external {
-        if (ghost_currentOwner == address(0)) return;
-        uint256 len = ghost_configuredDomains.length;
-        if (len == 0) return;
-        domainIndex = bound(domainIndex, 0, len - 1);
-        uint32 domain = ghost_configuredDomains[domainIndex];
-
-        if (!ghost_domainIsConfigured[domain]) return;
-
-        vm.prank(ghost_currentOwner);
-        try module.removeDomainConfig(domain) {
-            ghost_domainIsConfigured[domain] = false;
-        } catch { }
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                        EXECUTION ACTIONS
-    //////////////////////////////////////////////////////////////////////////*/
-
-    function handler_execute(uint256 amount, uint256 domainIndex) external {
-        uint256 len = ghost_configuredDomains.length;
-        if (len == 0) return;
-        domainIndex = bound(domainIndex, 0, len - 1);
-        uint32 domain = ghost_configuredDomains[domainIndex];
-
-        amount = bound(amount, 1, 100_000e6);
+        uint32 finality = useFastFinality ? 1000 : 2000;
 
         usdc.mint(address(paymentRails), amount);
         ghost_totalMintedToPaymentRails += amount;
 
-        bytes memory params = abi.encode(domain);
+        bytes memory params = abi.encode(
+            domain,
+            MINT_RECIPIENT,
+            bytes32(0), // destinationCaller — anyone can relay
+            uint16(MAX_FEE_BPS),
+            finality,
+            bytes("") // no hook data
+        );
+
         paymentRails.initiateBridge(address(usdc), amount, params);
     }
 
-    function handler_executeUnconfiguredDomain(uint256 amount) external {
-        amount = bound(amount, 1, 100_000e6);
-        uint32 unconfiguredDomain = MAX_DOMAIN + 1;
+    function handler_executeWithHook(uint256 amount, uint32 domain, bool useFastFinality) external {
+        amount = bound(amount, 2, 100_000e6);
+        domain = uint32(bound(domain, 0, MAX_DOMAIN));
+        uint32 finality = useFastFinality ? 1000 : 2000;
 
         usdc.mint(address(paymentRails), amount);
         ghost_totalMintedToPaymentRails += amount;
 
-        bytes memory params = abi.encode(unconfiguredDomain);
-        DataTypes.ExecutionResult memory result = paymentRails.initiateBridge(address(usdc), amount, params);
+        bytes memory params = abi.encode(
+            domain,
+            MINT_RECIPIENT,
+            bytes32(0),
+            uint16(MAX_FEE_BPS),
+            finality,
+            bytes(hex"deadbeef") // non-empty hook data
+        );
 
-        assertFalse(result.success);
+        paymentRails.initiateBridge(address(usdc), amount, params);
     }
 
-    function handler_executeBelowMaxFee(uint256 domainIndex) external {
-        uint256 len = ghost_configuredDomains.length;
-        if (len == 0) return;
-        domainIndex = bound(domainIndex, 0, len - 1);
-        uint32 domain = ghost_configuredDomains[domainIndex];
+    function handler_executeWithBadParams(uint256 badCase) external {
+        badCase = bound(badCase, 0, 3);
 
-        if (!ghost_domainIsConfigured[domain]) return;
-
-        uint256 maxFee = ghost_domainMaxFee[domain];
-        if (maxFee == 0) return;
-
-        uint256 amount = maxFee;
-
+        uint256 amount = 1000e6;
         usdc.mint(address(paymentRails), amount);
         ghost_totalMintedToPaymentRails += amount;
 
-        bytes memory params = abi.encode(domain);
-        DataTypes.ExecutionResult memory result = paymentRails.initiateBridge(address(usdc), amount, params);
+        bytes memory params;
+        DataTypes.ExecutionResult memory result;
 
-        assertFalse(result.success);
-        assertEq(result.failureReason, "Max fee exceeds amount");
+        if (badCase == 0) {
+            // Zero mint recipient
+            params = abi.encode(
+                uint32(0),
+                bytes32(0), // invalid: zero recipient
+                bytes32(0),
+                uint16(MAX_FEE_BPS),
+                uint32(1000),
+                bytes("")
+            );
+            result = paymentRails.initiateBridge(address(usdc), amount, params);
+            assertFalse(result.success, "Zero recipient should fail");
+            assertEq(result.failureReason, "Zero mint recipient");
+        } else if (badCase == 1) {
+            // Invalid finality threshold (not 1000 or 2000)
+            params = abi.encode(
+                uint32(0),
+                MINT_RECIPIENT,
+                bytes32(0),
+                uint16(MAX_FEE_BPS),
+                uint32(999), // invalid finality
+                bytes("")
+            );
+            result = paymentRails.initiateBridge(address(usdc), amount, params);
+            assertFalse(result.success, "Bad finality should fail");
+            assertEq(result.failureReason, "Invalid finality threshold");
+        } else if (badCase == 2) {
+            // maxFeeBps >= 10_000
+            params = abi.encode(
+                uint32(0),
+                MINT_RECIPIENT,
+                bytes32(0),
+                uint16(10_000), // maxFeeBps == 100%
+                uint32(1000),
+                bytes("")
+            );
+            result = paymentRails.initiateBridge(address(usdc), amount, params);
+            assertFalse(result.success, "maxFeeBps >= 10_000 should fail");
+            assertEq(result.failureReason, "Invalid max fee bps");
+        } else {
+            // Zero bridge amount
+            params = abi.encode(uint32(0), MINT_RECIPIENT, bytes32(0), uint16(MAX_FEE_BPS), uint32(1000), bytes(""));
+            result = paymentRails.initiateBridge(address(usdc), 0, params);
+            assertFalse(result.success, "Zero amount should fail");
+            assertEq(result.failureReason, "Zero bridge amount");
+        }
     }
 
-    function handler_executeNonUSDC(uint256 amount, uint256 domainIndex) external {
-        uint256 len = ghost_configuredDomains.length;
-        if (len == 0) return;
-        domainIndex = bound(domainIndex, 0, len - 1);
-        uint32 domain = ghost_configuredDomains[domainIndex];
-
+    function handler_executeNonUSDC(uint256 amount, uint32 domain) external {
         amount = bound(amount, 1, 100_000e6);
+        domain = uint32(bound(domain, 0, MAX_DOMAIN));
+
         otherToken.mint(address(paymentRails), amount);
 
-        bytes memory params = abi.encode(domain);
+        bytes memory params =
+            abi.encode(domain, MINT_RECIPIENT, bytes32(0), uint16(MAX_FEE_BPS), uint32(1000), bytes(""));
 
         vm.prank(address(paymentRails));
         IERC20(address(otherToken)).approve(address(module), amount);
 
         vm.prank(address(paymentRails));
-        DataTypes.ExecutionResult memory result = module.execute(address(otherToken), amount, params, "");
+        DataTypes.ExecutionResult memory result = module.execute(address(otherToken), amount, params);
 
-        assertFalse(result.success);
+        assertFalse(result.success, "Non-USDC should fail");
         assertEq(result.failureReason, "Only USDC supported");
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                        OWNERSHIP ACTIONS
-    //////////////////////////////////////////////////////////////////////////*/
-
-    function handler_transferOwnership(uint256 newOwnerSeed) external {
-        if (ghost_currentOwner == address(0)) return;
-
-        address newOwner = makeAddr(string(abi.encodePacked("owner", newOwnerSeed)));
-        pendingAcceptor = newOwner;
-
-        vm.prank(ghost_currentOwner);
-        try module.transferOwnership(newOwner) {
-            ghost_pendingOwner = newOwner;
-        } catch { }
-    }
-
-    function handler_acceptOwnership() external {
-        if (pendingAcceptor == address(0)) return;
-
-        vm.prank(pendingAcceptor);
-        try module.acceptOwnership() {
-            ghost_currentOwner = pendingAcceptor;
-            ghost_pendingOwner = address(0);
-            pendingAcceptor = address(0);
-        } catch { }
-    }
-
-    function handler_renounceOwnership() external {
-        if (ghost_currentOwner == address(0)) return;
-
-        vm.prank(ghost_currentOwner);
-        try module.renounceOwnership() {
-            ghost_currentOwner = address(0);
-            ghost_pendingOwner = address(0);
-            pendingAcceptor = address(0);
-        } catch { }
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                        GHOST HELPERS
-    //////////////////////////////////////////////////////////////////////////*/
-
-    function ghost_configuredDomainsLength() external view returns (uint256) {
-        return ghost_configuredDomains.length;
     }
 }

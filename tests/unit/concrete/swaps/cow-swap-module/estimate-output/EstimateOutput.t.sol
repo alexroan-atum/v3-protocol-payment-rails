@@ -7,12 +7,13 @@ import { CowSwapModuleBase } from "../CowSwapModuleBase.t.sol";
 /// @dev Tree: tests/unit/concrete/cow-swap-module/estimate-output/estimateOutput.tree
 contract CowSwapModule_EstimateOutput_Test is CowSwapModuleBase {
     // -----------------------------------------------------------------------
-    // it should return minBuyAmount as estimated output
+    // it should return oracle-expected output as estimated output
     // -----------------------------------------------------------------------
 
-    function test_ReturnsMinBuyAmountAsEstimatedOutput() external view {
+    function test_ReturnsOracleExpectedOutputAsEstimatedOutput() external view {
         (uint256 estimated,) = module.estimateOutput(address(sellToken), DEFAULT_SELL_AMOUNT, _buildDefaultParams());
-        assertEq(estimated, DEFAULT_MIN_BUY_AMOUNT);
+        // 1:1 prices, 18-decimal tokens → expected output equals sell amount
+        assertEq(estimated, DEFAULT_SELL_AMOUNT);
     }
 
     // -----------------------------------------------------------------------
@@ -25,28 +26,22 @@ contract CowSwapModule_EstimateOutput_Test is CowSwapModuleBase {
     }
 
     // -----------------------------------------------------------------------
-    // it should ignore the sell amount input
+    // it should scale proportionally with sell amount
     // -----------------------------------------------------------------------
 
-    function test_IgnoresSellAmount() external view {
+    function test_ScalesProportionallyWithSellAmount() external view {
         bytes memory params = _buildDefaultParams();
-        (uint256 a,) = module.estimateOutput(address(sellToken), 0, params);
-        (uint256 b,) = module.estimateOutput(address(sellToken), DEFAULT_SELL_AMOUNT, params);
-        (uint256 c,) = module.estimateOutput(address(sellToken), type(uint256).max, params);
-        assertEq(a, DEFAULT_MIN_BUY_AMOUNT);
-        assertEq(b, DEFAULT_MIN_BUY_AMOUNT);
-        assertEq(c, DEFAULT_MIN_BUY_AMOUNT);
+        (uint256 a,) = module.estimateOutput(address(sellToken), DEFAULT_SELL_AMOUNT, params);
+        (uint256 b,) = module.estimateOutput(address(sellToken), DEFAULT_SELL_AMOUNT / 2, params);
+        // 1:1 oracle → output scales linearly with sell amount
+        assertEq(a, DEFAULT_SELL_AMOUNT);
+        assertEq(b, DEFAULT_SELL_AMOUNT / 2);
     }
 
-    function testFuzz_AlwaysReturnsMinBuyAmountRegardlessOfSellAmount(uint256 amount) external view {
+    function testFuzz_ScalesLinearlyWithSellAmount(uint256 amount) external view {
+        amount = bound(amount, 1, DEFAULT_SELL_AMOUNT * 9);
         (uint256 estimated,) = module.estimateOutput(address(sellToken), amount, _buildDefaultParams());
-        assertEq(estimated, DEFAULT_MIN_BUY_AMOUNT);
-    }
-
-    function testFuzz_ReturnsConfiguredMinBuyAmount(uint256 minBuyAmount) external view {
-        minBuyAmount = bound(minBuyAmount, 1, type(uint256).max);
-        bytes memory params = _buildParams(address(buyToken), minBuyAmount, DEFAULT_VALIDITY, DEFAULT_APP_DATA);
-        (uint256 estimated,) = module.estimateOutput(address(sellToken), DEFAULT_SELL_AMOUNT, params);
-        assertEq(estimated, minBuyAmount);
+        // 1:1 oracle with equal decimals → expected output equals sell amount
+        assertEq(estimated, amount);
     }
 }

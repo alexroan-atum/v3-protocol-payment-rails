@@ -3,19 +3,25 @@ pragma solidity 0.8.29;
 
 import { IPaymentRails } from "../interfaces/IPaymentRails.sol";
 import { IActionModule } from "../interfaces/IActionModule.sol";
-import { PaymentRailsState } from "../abstracts/PaymentRailsState.sol";
 import { DataTypes } from "../types/DataTypes.sol";
 import { Errors } from "../libraries/Errors.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { Ownable2Step, Ownable } from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 /// @title PaymentRails
 /// @author Credit Cooperative
 /// @notice See the documentation in {IPaymentRails}.
-contract PaymentRails is IPaymentRails, PaymentRailsState, Ownable, ReentrancyGuard {
+contract PaymentRails is IPaymentRails, Ownable2Step, ReentrancyGuard {
     using SafeERC20 for IERC20;
+
+    /*//////////////////////////////////////////////////////////////////////////
+                                    STORAGE
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @dev Maps token addresses to their action configurations
+    mapping(address token => DataTypes.TokenConfig config) internal _tokenConfigs;
 
     /*//////////////////////////////////////////////////////////////////////////
                                   CONSTRUCTOR
@@ -25,6 +31,15 @@ contract PaymentRails is IPaymentRails, PaymentRailsState, Ownable, ReentrancyGu
     /// @dev Initializes Ownable with the provided owner address
     /// @param initialOwner The address that will own the contract and can configure tokens
     constructor(address initialOwner) Ownable(initialOwner) { }
+
+    /*//////////////////////////////////////////////////////////////////////////
+                            OWNERSHIP OVERRIDES
+    //////////////////////////////////////////////////////////////////////////*/
+
+    /// @dev Disables renounceOwnership() to prevent permanently locking the contract configuration.
+    function renounceOwnership() public pure override {
+        revert Errors.PaymentRails_OwnershipCannotBeRenounced();
+    }
 
     /*//////////////////////////////////////////////////////////////////////////
                         USER-FACING CONSTANT FUNCTIONS
@@ -82,7 +97,7 @@ contract PaymentRails is IPaymentRails, PaymentRailsState, Ownable, ReentrancyGu
 
         // Check: Module validation
         (bool isValid, string memory reason) =
-            IActionModule(config.actionModule).validate(token, balance, config.moduleParams, "");
+            IActionModule(config.actionModule).validate(token, balance, config.moduleParams);
         if (!isValid) {
             // Module validation failed - revert with module's reason
             // Note: Cannot revert with module's custom error, so we use a descriptive revert
@@ -154,37 +169,8 @@ contract PaymentRails is IPaymentRails, PaymentRailsState, Ownable, ReentrancyGu
     }
 
     /// @inheritdoc IPaymentRails
-    /// @dev Emits an {ActionExecuted} event on successful execution.
+    /// @dev Emits {ActionExecuted} on success, {ActionFailed} on failure.
     function executeAction(address token, uint256 amount) external nonReentrant returns (bool success) {
-        return _validateAndExecute(token, amount, "");
-    }
-
-    /// @inheritdoc IPaymentRails
-    function executeAction(
-        address token,
-        uint256 amount,
-        bytes calldata executionData
-    )
-        external
-        nonReentrant
-        returns (bool success)
-    {
-        return _validateAndExecute(token, amount, executionData);
-    }
-
-    /*//////////////////////////////////////////////////////////////////////////
-                            INTERNAL FUNCTIONS
-    //////////////////////////////////////////////////////////////////////////*/
-
-    /// @dev Validates preconditions and delegates to {_executeActionInternal}.
-    function _validateAndExecute(
-        address token,
-        uint256 amount,
-        bytes memory executionData
-    )
-        private
-        returns (bool success)
-    {
         DataTypes.TokenConfig memory config = _tokenConfigs[token];
 
         if (!config.enabled) {
@@ -205,38 +191,23 @@ contract PaymentRails is IPaymentRails, PaymentRailsState, Ownable, ReentrancyGu
             revert Errors.PaymentRails_InsufficientBalance(balance, amount);
         }
 
-        return _executeActionInternal(token, amount, config, executionData);
-    }
-
-    /// @dev Approves the module, calls `execute`, and revokes approval on failure.
-    function _executeActionInternal(
-        address token,
-        uint256 amount,
-        DataTypes.TokenConfig memory config,
-        bytes memory executionData
-    )
-        private
-        returns (bool success)
-    {
-        // Interaction: Approve module to spend tokens
         IERC20(token).forceApprove(config.actionModule, amount);
 
-        // Interaction: Execute via module
-        try IActionModule(config.actionModule).execute(token, amount, config.moduleParams, executionData) returns (
+        try IActionModule(config.actionModule).execute(token, amount, config.moduleParams) returns (
             DataTypes.ExecutionResult memory result
         ) {
             if (result.success) {
-                // Log: Emit success event
+                IERC20(token).forceApprove(config.actionModule, 0);
                 emit ActionExecuted(token, config.actionType, amount, result.amountOut, result.outputToken, msg.sender);
                 return true;
             } else {
-                // Effect: Revoke approval on module-reported failure
                 IERC20(token).forceApprove(config.actionModule, 0);
+                emit ActionFailed(token, config.actionType, amount, result.failureReason, msg.sender);
                 return false;
             }
         } catch {
-            // Effect: Revoke approval on execution revert
             IERC20(token).forceApprove(config.actionModule, 0);
+            emit ActionFailed(token, config.actionType, amount, "Module execution reverted", msg.sender);
             return false;
         }
     }
