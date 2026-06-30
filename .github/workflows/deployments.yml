@@ -1,0 +1,19 @@
+# Notifies the address-book aggregator when this project's deployments/ registry changes on main.
+# The reusable workflow lives in devkit, pinned to the moving major-version branch (v1), which
+# devkit's release workflow syncs to the latest v1.x tag on each release.
+name: "Deployments"
+
+on:
+  push:
+    branches:
+      - "main"
+    paths:
+      - "deployments/**"
+
+jobs:
+  dispatch:
+    name: "Notify address-book"
+    uses: "credit-cooperative/devkit/.github/workflows/deployments-dispatch.yml@v1"
+    secrets:
+      app-id: ${{ secrets.CC_CI_APP_ID }}
+      app-private-key: ${{ secrets.CC_CI_APP_PRIVATE_KEY }}

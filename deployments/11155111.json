@@ -1,0 +1,30 @@
+{
+  "chain": "sepolia",
+  "chainId": 11155111,
+  "contracts": {
+    "CCTPBridgeModule": {
+      "address": "0x2cd851cdf6c64872370c921fa938e8684420df5d",
+      "blockNumber": 10752259,
+      "commit": "600e214",
+      "deployer": "0x65655d5d18f41775156cdfb53cc5710e13380070",
+      "timestamp": "2026-04-29T00:02:02.710Z",
+      "txHash": "0x9117fafda2e4adad9f805698f16a2c8c5e44c2dd2490a3ca07a24112b0ed83a0",
+      "version": "1.0.0",
+      "constructorArgs": [
+        "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
+        "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+        "0x65655D5d18F41775156CdFb53cC5710E13380070"
+      ]
+    },
+    "Node": {
+      "address": "0xa0a7ec0f4f662259e8a3c5ffc6f3fc0ac8709943",
+      "blockNumber": 10752232,
+      "commit": "600e214",
+      "deployer": "0x65655d5d18f41775156cdfb53cc5710e13380070",
+      "timestamp": "2026-04-28T23:56:01.052Z",
+      "txHash": "0x88c09aa7eaf696113f839329289ad34d08dcad566eb0256a965a5d2762ab992e",
+      "version": "1.0.0",
+      "constructorArgs": ["0x65655D5d18F41775156CdFb53cC5710E13380070"]
+    }
+  }
+}

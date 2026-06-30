@@ -1,0 +1,29 @@
+{
+  "chain": "base",
+  "chainId": 8453,
+  "contracts": {
+    "CowSwapModule": {
+      "address": "0x8e84f7b1996fe8074ff36b1c352bf6651ebd31a0",
+      "blockNumber": 44366802,
+      "commit": "6283628",
+      "deployer": "0x65655d5d18f41775156cdfb53cc5710e13380070",
+      "timestamp": "2026-04-07T00:49:11.193Z",
+      "txHash": "0x2631be6204067e4e6ad0099790c7ceb25cd29c2675958180da3a8bde2402d6e6",
+      "version": "1.0.0",
+      "constructorArgs": [
+        "0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
+        "0x65655D5d18F41775156CdFb53cC5710E13380070"
+      ]
+    },
+    "Node": {
+      "address": "0x08663b09946c070e48d9d42e1390a416a5a904ad",
+      "blockNumber": 44366802,
+      "commit": "6283628",
+      "deployer": "0x65655d5d18f41775156cdfb53cc5710e13380070",
+      "timestamp": "2026-04-07T00:49:11.193Z",
+      "txHash": "0xff3781514c2cbc5e509ad9491b4febb5a1a29680ed1b60412f4dbb660379535c",
+      "version": "1.0.0",
+      "constructorArgs": ["0x65655D5d18F41775156CdFb53cC5710E13380070"]
+    }
+  }
+}
